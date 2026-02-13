@@ -4,7 +4,6 @@
 *.avi
 *.mov
 *.webm
-sample/
 
 # Build artifacts
 build.log

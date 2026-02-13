@@ -1,0 +1,7 @@
+# Ignore all video files in sample directory
+# (README and this file are tracked, samples are not)
+*.mkv
+*.mp4
+*.avi
+*.mov
+*.webm
