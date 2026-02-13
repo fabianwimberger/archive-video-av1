@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Conversion Service</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- Bootstrap 5 CSS -->
+    <link href="/vendor/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="/vendor/css/bootstrap-icons.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body class="bg-light">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-film me-2"></i>Video Conversion
+            </a>
+            <div class="d-flex align-items-center">
+                <span id="ws-status" class="badge bg-warning text-dark">Connecting...</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4 main-content py-3">
+        <!-- File Browser Section -->
+        <div class="card shadow-sm section-files">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0"><i class="bi bi-folder2-open me-2"></i>File Browser</h5>
+                <div class="d-flex gap-2">
+                    <span id="selection-count" class="badge bg-info text-dark align-self-center">0 files selected</span>
+                    <button id="btn-select-unconverted" class="btn btn-outline-secondary btn-sm" title="Select original files that have no converted version yet">
+                        Select Unconverted
+                    </button>
+                    <button id="btn-select-converted" class="btn btn-outline-secondary btn-sm" title="Select original files that already have a converted version">
+                        Select Converted
+                    </button>
+                    <button id="btn-unselect-all" class="btn btn-outline-secondary btn-sm" title="Unselect All" disabled>
+                        Unselect All
+                    </button>
+                    <button id="btn-delete-selected" class="btn btn-outline-danger btn-sm" title="Delete Selected" disabled>
+                        <i class="bi bi-trash"></i> Delete Selected
+                    </button>
+                    <button id="btn-refresh" class="btn btn-outline-secondary btn-sm" title="Refresh">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0 d-flex flex-column file-browser-body">
+                <div class="p-3 border-bottom bg-light">
+                        <div class="input-group">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                        <input type="text" id="search-files" class="form-control border-start-0" placeholder="Search files...">
+                    </div>
+                </div>
+                <div id="file-browser" class="list-group list-group-flush flex-grow-1 overflow-auto custom-scrollbar">
+                    <div class="text-center p-5 text-muted">
+                        <div class="spinner-border text-primary mb-2" role="status"></div>
+                        <div>Loading files...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div class="card shadow-sm section-settings">
+            <div class="card-header bg-white py-2">
+                <h5 class="card-title mb-0"><i class="bi bi-sliders me-2"></i>Settings</h5>
+            </div>
+            <div class="card-body p-3" id="settings-panel">
+                <div class="mb-2">
+                    <label for="mode-select" class="form-label small fw-bold mb-1">Preset Selection</label>
+                    <select id="mode-select" class="form-select form-select-sm">
+                        <option value="default">Default (CRF 26, Grain 8)</option>
+                        <option value="anime">Anime (CRF 38)</option>
+                        <option value="grainy">Grainy (CRF 26, Grain 16+)</option>
+                    </select>
+                </div>
+
+                <div class="mb-2">
+                    <label for="preset-slider" class="form-label small d-flex justify-content-between mb-1">
+                        <span>Encoding Preset (Speed)</span>
+                        <span id="preset-value" class="badge bg-secondary">4</span>
+                    </label>
+                    <input type="range" id="preset-slider" class="form-range" min="0" max="10" value="4">
+                </div>
+
+                <div class="mb-2">
+                    <label for="crf-slider" class="form-label small d-flex justify-content-between mb-1">
+                        <span>CRF (Quality)</span>
+                        <span id="crf-value" class="badge bg-secondary">28</span>
+                    </label>
+                    <input type="range" id="crf-slider" class="form-range" min="0" max="51" value="26">
+                </div>
+
+                <div class="mb-2">
+                    <label for="svt-params" class="form-label small mb-1">SVT-AV1 Params</label>
+                    <input type="text" id="svt-params" class="form-control form-control-sm" value="tune=0:film-grain=8">
+                </div>
+
+                <div class="mb-2">
+                    <label for="audio-bitrate" class="form-label small mb-1">Audio Bitrate</label>
+                    <input type="text" id="audio-bitrate" class="form-control form-control-sm" value="96k">
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input type="checkbox" id="skip-crop" class="form-check-input">
+                        <label for="skip-crop" class="form-check-label small">Skip Crop</label>
+                    </div>
+                </div>
+
+                <button id="btn-convert-selected" class="btn btn-primary w-100 mb-2" disabled>
+                    <i class="bi bi-play-fill me-1"></i> Convert Selected (<span id="convert-count">0</span>)
+                </button>
+            </div>
+        </div>
+
+        <!-- Job Queue Section -->
+        <div class="card shadow-sm section-queue job-queue-card">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="card-title mb-0"><i class="bi bi-activity me-2"></i>Job Queue</h5>
+                    <div class="small text-muted mt-1">
+                        <span id="queue-stats" class="d-flex gap-3">
+                            <span><i class="bi bi-hourglass-split text-warning me-1"></i><span id="stat-pending">0</span> queued</span>
+                            <span><i class="bi bi-arrow-repeat text-primary me-1"></i><span id="stat-processing">0</span> running</span>
+                            <span><i class="bi bi-check-circle text-success me-1"></i><span id="stat-completed">0</span> finished</span>
+                            <span><i class="bi bi-exclamation-triangle text-danger me-1"></i><span id="stat-failed">0</span> failed</span>
+                        </span>
+                    </div>
+                </div>
+                <div>
+                        <button id="btn-clear-all" class="btn btn-outline-danger btn-sm me-2" title="Force Clear All (stops running jobs)">Force Clear All</button>
+                        <button id="btn-clear-completed" class="btn btn-outline-secondary btn-sm">Clear Finished</button>
+                        <button id="btn-toggle-queue" class="btn btn-sm btn-link text-decoration-none text-muted">Collapse</button>
+                </div>
+            </div>
+            <div id="job-queue" class="card-body p-0 overflow-auto custom-scrollbar">
+                    <div class="text-center p-5 text-muted">No jobs yet</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Log Modal -->
+    <div class="modal fade" id="log-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Job Log</h5>
+                    <button type="button" class="btn-close modal-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body bg-dark text-light font-monospace">
+                    <pre id="log-content" class="m-0 p-0" style="white-space: pre-wrap; word-break: break-all;"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS Bundle -->
+    <script src="/vendor/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- App Scripts -->
+    <script src="/js/api.js"></script>
+    <script src="/js/websocket-client.js"></script>
+    <script src="/js/file-browser.js"></script>
+    <script src="/js/settings-panel.js"></script>
+    <script src="/js/job-queue.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

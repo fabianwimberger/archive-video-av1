@@ -1,0 +1,17 @@
+services:
+  convert-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: convert-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - /path/to/your/videos:/videos
+    environment:
+      - TZ=UTC
+      - SOURCE_MOUNT=/videos
+      - TEMP_DIR=/app/temp
+      - DATABASE_PATH=/app/data/app.db
+      - LOG_LEVEL=INFO

@@ -1,0 +1,44 @@
+# Video files (PGO samples, test files)
+*.mkv
+*.mp4
+*.avi
+*.mov
+*.webm
+sample/
+
+# Build artifacts
+build.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+venv/
+env/
+.venv/
+
+# Frontend vendor (downloaded at build time)
+frontend/vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data / runtime
+data/
+temp/
+*.db
+*.db-journal
+
+# Docker overrides (user-specific)
+docker-compose.override.yml
