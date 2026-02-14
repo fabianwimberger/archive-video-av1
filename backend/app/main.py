@@ -128,10 +128,10 @@ async def get_presets():
             audio_bitrate="96k",
             skip_crop_detect=False,
         ).model_dump(),
-        "anime": ConversionSettings(
-            crf=38,
+        "animated": ConversionSettings(
+            crf=40,
             preset=4,
-            svt_params="tune=0",
+            svt_params="",
             audio_bitrate="96k",
             skip_crop_detect=False,
         ).model_dump(),

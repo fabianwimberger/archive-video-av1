@@ -16,14 +16,14 @@ class ConversionSettings(BaseModel):
 class JobCreate(BaseModel):
     """Schema for creating a single job."""
     source_file: str
-    mode: str = Field(default="default", pattern="^(default|anime|grainy)$")
+    mode: str = Field(default="default", pattern="^(default|animated|grainy)$")
     settings: Optional[ConversionSettings] = None
 
 
 class JobBatchCreate(BaseModel):
     """Schema for creating multiple jobs."""
     files: list[str]
-    mode: str = Field(default="default", pattern="^(default|anime|grainy)$")
+    mode: str = Field(default="default", pattern="^(default|animated|grainy)$")
     settings: Optional[ConversionSettings] = None
 
 

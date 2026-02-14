@@ -17,7 +17,7 @@ class Job(Base):
     output_file = Column(String, nullable=False)
 
     # Conversion settings
-    mode = Column(String, nullable=False, default="default")  # 'default', 'anime' or 'grainy'
+    mode = Column(String, nullable=False, default="default")  # 'default', 'animated' or 'grainy'
     settings = Column(Text, default="{}")  # JSON string with CRF, preset, etc.
 
     # Status tracking

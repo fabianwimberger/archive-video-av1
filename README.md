@@ -15,7 +15,7 @@ A self-hosted, web-based video conversion service running in Docker. Converts vi
 - **Batch processing** with sequential job queue
 - **Conversion presets:**
   - **Standard** -- CRF 26, film grain preservation (`film-grain=8`)
-  - **Anime** -- CRF 38, higher compression for animated content
+  - **Animated** -- CRF 40, higher compression for animated content
   - **Grainy** -- CRF 26, heavy grain preservation (`film-grain=16:film-grain-denoise=1`)
 - **Automatic crop detection** (consensus-based, 8-point sampling)
 - **Two-pass audio normalization** (loudnorm, Opus stereo output)
