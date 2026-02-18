@@ -90,7 +90,7 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
             "stream_details": stream_details
         }
 
-    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError, OSError) as e:
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError, OSError):
         return None
 
 
@@ -119,11 +119,11 @@ def remux_file(file_path: Path, dry_run: bool = False) -> bool:
     temp_file = file_path.parent / f"{file_path.stem}_remux_temp{file_path.suffix}"
 
     if dry_run:
-        print(f"    [DRY RUN] Would remux to fix metadata")
+        print("    [DRY RUN] Would remux to fix metadata")
         return True
 
     try:
-        print(f"    Remuxing to fix metadata...")
+        print("    Remuxing to fix metadata...")
 
         # Use mkvmerge for MKV files (properly calculates BPS tags)
         # Use ffmpeg for other formats
@@ -160,7 +160,7 @@ def remux_file(file_path: Path, dry_run: bool = False) -> bool:
 
         # Replace original with remuxed file
         temp_file.replace(file_path)
-        print(f"    ✓ Fixed")
+        print("    ✓ Fixed")
         return True
 
     except Exception as e:

@@ -1,7 +1,7 @@
 """File system operations for browsing and file management."""
 import logging
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, Any
 from app.config import settings
 from app.utils.ffprobe import get_video_info, has_converted_file
 

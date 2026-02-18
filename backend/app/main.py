@@ -96,7 +96,7 @@ app.add_middleware(
 )
 
 # Include routers
-from app.routes import files, jobs, websocket
+from app.routes import files, jobs, websocket  # noqa: E402
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(websocket.router, tags=["websocket"])
