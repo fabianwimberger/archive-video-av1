@@ -1,6 +1,8 @@
 """Configuration management for the conversion service."""
+
 import os
 from pathlib import Path
+
 
 class Settings:
     """Application settings loaded from environment variables."""

@@ -1,4 +1,5 @@
 """Conversion service for executing video conversions with progress tracking."""
+
 import asyncio
 import logging
 from pathlib import Path
@@ -88,9 +89,15 @@ class ConversionService:
 
             async for line in process.stdout:
                 line_str = line.decode().strip()
-                
+
                 # Check if this is a progress line (key=value)
-                is_progress_line = "=" in line_str and not line_str.startswith("STAGE:") and not line_str.startswith("STATUS:") and not line_str.startswith("ERROR:") and not line_str.startswith("CMD:")
+                is_progress_line = (
+                    "=" in line_str
+                    and not line_str.startswith("STAGE:")
+                    and not line_str.startswith("STATUS:")
+                    and not line_str.startswith("ERROR:")
+                    and not line_str.startswith("CMD:")
+                )
 
                 if is_progress_line:
                     key, value = line_str.split("=", 1)
@@ -113,16 +120,25 @@ class ConversionService:
                             pass
                     elif key == "progress":
                         # Calculate percentage and ETA
-                        if progress_data["total_frames"] > 0 and progress_data["frame"] > 0:
+                        if (
+                            progress_data["total_frames"] > 0
+                            and progress_data["frame"] > 0
+                        ):
                             progress_data["percent"] = min(
-                                (progress_data["frame"] / progress_data["total_frames"]) * 100,
-                                100.0
+                                (progress_data["frame"] / progress_data["total_frames"])
+                                * 100,
+                                100.0,
                             )
 
                             # Calculate ETA
                             if progress_data["fps"] > 0:
-                                remaining_frames = progress_data["total_frames"] - progress_data["frame"]
-                                progress_data["eta_seconds"] = int(remaining_frames / progress_data["fps"])
+                                remaining_frames = (
+                                    progress_data["total_frames"]
+                                    - progress_data["frame"]
+                                )
+                                progress_data["eta_seconds"] = int(
+                                    remaining_frames / progress_data["fps"]
+                                )
 
                         # Emit progress update (throttle to every 1 second)
                         current_time = asyncio.get_event_loop().time()
@@ -131,7 +147,7 @@ class ConversionService:
                             progress_data["current_log"] = "\n".join(log_lines)
                             await progress_callback(job_id, progress_data.copy())
                             last_progress_emit = current_time
-                        
+
                         # Compact log entry every 5 seconds
                         if current_time - last_log_append >= 5.0:
                             summary = f"Frame: {progress_buffer.get('frame', 'N/A')} | FPS: {progress_buffer.get('fps', 'N/A')} | Size: {progress_buffer.get('total_size', 'N/A')} | Bitrate: {progress_buffer.get('bitrate', 'N/A')}"

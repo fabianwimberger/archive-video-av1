@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+
 import logging
 import os
 from pathlib import Path
@@ -13,14 +14,16 @@ from app.database import init_db
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 # Ensure logging output if Uvicorn hijacked the root logger but didn't set level/handlers as expected
 if not logging.getLogger().handlers:
     console = logging.StreamHandler()
-    console.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    console.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     logging.getLogger().addHandler(console)
 
 
@@ -29,12 +32,14 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
     logger.info("Starting conversion service...")
-    
+
     # Clean slate: Delete database if it exists
     if os.path.exists(settings.DATABASE_PATH):
         try:
             os.remove(settings.DATABASE_PATH)
-            logger.info(f"Deleted existing database at {settings.DATABASE_PATH} for clean startup")
+            logger.info(
+                f"Deleted existing database at {settings.DATABASE_PATH} for clean startup"
+            )
         except Exception as e:
             logger.error(f"Failed to delete database: {e}")
 
@@ -60,6 +65,7 @@ async def lifespan(app: FastAPI):
 
     # Clean up temp directory on shutdown
     import shutil
+
     temp_path = Path(settings.TEMP_DIR)
     if temp_path.exists():
         try:
@@ -97,6 +103,7 @@ app.add_middleware(
 
 # Include routers
 from app.routes import files, jobs, websocket  # noqa: E402
+
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(websocket.router, tags=["websocket"])
@@ -106,6 +113,7 @@ app.include_router(websocket.router, tags=["websocket"])
 async def health_check():
     """Health check endpoint."""
     from app.services.job_queue import job_queue
+
     queue_status = job_queue.get_queue_status()
 
     return {

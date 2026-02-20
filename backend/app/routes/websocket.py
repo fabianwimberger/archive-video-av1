@@ -1,4 +1,5 @@
 """WebSocket endpoint for real-time updates."""
+
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.websocket_manager import websocket_manager
@@ -22,10 +23,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # Send initial connection message
-        await websocket_manager.send_to(websocket, {
-            "type": "system",
-            "message": "Connected to conversion service",
-        })
+        await websocket_manager.send_to(
+            websocket,
+            {
+                "type": "system",
+                "message": "Connected to conversion service",
+            },
+        )
 
         # Keep connection alive and handle incoming messages
         while True:
@@ -34,9 +38,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Handle ping/pong for keep-alive
                 if data.get("type") == "ping":
-                    await websocket_manager.send_to(websocket, {
-                        "type": "pong",
-                    })
+                    await websocket_manager.send_to(
+                        websocket,
+                        {
+                            "type": "pong",
+                        },
+                    )
 
             except WebSocketDisconnect:
                 logger.info("WebSocket client disconnected normally")

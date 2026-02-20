@@ -1,4 +1,5 @@
 """File system operations for browsing and file management."""
+
 import logging
 from pathlib import Path
 from typing import Dict, Any
@@ -20,9 +21,7 @@ def _directory_has_videos(directory: Path) -> bool:
     """
     try:
         return any(
-            f.suffix.lower() == ".mkv"
-            for f in directory.rglob("*")
-            if f.is_file()
+            f.suffix.lower() == ".mkv" for f in directory.rglob("*") if f.is_file()
         )
     except (OSError, PermissionError):
         return False
@@ -83,10 +82,12 @@ class FileService:
                 if item.is_dir():
                     # Only show directories that contain .mkv files
                     if _directory_has_videos(item):
-                        directories.append({
-                            "name": item.name,
-                            "path": str(item.relative_to(self.source_mount)),
-                        })
+                        directories.append(
+                            {
+                                "name": item.name,
+                                "path": str(item.relative_to(self.source_mount)),
+                            }
+                        )
                 elif item.is_file() and item.suffix.lower() in self.VIDEO_EXTENSIONS:
                     # Check if this is a converted file or a source file
                     is_conv_file = item.stem.endswith("_conv")
@@ -97,18 +98,22 @@ class FileService:
                     if not is_conv_file:
                         has_conv, conv_path = await has_converted_file(str(item))
 
-                    files.append({
-                        "name": item.name,
-                        "path": str(item),
-                        "size": item.stat().st_size,
-                        "mtime": item.stat().st_mtime,
-                        "has_converted": has_conv,
-                        "converted_path": conv_path,
-                        "is_converted_file": is_conv_file,
-                    })
+                    files.append(
+                        {
+                            "name": item.name,
+                            "path": str(item),
+                            "size": item.stat().st_size,
+                            "mtime": item.stat().st_mtime,
+                            "has_converted": has_conv,
+                            "converted_path": conv_path,
+                            "is_converted_file": is_conv_file,
+                        }
+                    )
 
             return {
-                "current_path": str(target_path.relative_to(self.source_mount)) if path else "",
+                "current_path": str(target_path.relative_to(self.source_mount))
+                if path
+                else "",
                 "directories": directories,
                 "files": files,
             }
@@ -210,7 +215,9 @@ class FileService:
             # Safety check: Only allow deleting if converted file exists
             has_conv, _ = await has_converted_file(str(path))
             if not has_conv:
-                raise ValueError("Cannot delete source file: No converted version found")
+                raise ValueError(
+                    "Cannot delete source file: No converted version found"
+                )
 
             # Delete the file
             path.unlink()
