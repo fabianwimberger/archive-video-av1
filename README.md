@@ -251,7 +251,15 @@ Add memory limits via `docker-compose.override.yml` and ensure sufficient RAM fo
 
 ## License
 
-[MIT](LICENSE)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### FFmpeg Notice
+
+This software uses [FFmpeg](https://ffmpeg.org/), which is licensed under the LGPL/GPL. 
+When building and distributing Docker images containing FFmpeg, you must comply with the 
+[FFmpeg license terms](https://ffmpeg.org/legal.html). The FFmpeg binaries are built from 
+source with external libraries (Opus, SVT-AV1) - see [scripts/build.sh](scripts/build.sh) 
+for compilation flags and library versions.
 
 ## Acknowledgments
 
