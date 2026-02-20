@@ -37,8 +37,6 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    # FFmpeg compilation is slow; only run on main branch or manual dispatch
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
