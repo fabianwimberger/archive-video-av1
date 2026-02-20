@@ -98,6 +98,12 @@ class ApiClient {
         });
     }
 
+    async clearQueuedJobs() {
+        return this.request('/jobs/queued', {
+            method: 'DELETE',
+        });
+    }
+
     async clearCompletedJobs() {
         return this.request('/jobs/completed', {
             method: 'DELETE',
