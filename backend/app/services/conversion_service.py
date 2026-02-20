@@ -3,8 +3,22 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Callable, Dict, Any, Optional
+from typing import Callable, Dict, Any, List, Optional, TypedDict
 from app.config import settings
+
+
+class ProgressData(TypedDict):
+    """Progress data structure for conversion jobs."""
+
+    frame: int
+    total_frames: int
+    fps: float
+    percent: float
+    eta_seconds: int
+    stage: str
+    status: str
+    current_log: str
+
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +67,7 @@ class ConversionService:
         logger.info(f"Starting conversion job {job_id}: {source_file} -> {output_file}")
 
         # Initialize progress data
-        progress_data = {
+        progress_data: ProgressData = {
             "frame": 0,
             "total_frames": 0,
             "fps": 0.0,
@@ -61,9 +75,10 @@ class ConversionService:
             "eta_seconds": 0,
             "stage": "initializing",
             "status": "Starting conversion...",
+            "current_log": "",
         }
 
-        log_lines = []
+        log_lines: List[str] = []
 
         try:
             # Execute process
@@ -83,10 +98,11 @@ class ConversionService:
                 await process_callback(process)
 
             # Parse stdout line-by-line
-            last_progress_emit = 0
-            last_log_append = 0
+            last_progress_emit = 0.0
+            last_log_append = 0.0
             progress_buffer = {}
 
+            assert process.stdout is not None
             async for line in process.stdout:
                 line_str = line.decode().strip()
 
@@ -120,24 +136,20 @@ class ConversionService:
                             pass
                     elif key == "progress":
                         # Calculate percentage and ETA
-                        if (
-                            progress_data["total_frames"] > 0
-                            and progress_data["frame"] > 0
-                        ):
+                        total_frames = progress_data["total_frames"]
+                        frame = progress_data["frame"]
+                        if total_frames > 0 and frame > 0:
                             progress_data["percent"] = min(
-                                (progress_data["frame"] / progress_data["total_frames"])
-                                * 100,
+                                (frame / total_frames) * 100,
                                 100.0,
                             )
 
                             # Calculate ETA
-                            if progress_data["fps"] > 0:
-                                remaining_frames = (
-                                    progress_data["total_frames"]
-                                    - progress_data["frame"]
-                                )
+                            fps = progress_data["fps"]
+                            if fps > 0:
+                                remaining_frames = total_frames - frame
                                 progress_data["eta_seconds"] = int(
-                                    remaining_frames / progress_data["fps"]
+                                    remaining_frames / fps
                                 )
 
                         # Emit progress update (throttle to every 1 second)
@@ -193,6 +205,7 @@ class ConversionService:
             await process.wait()
 
             # Capture stderr
+            assert process.stderr is not None
             stderr_output = await process.stderr.read()
             if stderr_output:
                 stderr_str = stderr_output.decode().strip()

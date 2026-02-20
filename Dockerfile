@@ -41,7 +41,7 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-train; \
     fi
 
-# Layer 3: Rebuild FFmpeg with -fprofile-use (rebuilds if training/profies change)
+# Layer 3: Rebuild FFmpeg with -fprofile-use (rebuilds if training/profiles change)
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-use; \
     else \

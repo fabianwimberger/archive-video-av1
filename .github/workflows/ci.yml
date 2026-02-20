@@ -19,20 +19,17 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Ruff
-        run: |
-          pip install ruff
-          ruff check backend/ scripts/
+      - name: Install linting tools
+        run: pip install ruff mypy
+
+      - name: Ruff check
+        run: ruff check backend/ scripts/
 
       - name: Ruff format check
-        run: |
-          pip install ruff
-          ruff format --check backend/ scripts/
+        run: ruff format --check backend/ scripts/
 
       - name: Type check with mypy
-        run: |
-          pip install mypy
-          mypy backend/ --ignore-missing-imports || true
+        run: mypy backend/ --ignore-missing-imports
 
   docker:
     name: Docker Build

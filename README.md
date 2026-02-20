@@ -29,8 +29,8 @@ A self-hosted, web-based video conversion service running in Docker. Converts vi
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/fabianwimberger/convert-video-docker.git
-cd convert-video-docker
+git clone https://github.com/fabianwimberger/archive-video-av1.git
+cd archive-video-av1
 ```
 
 Edit `docker-compose.yml` and set your video directory:
