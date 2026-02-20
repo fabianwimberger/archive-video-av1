@@ -1,4 +1,5 @@
 """Job database model."""
+
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, Text, DateTime, Index
 from app.database import Base
@@ -17,11 +18,15 @@ class Job(Base):
     output_file = Column(String, nullable=False)
 
     # Conversion settings
-    mode = Column(String, nullable=False, default="default")  # 'default', 'animated' or 'grainy'
+    mode = Column(
+        String, nullable=False, default="default"
+    )  # 'default', 'animated' or 'grainy'
     settings = Column(Text, default="{}")  # JSON string with CRF, preset, etc.
 
     # Status tracking
-    status = Column(String, nullable=False, default="pending")  # pending, processing, completed, failed
+    status = Column(
+        String, nullable=False, default="pending"
+    )  # pending, processing, completed, failed
     progress_percent = Column(Float, default=0.0)
     eta_seconds = Column(Integer, nullable=True)
     current_fps = Column(Float, nullable=True)
@@ -37,6 +42,6 @@ class Job(Base):
 
     # Indexes
     __table_args__ = (
-        Index('idx_jobs_status', 'status'),
-        Index('idx_jobs_created_at', 'created_at'),
+        Index("idx_jobs_status", "status"),
+        Index("idx_jobs_created_at", "created_at"),
     )

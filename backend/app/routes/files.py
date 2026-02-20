@@ -1,4 +1,5 @@
 """File management API endpoints."""
+
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from app.services.file_service import file_service
@@ -9,7 +10,9 @@ router = APIRouter()
 
 
 @router.get("")
-async def browse_files(path: str = Query(None, description="Relative path from source mount")):
+async def browse_files(
+    path: str = Query(None, description="Relative path from source mount"),
+):
     """
     Browse directory and list video files.
 
@@ -51,7 +54,9 @@ async def get_file_info(path: str = Query(..., description="Absolute path to fil
 
 
 @router.delete("/converted")
-async def delete_converted_file(path: str = Query(..., description="Path to converted file")):
+async def delete_converted_file(
+    path: str = Query(..., description="Path to converted file"),
+):
     """
     Delete a converted video file.
 

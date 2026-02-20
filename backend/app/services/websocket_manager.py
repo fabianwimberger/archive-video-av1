@@ -1,4 +1,5 @@
 """WebSocket connection manager for broadcasting updates."""
+
 import logging
 from typing import Set
 from fastapi import WebSocket
@@ -31,7 +32,9 @@ class WebSocketManager:
             websocket: WebSocket connection
         """
         self.connections.discard(websocket)
-        logger.info(f"WebSocket disconnected. Total connections: {len(self.connections)}")
+        logger.info(
+            f"WebSocket disconnected. Total connections: {len(self.connections)}"
+        )
 
     async def broadcast(self, message: dict):
         """

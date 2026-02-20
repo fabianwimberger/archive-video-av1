@@ -3,6 +3,7 @@
 Script to detect and fix metadata inconsistencies in video files.
 Remuxes files with incorrect metadata using ffmpeg -c copy (no re-encoding).
 """
+
 import json
 import subprocess
 import sys
@@ -16,15 +17,17 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
         result = subprocess.run(
             [
                 "ffprobe",
-                "-v", "quiet",
-                "-print_format", "json",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
                 "-show_format",
                 "-show_streams",
-                str(file_path)
+                str(file_path),
             ],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
 
         data = json.loads(result.stdout)
@@ -48,11 +51,9 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
             tags = stream.get("tags", {})
             bps_tag = int(tags.get("BPS", 0))
 
-            stream_details.append({
-                "type": codec_type,
-                "codec": codec_name,
-                "bps": bps_tag
-            })
+            stream_details.append(
+                {"type": codec_type, "codec": codec_name, "bps": bps_tag}
+            )
 
             total_stream_bitrate += bps_tag
 
@@ -71,7 +72,9 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
             has_issue = True
             issues.append("Missing BPS tags in stream metadata")
         else:
-            diff_percent = abs(expected_file_size - actual_file_size) / actual_file_size * 100
+            diff_percent = (
+                abs(expected_file_size - actual_file_size) / actual_file_size * 100
+            )
 
             if diff_percent > 5.0:
                 has_issue = True
@@ -87,7 +90,7 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
             "duration": duration,
             "actual_size": actual_file_size,
             "expected_size": expected_file_size,
-            "stream_details": stream_details
+            "stream_details": stream_details,
         }
 
     except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError, OSError):
@@ -129,26 +132,25 @@ def remux_file(file_path: Path, dry_run: bool = False) -> bool:
         # Use ffmpeg for other formats
         if file_path.suffix.lower() == ".mkv":
             result = subprocess.run(
-                [
-                    "mkvmerge",
-                    "-o", str(temp_file),
-                    str(file_path)
-                ],
+                ["mkvmerge", "-o", str(temp_file), str(file_path)],
                 capture_output=True,
-                text=True
+                text=True,
             )
         else:
             result = subprocess.run(
                 [
                     "ffmpeg",
-                    "-i", str(file_path),
-                    "-c", "copy",
-                    "-map", "0",
+                    "-i",
+                    str(file_path),
+                    "-c",
+                    "copy",
+                    "-map",
+                    "0",
                     "-y",
-                    str(temp_file)
+                    str(temp_file),
                 ],
                 capture_output=True,
-                text=True
+                text=True,
             )
 
         if result.returncode != 0:
@@ -173,7 +175,7 @@ def remux_file(file_path: Path, dry_run: bool = False) -> bool:
 def scan_and_fix(
     root_dir: Path,
     extensions: tuple = (".mkv", ".mp4", ".avi", ".mov", ".webm"),
-    dry_run: bool = False
+    dry_run: bool = False,
 ):
     """Scan directory recursively and fix files with metadata issues."""
 
@@ -242,20 +244,16 @@ if __name__ == "__main__":
         description="Detect and fix metadata inconsistencies in video files"
     )
     parser.add_argument(
-        "directory",
-        type=Path,
-        help="Root directory to scan (scans all subdirectories)"
+        "directory", type=Path, help="Root directory to scan (scans all subdirectories)"
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Only detect issues without fixing them"
+        "--dry-run", action="store_true", help="Only detect issues without fixing them"
     )
     parser.add_argument(
         "--extensions",
         nargs="+",
         default=[".mkv", ".mp4", ".avi", ".mov", ".webm"],
-        help="Video file extensions to check (default: .mkv .mp4 .avi .mov .webm)"
+        help="Video file extensions to check (default: .mkv .mp4 .avi .mov .webm)",
     )
 
     args = parser.parse_args()
@@ -269,11 +267,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-        scan_and_fix(
-            args.directory,
-            tuple(args.extensions),
-            args.dry_run
-        )
+        scan_and_fix(args.directory, tuple(args.extensions), args.dry_run)
     except KeyboardInterrupt:
         print("\n\nInterrupted by user.")
         sys.exit(1)

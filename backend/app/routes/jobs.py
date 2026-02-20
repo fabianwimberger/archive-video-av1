@@ -1,4 +1,5 @@
 """Job management API endpoints."""
+
 import asyncio
 import json
 import logging
@@ -71,7 +72,9 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/batch", response_model=JobCreateResponse)
-async def create_batch_jobs(batch_data: JobBatchCreate, db: AsyncSession = Depends(get_db)):
+async def create_batch_jobs(
+    batch_data: JobBatchCreate, db: AsyncSession = Depends(get_db)
+):
     """
     Create multiple conversion jobs.
 
@@ -276,16 +279,19 @@ async def delete_or_cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
                 if job_queue.current_job_id == job_id:
                     cancelled = await job_queue.cancel_current_job()
                     if not cancelled:
-                        raise HTTPException(status_code=500, detail="Failed to send cancel signal to running process")
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Failed to send cancel signal to running process",
+                        )
                 # The worker will handle the status update
-            else: # "pending"
+            else:  # "pending"
                 job_queue.removed_job_ids.add(job_id)
                 await db.delete(job)
                 await db.commit()
-            
+
             logger.info(f"Cancelled job {job_id}")
             return {"success": True, "message": f"Job {job_id} cancelled"}
-        
+
         # Handle deletion of finished jobs
         elif job.status in ["completed", "failed", "cancelled"]:
             await db.delete(job)
@@ -294,7 +300,9 @@ async def delete_or_cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
             return {"success": True, "message": f"Job {job_id} deleted"}
 
         else:
-            raise HTTPException(status_code=400, detail=f"Cannot delete job with status '{job.status}'")
+            raise HTTPException(
+                status_code=400, detail=f"Cannot delete job with status '{job.status}'"
+            )
 
     except HTTPException:
         raise

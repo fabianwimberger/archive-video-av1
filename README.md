@@ -1,8 +1,9 @@
 # Video Conversion Service
 
-A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
+[![CI](https://github.com/fabianwimberger/convert-video-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/convert-video-docker/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![License](https://img.shields.io/badge/License-MIT-blue)
+A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
 
 > **Disclaimer:** This software is provided as-is without any warranties. Use at your own risk. The authors are not responsible for any data loss or damages that may occur.
 
@@ -250,7 +251,15 @@ Add memory limits via `docker-compose.override.yml` and ensure sufficient RAM fo
 
 ## License
 
-[MIT](LICENSE)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### FFmpeg Notice
+
+This software uses [FFmpeg](https://ffmpeg.org/), which is licensed under the LGPL/GPL. 
+When building and distributing Docker images containing FFmpeg, you must comply with the 
+[FFmpeg license terms](https://ffmpeg.org/legal.html). The FFmpeg binaries are built from 
+source with external libraries (Opus, SVT-AV1) - see [scripts/build.sh](scripts/build.sh) 
+for compilation flags and library versions.
 
 ## Acknowledgments
 

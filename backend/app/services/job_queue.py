@@ -1,4 +1,5 @@
 """Job queue manager with background worker."""
+
 import asyncio
 import json
 import logging
@@ -43,20 +44,20 @@ class JobQueue:
             # Mark as cancelled
             if self.current_job_id:
                 self.cancelled_job_ids.add(self.current_job_id)
-            
+
             try:
                 # Kill the entire process group
                 os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
-                
+
                 # Give it a moment to terminate gracefully
                 await asyncio.sleep(0.5)
-                
+
                 # If still running, force kill the group
                 if self.current_process.returncode is None:
                     try:
                         os.killpg(os.getpgid(self.current_process.pid), signal.SIGKILL)
                     except ProcessLookupError:
-                        pass # Process already gone
+                        pass  # Process already gone
                 return True
             except ProcessLookupError:
                 logger.warning(f"Process {self.current_job_id} already terminated")
@@ -78,11 +79,13 @@ class JobQueue:
 
         # Broadcast queue update
         if self.websocket_manager:
-            await self.websocket_manager.broadcast({
-                "type": "queue_update",
-                "queue_size": self.queue.qsize(),
-                "active_job_id": self.current_job_id,
-            })
+            await self.websocket_manager.broadcast(
+                {
+                    "type": "queue_update",
+                    "queue_size": self.queue.qsize(),
+                    "active_job_id": self.current_job_id,
+                }
+            )
 
     async def start_worker(self):
         """Start background worker task."""
@@ -138,11 +141,13 @@ class JobQueue:
 
                 # Broadcast queue update
                 if self.websocket_manager:
-                    await self.websocket_manager.broadcast({
-                        "type": "queue_update",
-                        "queue_size": self.queue.qsize(),
-                        "active_job_id": self.current_job_id,
-                    })
+                    await self.websocket_manager.broadcast(
+                        {
+                            "type": "queue_update",
+                            "queue_size": self.queue.qsize(),
+                            "active_job_id": self.current_job_id,
+                        }
+                    )
 
             except asyncio.CancelledError:
                 logger.info("Worker loop cancelled")
@@ -175,12 +180,14 @@ class JobQueue:
 
                 # Broadcast status change
                 if self.websocket_manager:
-                    await self.websocket_manager.broadcast({
-                        "type": "job_status",
-                        "job_id": job_id,
-                        "status": "processing",
-                        "error": None,
-                    })
+                    await self.websocket_manager.broadcast(
+                        {
+                            "type": "job_status",
+                            "job_id": job_id,
+                            "status": "processing",
+                            "error": None,
+                        }
+                    )
 
                 # Parse settings
                 settings = json.loads(job.settings) if job.settings else {}
@@ -196,7 +203,7 @@ class JobQueue:
                                 "current_fps": progress_data.get("fps"),
                                 "eta_seconds": progress_data.get("eta_seconds"),
                             }
-                            
+
                             # Update log if available (allows real-time log viewing)
                             if "current_log" in progress_data:
                                 update_values["log"] = progress_data["current_log"]
@@ -211,13 +218,17 @@ class JobQueue:
 
                             # Broadcast to WebSocket clients
                             if self.websocket_manager:
-                                await self.websocket_manager.broadcast({
-                                    "type": "job_progress",
-                                    "job_id": job_id,
-                                    "data": progress_data,
-                                })
+                                await self.websocket_manager.broadcast(
+                                    {
+                                        "type": "job_progress",
+                                        "job_id": job_id,
+                                        "data": progress_data,
+                                    }
+                                )
                         except Exception as e:
-                            logger.error(f"Error updating progress for job {job_id}: {e}")
+                            logger.error(
+                                f"Error updating progress for job {job_id}: {e}"
+                            )
 
                 # Define process callback to store reference
                 async def on_process(process):
@@ -248,8 +259,14 @@ class JobQueue:
                     job.status = "completed" if success else "failed"
                     if not success:
                         # Extract error message from log
-                        error_lines = [line for line in log.split("\n") if line.startswith("ERROR:")]
-                        job.error_message = error_lines[-1] if error_lines else "Conversion failed"
+                        error_lines = [
+                            line
+                            for line in log.split("\n")
+                            if line.startswith("ERROR:")
+                        ]
+                        job.error_message = (
+                            error_lines[-1] if error_lines else "Conversion failed"
+                        )
 
                 job.completed_at = datetime.now(timezone.utc)
                 job.progress_percent = 100.0 if success else job.progress_percent
@@ -259,12 +276,14 @@ class JobQueue:
 
                 # Broadcast final status
                 if self.websocket_manager:
-                    await self.websocket_manager.broadcast({
-                        "type": "job_status",
-                        "job_id": job_id,
-                        "status": job.status,
-                        "error": job.error_message,
-                    })
+                    await self.websocket_manager.broadcast(
+                        {
+                            "type": "job_status",
+                            "job_id": job_id,
+                            "status": job.status,
+                            "error": job.error_message,
+                        }
+                    )
 
                 logger.info(f"Job {job_id} finished with status: {job.status}")
 
@@ -282,12 +301,14 @@ class JobQueue:
                         await db.commit()
 
                         if self.websocket_manager:
-                            await self.websocket_manager.broadcast({
-                                "type": "job_status",
-                                "job_id": job_id,
-                                "status": "failed",
-                                "error": str(e),
-                            })
+                            await self.websocket_manager.broadcast(
+                                {
+                                    "type": "job_status",
+                                    "job_id": job_id,
+                                    "status": "failed",
+                                    "error": str(e),
+                                }
+                            )
                 except Exception as db_error:
                     logger.error(f"Error updating failed job {job_id}: {db_error}")
 

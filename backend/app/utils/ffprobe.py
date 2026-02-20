@@ -1,4 +1,5 @@
 """FFprobe wrapper utilities for extracting video metadata."""
+
 import asyncio
 import json
 import logging
@@ -21,8 +22,10 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
         # Run ffprobe to get JSON output
         process = await asyncio.create_subprocess_exec(
             "ffprobe",
-            "-v", "quiet",
-            "-print_format", "json",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_streams",
             file_path,
@@ -40,8 +43,7 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
 
         # Extract relevant info
         video_stream = next(
-            (s for s in data.get("streams", []) if s.get("codec_type") == "video"),
-            None
+            (s for s in data.get("streams", []) if s.get("codec_type") == "video"), None
         )
 
         if not video_stream:
@@ -102,4 +104,6 @@ async def has_converted_file(source_file: str) -> tuple[bool, Optional[str]]:
 
     converted_path = parent / f"{stem}_conv{ext}"
 
-    return converted_path.exists(), str(converted_path) if converted_path.exists() else None
+    return converted_path.exists(), str(
+        converted_path
+    ) if converted_path.exists() else None
