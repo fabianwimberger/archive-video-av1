@@ -1,6 +1,6 @@
 # Video Conversion Service
 
-[![CI](https://github.com/fabianwimberger/convert-video-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/convert-video-docker/actions)
+[![CI](https://github.com/fabianwimberger/archive-video-av1/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/archive-video-av1/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
