@@ -195,6 +195,38 @@ async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/queued")
+async def clear_queued_jobs(db: AsyncSession = Depends(get_db)):
+    """
+    Clear all pending (queued) jobs.
+
+    Args:
+        db: Database session
+
+    Returns:
+        Number of jobs deleted
+    """
+    try:
+        # Mark pending jobs as removed so worker skips them
+        result = await db.execute(select(Job).where(Job.status == "pending"))
+        pending_jobs = result.scalars().all()
+        for job in pending_jobs:
+            job_queue.removed_job_ids.add(job.id)
+
+        # Delete pending jobs from database
+        result = await db.execute(delete(Job).where(Job.status == "pending"))
+        deleted_count = result.rowcount
+        await db.commit()
+
+        logger.info(f"Cleared {deleted_count} queued jobs")
+
+        return {"deleted_count": deleted_count}
+
+    except Exception as e:
+        logger.error(f"Error clearing queued jobs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/completed")
 async def clear_completed_jobs(db: AsyncSession = Depends(get_db)):
     """

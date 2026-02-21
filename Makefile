@@ -21,3 +21,7 @@ clean:
 lint:
 	@echo "Running linters..."
 	@ruff check backend/ scripts/
+
+format:
+	@echo "Formatting code..."
+	@ruff format backend/ scripts/

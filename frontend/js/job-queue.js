@@ -55,6 +55,26 @@ class JobQueue {
             }
         });
 
+        document.getElementById('btn-clear-queued').addEventListener('click', async () => {
+            const pendingCount = Array.from(this.jobs.values()).filter(j => j.status === 'pending').length;
+
+            if (pendingCount === 0) {
+                return;
+            }
+
+            if (!confirm(`Clear ${pendingCount} queued job(s)?`)) {
+                return;
+            }
+
+            try {
+                await api.clearQueuedJobs();
+                await this.loadJobs();
+            } catch (error) {
+                console.error('Error clearing queued jobs:', error);
+                alert('Failed to clear queued jobs');
+            }
+        });
+
         document.getElementById('btn-clear-all').addEventListener('click', async () => {
             if (this.jobs.size === 0) return;
 
