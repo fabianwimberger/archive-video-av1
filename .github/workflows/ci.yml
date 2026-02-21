@@ -2,14 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.13"
 
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,15 +21,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install linting tools
         run: pip install ruff mypy
 
-      - name: Ruff check
+      - name: Lint with ruff
         run: ruff check backend/ scripts/
 
-      - name: Ruff format check
+      - name: Format check with ruff
         run: ruff format --check backend/ scripts/
 
       - name: Type check with mypy
@@ -34,12 +38,13 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build
-        run: docker build -t convert-video-docker:test --build-arg ENABLE_PGO=false .
+      - name: Build Docker image
+        run: docker build -t archive-video-av1:test --build-arg ENABLE_PGO=false .
 
-      - name: Test
-        run: docker run --rm convert-video-docker:test python3 --version
+      - name: Test container starts
+        run: docker run --rm archive-video-av1:test python3 --version
