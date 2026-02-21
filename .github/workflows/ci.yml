@@ -38,13 +38,23 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: docker build -t archive-video-av1:test --build-arg ENABLE_PGO=false .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: archive-video-av1:test
+          build-args: ENABLE_PGO=false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
 
       - name: Test container starts
         run: docker run --rm archive-video-av1:test python3 --version

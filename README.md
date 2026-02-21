@@ -111,7 +111,7 @@ ports:
 
 ### Alternative: Reverse Proxy
 
-See [docker-compose.override.yml](docker-compose.override.yml) example for Traefik configuration with basic auth.
+See [docker-compose.yml](docker-compose.yml) example for Traefik configuration with basic auth.
 
 ## License
 
