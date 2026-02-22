@@ -1,0 +1,8 @@
+services:
+  convert-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENABLE_PGO: "true"
+    image: archive-video-av1:local
