@@ -1,6 +1,7 @@
 # Video Conversion Service
 
 [![CI](https://github.com/fabianwimberger/archive-video-av1/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/archive-video-av1/actions)
+[![Docker](https://github.com/fabianwimberger/archive-video-av1/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/fabianwimberger/archive-video-av1/pkgs/container/archive-video-av1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
@@ -80,12 +81,15 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 ### Available Image Tags
 
+The following image tags are available from `ghcr.io/fabianwimberger/archive-video-av1`:
+
 | Tag | Description |
 |-----|-------------|
-| `latest` | Latest stable release |
-| `vX.Y.Z` | Specific version (e.g., `v1.2.3`) |
-| `vX.Y` | Latest patch for minor version |
-| `vX` | Latest release for major version |
+| `main` | Latest development build from main branch |
+| `v1.2.3` | Specific release version |
+| `v1.2` | Latest patch release in the v1.2.x series |
+| `v1` | Latest minor release in the v1.x.x series |
+| `<short-sha>` | Specific commit SHA (e.g., `abc1234`)
 
 ### Updating
 
