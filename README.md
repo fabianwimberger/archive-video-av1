@@ -26,6 +26,41 @@ AV1 offers superior compression efficiency compared to H.264 and H.265, reducing
 
 ## Quick Start
 
+### Option 1: Using Pre-built Image (Recommended)
+
+**Docker Compose:**
+
+```bash
+# Clone the repository for docker-compose.yml
+git clone https://github.com/fabianwimberger/archive-video-av1.git
+cd archive-video-av1
+
+# Configure volume mount in docker-compose.yml
+# volumes:
+#   - /path/to/your/videos:/videos
+
+# Run with pre-built image
+docker compose up -d
+
+# Open UI at http://localhost:8000
+```
+
+**Or with docker run:**
+
+```bash
+docker run -d \
+  --name convert-service \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v /path/to/your/videos:/videos \
+  -e TZ=UTC \
+  -e SOURCE_MOUNT=/videos \
+  -e LOG_LEVEL=INFO \
+  ghcr.io/fabianwimberger/archive-video-av1:latest
+```
+
+### Option 2: Build from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/fabianwimberger/archive-video-av1.git
@@ -36,10 +71,32 @@ cd archive-video-av1
 #   - /path/to/your/videos:/videos
 
 # Build and run
-docker compose build
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 # Open UI at http://localhost:8000
+```
+
+**Note:** Pre-built images disable PGO (Profile-Guided Optimization) for broader CPU compatibility. For maximum performance on your specific hardware, build from source with PGO enabled.
+
+### Available Image Tags
+
+| Tag | Description |
+|-----|-------------|
+| `latest` | Latest stable release |
+| `vX.Y.Z` | Specific version (e.g., `v1.2.3`) |
+| `vX.Y` | Latest patch for minor version |
+| `vX` | Latest release for major version |
+
+### Updating
+
+```bash
+# Pull latest image
+docker compose pull
+docker compose up -d
+
+# Or with docker run
+docker pull ghcr.io/fabianwimberger/archive-video-av1:latest
+docker restart convert-service
 ```
 
 ## How It Works
@@ -117,6 +174,14 @@ See [docker-compose.yml](docker-compose.yml) example for Traefik configuration w
 
 MIT License — see [LICENSE](LICENSE) file.
 
-### FFmpeg Notice
+### Third-Party Licenses
 
-This software uses [FFmpeg](https://ffmpeg.org/), which is licensed under the LGPL/GPL. When building and distributing Docker images containing FFmpeg, you must comply with the [FFmpeg license terms](https://ffmpeg.org/legal.html).
+This software includes the following open-source components:
+
+| Component | License | Source |
+|-----------|---------|--------|
+| FFmpeg | [GPL v2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) | https://git.ffmpeg.org/ffmpeg.git |
+| SVT-AV1 | [BSD-3-Clause](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/LICENSE.md) | https://gitlab.com/AOMediaCodec/SVT-AV1 |
+| Opus | [BSD-3-Clause](https://opus-codec.org/license/) | https://opus-codec.org/ |
+
+When using the pre-built Docker image, FFmpeg is compiled with GPL enabled. The FFmpeg license notice is included in the image at `/usr/share/licenses/FFmpeg-LICENSE`.
