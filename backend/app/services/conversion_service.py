@@ -29,10 +29,10 @@ class ConversionService:
 
     # Allowed characters for SVT-AV1 parameters (key=value pairs separated by colons)
     # Format: key=value[:key=value...]
-    SVT_PARAMS_PATTERN = re.compile(r'^[a-zA-Z0-9_\-=/:.]+$')
+    SVT_PARAMS_PATTERN = re.compile(r"^[a-zA-Z0-9_\-=/:.]+$")
 
     # Audio bitrate pattern: number followed by k (e.g., 96k, 128k, 320k)
-    AUDIO_BITRATE_PATTERN = re.compile(r'^\d+[kK]$')
+    AUDIO_BITRATE_PATTERN = re.compile(r"^\d+[kK]$")
 
     def __init__(self):
         self.wrapper_script = settings.CONVERSION_WRAPPER_SCRIPT
