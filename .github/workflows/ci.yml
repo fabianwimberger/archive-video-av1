@@ -58,3 +58,6 @@ jobs:
 
       - name: Test container starts
         run: docker run --rm archive-video-av1:test python3 --version
+
+      - name: Verify license file exists
+        run: docker run --rm archive-video-av1:test cat /usr/share/licenses/FFmpeg-LICENSE

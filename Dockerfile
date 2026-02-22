@@ -82,9 +82,28 @@ WORKDIR /app
 
 COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
 
+# Install Python runtime dependencies and add license notices
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     python3 python3-venv ca-certificates mkvtoolnix bash \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /usr/share/licenses \
+    && echo "================================================================================" > /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "FFmpeg License Notice" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "================================================================================" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "This software uses FFmpeg (https://ffmpeg.org/), which is licensed under" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "the GNU General Public License version 2 or later (GPL v2+)." >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "FFmpeg source code can be obtained from:" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "  https://git.ffmpeg.org/ffmpeg.git" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "The full GPL v2 license text is available at:" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "  https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "This Docker image also includes:" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "  - SVT-AV1 (BSD-3-Clause): https://gitlab.com/AOMediaCodec/SVT-AV1" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "  - Opus (BSD-3-Clause): https://opus-codec.org/" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "================================================================================" >> /usr/share/licenses/FFmpeg-LICENSE
 
 COPY backend/requirements.txt .
 RUN python3 -m venv /app/venv \
