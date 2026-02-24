@@ -7,7 +7,17 @@ ARG ENABLE_PGO="false"
 ARG TARGETARCH
 
 ENV PGO_DIR="/build/profiles"
-ENV ARCH_FLAGS=""
+
+# Set architecture flags based on TARGETARCH
+# For amd64: use x86-64-v3 (AVX2, BMI2, etc. - widely supported since ~2013)
+# For arm64: use armv8-a
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        echo "ARCH_FLAGS=-march=x86-64-v3" >> /etc/environment; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        echo "ARCH_FLAGS=-march=armv8-a" >> /etc/environment; \
+    else \
+        echo "ARCH_FLAGS=" >> /etc/environment; \
+    fi
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential cmake nasm pkg-config \
@@ -32,20 +42,9 @@ RUN chmod +x /build/build.sh
 # Note: Put this AFTER the build script so changing samples doesn't invalidate earlier layers
 COPY sample/ /build/samples/
 
-# Set architecture flags for multi-arch builds
-# For amd64: use generic x86-64-v2 (baseline for modern x86_64)
-# For arm64: use generic armv8-a
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        echo "ARCH_FLAGS=-march=x86-64-v2" > /build/arch_flags.txt; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        echo "ARCH_FLAGS=-march=armv8-a" > /build/arch_flags.txt; \
-    else \
-        echo "ARCH_FLAGS=" > /build/arch_flags.txt; \
-    fi
-
 # Build with PGO
 # Layer 1: Build Opus and FFmpeg with -fprofile-generate (cached if sources/script unchanged)
-RUN export ARCH_FLAGS=$(cat /build/arch_flags.txt | cut -d= -f2) && \
+RUN export ARCH_FLAGS=$(grep ARCH_FLAGS /etc/environment | cut -d= -f2) && \
     if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-generate; \
     fi
@@ -56,7 +55,7 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
     fi
 
 # Layer 3: Rebuild FFmpeg with -fprofile-use (rebuilds if training/profiles change)
-RUN export ARCH_FLAGS=$(cat /build/arch_flags.txt | cut -d= -f2) && \
+RUN export ARCH_FLAGS=$(grep ARCH_FLAGS /etc/environment | cut -d= -f2) && \
     if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-use; \
     else \
