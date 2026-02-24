@@ -3,9 +3,11 @@ FROM ubuntu:25.10 AS builder
 
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.0.1"
-ARG ENABLE_PGO="true"
+ARG ENABLE_PGO="false"
+ARG TARGETARCH
 
 ENV PGO_DIR="/build/profiles"
+ENV ARCH_FLAGS=""
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential cmake nasm pkg-config \
@@ -30,9 +32,21 @@ RUN chmod +x /build/build.sh
 # Note: Put this AFTER the build script so changing samples doesn't invalidate earlier layers
 COPY sample/ /build/samples/
 
+# Set architecture flags for multi-arch builds
+# For amd64: use generic x86-64-v2 (baseline for modern x86_64)
+# For arm64: use generic armv8-a
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        echo "ARCH_FLAGS=-march=x86-64-v2" > /build/arch_flags.txt; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        echo "ARCH_FLAGS=-march=armv8-a" > /build/arch_flags.txt; \
+    else \
+        echo "ARCH_FLAGS=" > /build/arch_flags.txt; \
+    fi
+
 # Build with PGO
 # Layer 1: Build Opus and FFmpeg with -fprofile-generate (cached if sources/script unchanged)
-RUN if [ "$ENABLE_PGO" = "true" ]; then \
+RUN export ARCH_FLAGS=$(cat /build/arch_flags.txt | cut -d= -f2) && \
+    if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-generate; \
     fi
 
@@ -42,7 +56,8 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
     fi
 
 # Layer 3: Rebuild FFmpeg with -fprofile-use (rebuilds if training/profiles change)
-RUN if [ "$ENABLE_PGO" = "true" ]; then \
+RUN export ARCH_FLAGS=$(cat /build/arch_flags.txt | cut -d= -f2) && \
+    if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-use; \
     else \
         /build/build.sh standard; \
