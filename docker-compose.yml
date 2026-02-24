@@ -1,8 +1,6 @@
 services:
   convert-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/fabianwimberger/archive-video-av1:latest
     container_name: convert-service
     restart: unless-stopped
     ports:

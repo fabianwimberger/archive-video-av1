@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import Callable, Dict, Any, List, Optional, TypedDict
 from app.config import settings
@@ -26,8 +27,50 @@ logger = logging.getLogger(__name__)
 class ConversionService:
     """Service for managing video conversions."""
 
+    # Allowed characters for SVT-AV1 parameters (key=value pairs separated by colons)
+    # Format: key=value[:key=value...]
+    SVT_PARAMS_PATTERN = re.compile(r"^[a-zA-Z0-9_\-=/:.]+$")
+
+    # Audio bitrate pattern: number followed by k (e.g., 96k, 128k, 320k)
+    AUDIO_BITRATE_PATTERN = re.compile(r"^\d+[kK]$")
+
     def __init__(self):
         self.wrapper_script = settings.CONVERSION_WRAPPER_SCRIPT
+
+    def _validate_conversion_settings(self, settings: Dict[str, Any]) -> None:
+        """
+        Validate conversion settings to prevent command injection.
+
+        Args:
+            settings: Conversion settings dictionary
+
+        Raises:
+            ValueError: If validation fails
+        """
+        # Validate svt_params format (prevent shell injection)
+        svt_params = settings.get("svt_params", "")
+        if not self.SVT_PARAMS_PATTERN.match(svt_params):
+            raise ValueError(
+                "Invalid SVT parameters format. Only alphanumeric characters, "
+                "underscores, hyphens, colons, equals signs, dots, and forward slashes are allowed."
+            )
+
+        # Validate audio bitrate format
+        audio_bitrate = settings.get("audio_bitrate", "")
+        if not self.AUDIO_BITRATE_PATTERN.match(audio_bitrate):
+            raise ValueError(
+                "Invalid audio bitrate format. Expected format: number followed by 'k' or 'K' (e.g., 96k, 128k)."
+            )
+
+        # Validate CRF range (redundant with Pydantic but adds defense in depth)
+        crf = settings.get("crf")
+        if not isinstance(crf, int) or not (0 <= crf <= 51):
+            raise ValueError("CRF must be an integer between 0 and 51.")
+
+        # Validate preset range
+        preset = settings.get("preset")
+        if not isinstance(preset, int) or not (0 <= preset <= 13):
+            raise ValueError("Preset must be an integer between 0 and 13.")
 
     async def convert_file(
         self,
@@ -52,6 +95,9 @@ class ConversionService:
         Returns:
             Tuple of (success, log)
         """
+        # Validate conversion settings before building command
+        self._validate_conversion_settings(conversion_settings)
+
         # Build command arguments
         cmd = [
             self.wrapper_script,
