@@ -4,10 +4,12 @@ FROM ubuntu:25.10 AS builder
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.0.1"
 ARG ENABLE_PGO="false"
+ARG ENABLE_LTO="true"
 ARG ARCH_FLAGS
 
 ENV PGO_DIR="/build/profiles"
 ENV ARCH_FLAGS=${ARCH_FLAGS}
+ENV ENABLE_LTO=${ENABLE_LTO}
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential cmake nasm pkg-config \
