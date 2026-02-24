@@ -51,7 +51,9 @@ jobs:
         with:
           context: .
           tags: archive-video-av1:test
-          build-args: ENABLE_PGO=false
+          build-args: |
+            ENABLE_PGO=false
+            ENABLE_LTO=false
           cache-from: type=gha
           cache-to: type=gha,mode=max
           load: true

@@ -81,7 +81,7 @@ make build
 make up
 
 # Or using docker compose directly:
-# docker compose build --build-arg ENABLE_PGO=true
+# docker compose build --build-arg ENABLE_PGO=true --build-arg ENABLE_LTO=true --build-arg ARCH_FLAGS=-march=native
 # docker compose up -d
 
 # Open UI at http://localhost:8000
@@ -89,12 +89,15 @@ make up
 
 **Build Differences:**
 
-| Build Type | PGO | Architecture | Best For |
-|------------|-----|--------------|----------|
-| Pre-built images | ❌ Disabled | Generic (no `-march`) | Portable, multi-arch (amd64/arm64) |
-| Local `make build` | ✅ Enabled | Native (`-march=native`) | Maximum performance on your CPU |
+| Build Type | PGO | LTO | Architecture | Best For |
+|------------|-----|-----|--------------|----------|
+| CI (ci.yml) | ❌ | ❌ | Generic | Fast test builds |
+| Release (GitHub) | ❌ | ✅ | Generic | Optimized, portable, multi-arch |
+| Local `make build` | ✅ | ✅ | Native (`-march=native`) | Maximum performance on your CPU |
 
-To disable PGO for local builds: `ENABLE_PGO=false make build`
+To disable optimizations for local builds:
+- Disable PGO: `ENABLE_PGO=false make build`
+- Disable LTO: `ENABLE_LTO=false make build`
 
 ### Available Image Tags
 
@@ -157,13 +160,13 @@ The Docker build compiles FFmpeg from source with:
 
 **Pre-built Images (GitHub Registry):**
 - Multi-arch support: `linux/amd64` and `linux/arm64`
-- Generic architecture flags for portability
-- PGO disabled for reproducible builds
+- Generic architecture (no `-march` flag)
+- PGO and LTO disabled for faster, reproducible builds
 
 **Local Builds (`make build`):**
 - Uses `-march=native` for your specific CPU
-- PGO enabled by default for maximum performance
-- Run `ENABLE_PGO=false make build` to disable PGO
+- PGO and LTO enabled by default for maximum performance
+- To disable: `ENABLE_PGO=false` and/or `ENABLE_LTO=false`
 - **Note:** Because of `-march=native`, locally built images are tied to the CPU architecture they were built on. Rebuild when moving to different hardware.
 
 ## Project Structure
