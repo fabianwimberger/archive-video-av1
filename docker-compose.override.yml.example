@@ -2,6 +2,12 @@
 # This file is NOT gitignored - it's a template
 services:
   convert-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENABLE_PGO: "true"
+    image: archive-video-av1:local
     volumes:
       - /your/local/path:/videos
     # You can also override ports, environment, etc.

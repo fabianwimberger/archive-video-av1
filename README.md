@@ -60,24 +60,27 @@ docker run -d \
   ghcr.io/fabianwimberger/archive-video-av1:latest
 ```
 
-### Option 2: Build from Source
+### Option 2: Build from Source (with PGO optimization)
 
 ```bash
 # Clone the repository
 git clone https://github.com/fabianwimberger/archive-video-av1.git
 cd archive-video-av1
 
-# Configure volume mount in docker-compose.yml
+# Copy the override file (includes PGO-enabled build config)
+cp docker-compose.override.yml.example docker-compose.override.yml
+
+# Edit the override file to set your video path:
 # volumes:
 #   - /path/to/your/videos:/videos
 
 # Build and run
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+docker compose up -d --build
 
 # Open UI at http://localhost:8000
 ```
 
-**Note:** Pre-built images disable PGO (Profile-Guided Optimization) for broader CPU compatibility. For maximum performance on your specific hardware, build from source with PGO enabled.
+**Note:** Pre-built images disable PGO (Profile-Guided Optimization) for broader CPU compatibility. For maximum performance on your specific hardware, build from source with PGO enabled via the override file.
 
 ### Available Image Tags
 
