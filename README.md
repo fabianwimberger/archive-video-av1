@@ -29,6 +29,8 @@ AV1 offers superior compression efficiency compared to H.264 and H.265, reducing
 
 ### Option 1: Using Pre-built Image (Recommended)
 
+Pre-built images support both **AMD64** and **ARM64** architectures.
+
 **Docker Compose:**
 
 ```bash
@@ -67,20 +69,32 @@ docker run -d \
 git clone https://github.com/fabianwimberger/archive-video-av1.git
 cd archive-video-av1
 
-# Copy the override file (includes PGO-enabled build config)
+# Copy the override file to configure your video path
 cp docker-compose.override.yml.example docker-compose.override.yml
 
 # Edit the override file to set your video path:
 # volumes:
 #   - /path/to/your/videos:/videos
 
-# Build and run
-docker compose up -d --build
+# Build and run (PGO enabled by default for maximum performance)
+make build
+make up
+
+# Or using docker compose directly:
+# docker compose build --build-arg ENABLE_PGO=true
+# docker compose up -d
 
 # Open UI at http://localhost:8000
 ```
 
-**Note:** Pre-built images disable PGO (Profile-Guided Optimization) for broader CPU compatibility. For maximum performance on your specific hardware, build from source with PGO enabled via the override file.
+**Build Differences:**
+
+| Build Type | PGO | Architecture | Best For |
+|------------|-----|--------------|----------|
+| Pre-built images | ❌ Disabled | Generic (no `-march`) | Portable, multi-arch (amd64/arm64) |
+| Local `make build` | ✅ Enabled | Native (`-march=native`) | Maximum performance on your CPU |
+
+To disable PGO for local builds: `ENABLE_PGO=false make build`
 
 ### Available Image Tags
 
@@ -136,12 +150,21 @@ docker restart convert-service
 
 The Docker build compiles FFmpeg from source with:
 
-- **PGO (Profile-Guided Optimization)** — train on your actual content for optimal codepath selection
+- **PGO (Profile-Guided Optimization)** — train on your actual content for optimal codepath selection (local builds only)
 - **LTO (Link-Time Optimization)** — whole-program analysis
-- **`-march=native`** — optimized for the host CPU architecture
+- **Architecture-specific optimizations** — native for local builds, generic for pre-built images
 - **`-O3`** — maximum optimization level
 
-> **Note:** Because of `-march=native`, the built image is tied to the CPU architecture it was built on. Rebuild when moving to different hardware.
+**Pre-built Images (GitHub Registry):**
+- Multi-arch support: `linux/amd64` and `linux/arm64`
+- Generic architecture flags for portability
+- PGO disabled for reproducible builds
+
+**Local Builds (`make build`):**
+- Uses `-march=native` for your specific CPU
+- PGO enabled by default for maximum performance
+- Run `ENABLE_PGO=false make build` to disable PGO
+- **Note:** Because of `-march=native`, locally built images are tied to the CPU architecture they were built on. Rebuild when moving to different hardware.
 
 ## Project Structure
 
