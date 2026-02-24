@@ -7,10 +7,16 @@ SVT_AV1_VERSION="${SVT_AV1_VERSION:-4.0.1}"
 BUILD_TYPE="${1:-}"  # "pgo-generate", "pgo-train", or "pgo-use"
 
 # Determine architecture flags
-# For multi-arch Docker builds, use generic flags
-# For local builds, use -march=native for best performance
-ARCH_FLAGS="${ARCH_FLAGS:--march=native}"
-BASE_CFLAGS="$ARCH_FLAGS -O3 -flto -fomit-frame-pointer"
+# ARCH_FLAGS can be:
+#   - unset: use -march=native (local builds)
+#   - set to empty string: don't use any -march (multi-arch builds)
+#   - set to specific value: use that value
+if [ -z "${ARCH_FLAGS+x}" ]; then
+    # ARCH_FLAGS is unset, default to native
+    ARCH_FLAGS="-march=native"
+fi
+# If ARCH_FLAGS is set to empty string, we use no arch flags (generic build)
+BASE_CFLAGS="${ARCH_FLAGS:+$ARCH_FLAGS }-O3 -flto -fomit-frame-pointer"
 BASE_LDFLAGS="-Wl,-O3 -Wl,--gc-sections -flto"
 PGO_DIR="/build/profiles"
 

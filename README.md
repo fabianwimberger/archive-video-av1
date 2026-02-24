@@ -91,7 +91,7 @@ make up
 
 | Build Type | PGO | Architecture | Best For |
 |------------|-----|--------------|----------|
-| Pre-built images | ❌ Disabled | Generic (`x86-64-v3`, `armv8-a`) | Portable, multi-arch (amd64/arm64) |
+| Pre-built images | ❌ Disabled | Generic (no `-march`) | Portable, multi-arch (amd64/arm64) |
 | Local `make build` | ✅ Enabled | Native (`-march=native`) | Maximum performance on your CPU |
 
 To disable PGO for local builds: `ENABLE_PGO=false make build`
