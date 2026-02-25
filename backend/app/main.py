@@ -137,9 +137,9 @@ async def get_presets():
             skip_crop_detect=False,
         ).model_dump(),
         "animated": ConversionSettings(
-            crf=40,
+            crf=35,
             preset=4,
-            svt_params="",
+            svt_params="tune=0:enable-qm=1:max-tx-size=32",
             audio_bitrate="96k",
             skip_crop_detect=False,
         ).model_dump(),
