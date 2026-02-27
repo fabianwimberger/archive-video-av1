@@ -12,8 +12,9 @@ class ConversionSettings(BaseModel):
     preset: int = Field(
         default=4, ge=0, le=13, description="Encoding preset (0=slowest, 13=fastest)"
     )
-    svt_params: str = Field(
-        default="tune=0:film-grain=8", description="SVT-AV1 parameters"
+    svt_params: Optional[str] = Field(
+        default="tune=0:film-grain=8",
+        description="SVT-AV1 parameters (optional, empty for no extra params)",
     )
     audio_bitrate: str = Field(default="96k", description="Audio bitrate")
     skip_crop_detect: bool = Field(
