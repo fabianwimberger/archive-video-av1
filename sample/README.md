@@ -13,7 +13,7 @@ Place `.mkv` sample files in this directory **before building** the Docker image
 ```
 sample/
   default_movie.4k.mkv     # Live-action (CRF 26, film-grain=8)
-  animated_show.1080p.mkv   # Animated (CRF 35, enable-qm=1, max-tx-size=32)
+  animated_show.1080p.mkv   # Animated (CRF 35, tune=0)
   grainy_film.1080p.mkv     # Grainy (CRF 26, film-grain=16, film-grain-denoise=1)
 ```
 
