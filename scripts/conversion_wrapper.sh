@@ -9,6 +9,7 @@ PRESET="$4"
 SVT_PARAMS="$5"
 AUDIO_BITRATE="$6"
 SKIP_CROP="$7"
+MAX_HEIGHT="${8:-1080}"
 
 TEMP_DIR="${TEMP_DIR:-/app/temp}"
 
@@ -70,6 +71,90 @@ is_av1=0
 [[ "$video_codec" == "av1" ]] && is_av1=1
 echo "STATUS:Detected video codec: $video_codec"
 
+# --- HDR DETECTION ---
+color_transfer=$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=color_transfer -of csv=p=0 "$INPUT_FILE")
+color_primaries=$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=color_primaries -of csv=p=0 "$INPUT_FILE")
+color_space=$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=color_space -of csv=p=0 "$INPUT_FILE")
+
+is_hdr=0
+hdr_type=""
+tc_value=""
+color_trc_name=""
+
+if [[ "$color_transfer" == "smpte2084" ]]; then
+    is_hdr=1
+    hdr_type="HDR10"
+    tc_value=16
+    color_trc_name="smpte2084"
+elif [[ "$color_transfer" == "arib-std-b67" ]]; then
+    is_hdr=1
+    hdr_type="HLG"
+    tc_value=18
+    color_trc_name="arib-std-b67"
+fi
+
+# Check for Dolby Vision RPU side data
+dv_profile=$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream_side_data=dv_profile \
+    -of csv=p=0 "$INPUT_FILE" 2>/dev/null | head -1)
+
+if [[ -n "$dv_profile" ]]; then
+    is_hdr=1
+    hdr_type="DV"
+    # DV uses PQ transfer if not already set
+    if [[ -z "$tc_value" ]]; then
+        tc_value=16
+        color_trc_name="smpte2084"
+    fi
+fi
+
+if [[ $is_hdr -eq 1 ]]; then
+    echo "STATUS:HDR detected: $hdr_type (transfer=$color_transfer, primaries=$color_primaries)"
+fi
+
+# --- HDR METADATA EXTRACTION ---
+mastering_display=""
+content_light=""
+
+if [[ $is_hdr -eq 1 && "$color_transfer" == "smpte2084" ]]; then
+    echo "STATUS:Extracting HDR10 static metadata..."
+    hdr_side_data=$(ffprobe -v error -select_streams v:0 \
+        -show_entries frame=side_data_list \
+        -read_intervals "%+#1" -print_format json "$INPUT_FILE" 2>/dev/null)
+
+    if [[ -n "$hdr_side_data" ]]; then
+        # Extract mastering display color volume
+        # Parse red, green, blue primaries, white point, and luminance from JSON
+        red_x=$(echo "$hdr_side_data" | sed -n 's/.*"red_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        red_y=$(echo "$hdr_side_data" | sed -n 's/.*"red_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        green_x=$(echo "$hdr_side_data" | sed -n 's/.*"green_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        green_y=$(echo "$hdr_side_data" | sed -n 's/.*"green_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        blue_x=$(echo "$hdr_side_data" | sed -n 's/.*"blue_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        blue_y=$(echo "$hdr_side_data" | sed -n 's/.*"blue_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        white_x=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        white_y=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        min_lum=$(echo "$hdr_side_data" | sed -n 's/.*"min_luminance"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        max_lum=$(echo "$hdr_side_data" | sed -n 's/.*"max_luminance"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+
+        if [[ -n "$green_x" && -n "$green_y" && -n "$blue_x" && -n "$blue_y" && -n "$red_x" && -n "$red_y" && -n "$white_x" && -n "$white_y" && -n "$max_lum" && -n "$min_lum" ]]; then
+            mastering_display="G(${green_x},${green_y})B(${blue_x},${blue_y})R(${red_x},${red_y})WP(${white_x},${white_y})L(${max_lum},${min_lum})"
+            echo "STATUS:Mastering display: $mastering_display"
+        fi
+
+        # Extract content light level
+        max_cll=$(echo "$hdr_side_data" | sed -n 's/.*"max_content"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        max_fall=$(echo "$hdr_side_data" | sed -n 's/.*"max_average"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+
+        if [[ -n "$max_cll" && -n "$max_fall" ]]; then
+            content_light="${max_cll},${max_fall}"
+            echo "STATUS:Content light level: MaxCLL=$max_cll, MaxFALL=$max_fall"
+        fi
+    fi
+fi
+
 # Detect crop
 crop=""
 if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
@@ -125,8 +210,29 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
 fi
 
 # --- VIDEO FILTER CHAIN ---
-vf=""
-[[ -n "$crop" ]] && vf="-vf $crop,format=yuv420p10le" || vf="-vf format=yuv420p10le"
+# Determine if downscaling is needed
+scale_filter=""
+if [[ $is_av1 -eq 0 ]]; then
+    # Get source height (use post-crop height if crop is applied)
+    if [[ -n "$crop" ]]; then
+        source_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
+    else
+        source_height=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=height -of csv=p=0 "$INPUT_FILE")
+    fi
+
+    if [[ -n "$source_height" && "$source_height" -gt "$MAX_HEIGHT" ]]; then
+        scale_filter="scale=-2:${MAX_HEIGHT}"
+        echo "STATUS:Downscaling from ${source_height}p to ${MAX_HEIGHT}p"
+    fi
+fi
+
+# Build video filter string
+vf_parts=""
+[[ -n "$crop" ]] && vf_parts="$crop"
+[[ -n "$scale_filter" ]] && { [[ -n "$vf_parts" ]] && vf_parts="${vf_parts},${scale_filter}" || vf_parts="$scale_filter"; }
+[[ -n "$vf_parts" ]] && vf_parts="${vf_parts},format=yuv420p10le" || vf_parts="format=yuv420p10le"
+vf="-vf $vf_parts"
 
 # Detect audio/subs
 audio_streams=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
@@ -191,14 +297,45 @@ elif [[ -n "$english_audio" ]]; then
 fi
 
 # Determine video encoding parameters
-# Only copy if input is AV1 AND no crop needed
-if [[ $is_av1 -eq 1 && -z "$crop" ]]; then
+# Only copy if input is AV1 AND no crop/scale needed
+needs_filter=0
+[[ -n "$crop" || -n "$scale_filter" ]] && needs_filter=1
+
+color_flags=""
+if [[ $is_av1 -eq 1 && $needs_filter -eq 0 ]]; then
     echo "STATUS:Video already AV1 with no filtering needed, copying video stream"
     video_params="-c:v copy"
 else
     if [[ $is_av1 -eq 1 ]]; then
-        echo "STATUS:Video is AV1 but filtering required (crop), re-encoding"
+        echo "STATUS:Video is AV1 but filtering required (crop/scale), re-encoding"
     fi
+
+    # Append HDR params to SVT-AV1 params if HDR is detected
+    if [[ $is_hdr -eq 1 ]]; then
+        hdr_svt="color-primaries=9:transfer-characteristics=${tc_value}:matrix-coefficients=9"
+
+        # Add mastering display if available (HDR10, not HLG)
+        if [[ -n "$mastering_display" ]]; then
+            hdr_svt="${hdr_svt}:mastering-display=${mastering_display}"
+        fi
+
+        # Add content light level if available
+        if [[ -n "$content_light" ]]; then
+            hdr_svt="${hdr_svt}:content-light=${content_light}"
+        fi
+
+        # Append to user SVT params
+        if [[ -n "$SVT_PARAMS" ]]; then
+            SVT_PARAMS="${SVT_PARAMS}:${hdr_svt}"
+        else
+            SVT_PARAMS="$hdr_svt"
+        fi
+
+        # ffmpeg-level color metadata flags
+        color_flags="-color_primaries bt2020 -color_trc ${color_trc_name} -colorspace bt2020nc -color_range tv"
+        echo "STATUS:HDR encoding params applied ($hdr_type)"
+    fi
+
     svt_params_arg=""
     if [[ -n "$SVT_PARAMS" ]]; then
         svt_params_arg="-svtav1-params $SVT_PARAMS"
@@ -212,7 +349,7 @@ echo "STAGE:encoding"
 echo "STATUS:Encoding video..."
 
 # Build the full ffmpeg command (stored in MKV metadata for reproducibility)
-FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 -map 0:$audio_idx $sub_map $vf $af_filter $video_params -c:a libopus -b:a $AUDIO_BITRATE -c:s copy -f matroska -y \"$OUTPUT_FILE\""
+FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 -map 0:$audio_idx $sub_map $vf $af_filter $video_params $color_flags -c:a libopus -b:a $AUDIO_BITRATE -c:s copy -f matroska -y \"$OUTPUT_FILE\""
 echo "CMD:$FFMPEG_CMD"
 
 nice -n 10 ffmpeg -v quiet -progress - -nostats \
@@ -221,6 +358,7 @@ nice -n 10 ffmpeg -v quiet -progress - -nostats \
     $vf \
     $af_filter \
     $video_params \
+    $color_flags \
     -c:a libopus -b:a $AUDIO_BITRATE \
     -c:s copy \
     -f matroska -y "$temp_file" 2>&1
