@@ -212,19 +212,31 @@ fi
 
 # --- VIDEO FILTER CHAIN ---
 # Determine if downscaling is needed
+# Map MAX_HEIGHT to bounding box (long edge x short edge)
+case "$MAX_HEIGHT" in
+    720)  MAX_WIDTH=1280 ;;
+    1080) MAX_WIDTH=1920 ;;
+    2160) MAX_WIDTH=3840 ;;
+    *)    MAX_WIDTH=1920; MAX_HEIGHT=1080 ;;
+esac
+
 scale_filter=""
 if [[ $is_av1 -eq 0 ]]; then
-    # Get source height (use post-crop height if crop is applied)
+    # Get source dimensions (use post-crop if crop is applied)
     if [[ -n "$crop" ]]; then
+        source_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
         source_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
     else
-        source_height=$(ffprobe -v error -select_streams v:0 \
-            -show_entries stream=height -of csv=p=0 "$INPUT_FILE")
+        source_res=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width,height -of csv=p=0 "$INPUT_FILE")
+        source_width=$(echo "$source_res" | cut -d',' -f1)
+        source_height=$(echo "$source_res" | cut -d',' -f2)
     fi
 
-    if [[ -n "$source_height" && "$source_height" -gt "$MAX_HEIGHT" ]]; then
-        scale_filter="scale=-2:${MAX_HEIGHT}"
-        echo "STATUS:Downscaling from ${source_height}p to ${MAX_HEIGHT}p"
+    if [[ -n "$source_width" && -n "$source_height" ]] && \
+       [[ "$source_width" -gt "$MAX_WIDTH" || "$source_height" -gt "$MAX_HEIGHT" ]]; then
+        scale_filter="scale=${MAX_WIDTH}:${MAX_HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2"
+        echo "STATUS:Downscaling ${source_width}x${source_height} to fit ${MAX_WIDTH}x${MAX_HEIGHT}"
     fi
 fi
 

@@ -149,13 +149,15 @@ train_pgo() {
         fi
         echo "    Measured: I=${i} LUFS, TP=${tp} dBTP, LRA=${lra} LU"
 
-        # Detect source height for resolution downscale training (default: 1080p cap)
-        src_height=$(ffprobe -v error -select_streams v:0 \
-            -show_entries stream=height -of csv=p=0 "$f")
+        # Detect source dimensions for resolution downscale training (default: 1080p cap)
+        src_res=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width,height -of csv=p=0 "$f")
+        src_width=$(echo "$src_res" | cut -d',' -f1)
+        src_height=$(echo "$src_res" | cut -d',' -f2)
         vf_chain="$crop,format=yuv420p10le"
-        if [ -n "$src_height" ] && [ "$src_height" -gt 1080 ]; then
-            vf_chain="$crop,scale=-2:1080,format=yuv420p10le"
-            echo "    Scale: ${src_height}p -> 1080p"
+        if [ -n "$src_width" ] && [ -n "$src_height" ] && { [ "$src_width" -gt 1920 ] || [ "$src_height" -gt 1080 ]; }; then
+            vf_chain="$crop,scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p10le"
+            echo "    Scale: ${src_width}x${src_height} -> fit 1920x1080"
         fi
 
         # Detect HDR for color flag training
