@@ -110,7 +110,7 @@ train_pgo() {
         case "$basename_f" in
             animated_*)
                 preset_crf=35
-                svt_base="tune=0:enable-qm=1:max-tx-size=32"
+                svt_base="tune=0"
                 echo "    Preset: animated (CRF $preset_crf, $svt_base)"
                 ;;
             grainy_*)
