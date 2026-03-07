@@ -121,30 +121,31 @@ content_light=""
 
 if [[ $is_hdr -eq 1 && "$color_transfer" == "smpte2084" ]]; then
     echo "STATUS:Extracting HDR10 static metadata..."
-    hdr_side_data=$(ffprobe -v error -select_streams v:0 \
-        -show_entries frame=side_data_list \
-        -read_intervals "%+#1" -print_format json "$INPUT_FILE" 2>/dev/null)
+    # Use -show_frames (not -show_entries frame=side_data_list) to get populated side data
+    hdr_side_data=$(ffprobe -v quiet -select_streams v:0 \
+        -show_frames -read_intervals "%+#1" \
+        -print_format json "$INPUT_FILE" 2>/dev/null)
 
     if [[ -n "$hdr_side_data" ]]; then
         # Extract mastering display color volume
-        # Parse red, green, blue primaries, white point, and luminance from JSON
-        red_x=$(echo "$hdr_side_data" | sed -n 's/.*"red_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        red_y=$(echo "$hdr_side_data" | sed -n 's/.*"red_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        green_x=$(echo "$hdr_side_data" | sed -n 's/.*"green_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        green_y=$(echo "$hdr_side_data" | sed -n 's/.*"green_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        blue_x=$(echo "$hdr_side_data" | sed -n 's/.*"blue_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        blue_y=$(echo "$hdr_side_data" | sed -n 's/.*"blue_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        white_x=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        white_y=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        min_lum=$(echo "$hdr_side_data" | sed -n 's/.*"min_luminance"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        max_lum=$(echo "$hdr_side_data" | sed -n 's/.*"max_luminance"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        # Values are fractions like "34000/50000" — extract numerator for SVT-AV1 format
+        red_x=$(echo "$hdr_side_data" | sed -n 's/.*"red_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        red_y=$(echo "$hdr_side_data" | sed -n 's/.*"red_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        green_x=$(echo "$hdr_side_data" | sed -n 's/.*"green_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        green_y=$(echo "$hdr_side_data" | sed -n 's/.*"green_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        blue_x=$(echo "$hdr_side_data" | sed -n 's/.*"blue_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        blue_y=$(echo "$hdr_side_data" | sed -n 's/.*"blue_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        white_x=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        white_y=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        min_lum=$(echo "$hdr_side_data" | sed -n 's/.*"min_luminance"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        max_lum=$(echo "$hdr_side_data" | sed -n 's/.*"max_luminance"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
 
         if [[ -n "$green_x" && -n "$green_y" && -n "$blue_x" && -n "$blue_y" && -n "$red_x" && -n "$red_y" && -n "$white_x" && -n "$white_y" && -n "$max_lum" && -n "$min_lum" ]]; then
             mastering_display="G(${green_x},${green_y})B(${blue_x},${blue_y})R(${red_x},${red_y})WP(${white_x},${white_y})L(${max_lum},${min_lum})"
             echo "STATUS:Mastering display: $mastering_display"
         fi
 
-        # Extract content light level
+        # Extract content light level (unquoted integers in JSON)
         max_cll=$(echo "$hdr_side_data" | sed -n 's/.*"max_content"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         max_fall=$(echo "$hdr_side_data" | sed -n 's/.*"max_average"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
 
