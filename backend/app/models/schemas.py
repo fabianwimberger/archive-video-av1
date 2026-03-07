@@ -20,6 +20,9 @@ class ConversionSettings(BaseModel):
     skip_crop_detect: bool = Field(
         default=False, description="Skip automatic crop detection"
     )
+    max_resolution: int = Field(
+        default=1080, description="Maximum output height (720, 1080, 2160)"
+    )
 
 
 class JobCreate(BaseModel):

@@ -51,6 +51,26 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
 
         format_info = data.get("format", {})
 
+        # Detect HDR
+        color_transfer = video_stream.get("color_transfer", "")
+        color_primaries = video_stream.get("color_primaries", "")
+        is_hdr = color_transfer in ("smpte2084", "arib-std-b67")
+
+        hdr_format = ""
+        if color_transfer == "smpte2084":
+            hdr_format = "HDR10"
+        elif color_transfer == "arib-std-b67":
+            hdr_format = "HLG"
+
+        # Check for Dolby Vision side data
+        if is_hdr or not hdr_format:
+            side_data_list = video_stream.get("side_data_list", [])
+            for sd in side_data_list:
+                if sd.get("side_data_type") == "DOVI configuration record":
+                    hdr_format = "DV"
+                    is_hdr = True
+                    break
+
         return {
             "codec": video_stream.get("codec_name", "unknown"),
             "width": video_stream.get("width", 0),
@@ -59,6 +79,10 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
             "size": int(format_info.get("size", 0)),
             "bitrate": int(format_info.get("bit_rate", 0)),
             "fps": eval_fps(video_stream.get("r_frame_rate", "0/1")),
+            "color_transfer": color_transfer,
+            "color_primaries": color_primaries,
+            "hdr": is_hdr,
+            "hdr_format": hdr_format,
         }
 
     except Exception as e:

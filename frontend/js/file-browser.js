@@ -224,7 +224,7 @@ class FileBrowser {
                         <div class="flex-grow-1 min-width-0">
                             <div class="fw-medium text-truncate text-success">${utils.escapeHtml(file.name)}</div>
                             <div class="small text-muted">
-                                <span>${size}</span>
+                                <span>${size}</span>${file.hdr ? ` <span class="badge bg-warning text-dark ms-1">${utils.escapeHtml(file.hdr_format || 'HDR')}</span>` : ''}
                             </div>
                         </div>
                     </div>
@@ -252,7 +252,7 @@ class FileBrowser {
                     <div class="flex-grow-1 min-width-0">
                         <div class="fw-medium text-truncate ${textClass}">${utils.escapeHtml(file.name)}</div>
                         <div class="small text-muted">
-                            <span>${size}</span>
+                            <span>${size}</span>${file.hdr ? ` <span class="badge bg-warning text-dark ms-1">${utils.escapeHtml(file.hdr_format || 'HDR')}</span>` : ''}
                         </div>
                     </div>
                 </div>

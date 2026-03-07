@@ -57,6 +57,11 @@ class SettingsPanel {
             document.getElementById('svt-params').value = preset.svt_params;
             document.getElementById('audio-bitrate').value = preset.audio_bitrate;
             document.getElementById('skip-crop').checked = preset.skip_crop_detect;
+
+            // Apply max_resolution (default to 1080 if not in preset)
+            const maxRes = preset.max_resolution || 1080;
+            const resRadio = document.querySelector(`input[name="resolution"][value="${maxRes}"]`);
+            if (resRadio) resRadio.checked = true;
         }
     }
 
@@ -68,6 +73,7 @@ class SettingsPanel {
             svt_params: document.getElementById('svt-params').value,
             audio_bitrate: document.getElementById('audio-bitrate').value,
             skip_crop_detect: document.getElementById('skip-crop').checked,
+            max_resolution: parseInt(document.querySelector('input[name="resolution"]:checked').value),
         };
     }
 

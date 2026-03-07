@@ -106,10 +106,22 @@
                     <input type="text" id="audio-bitrate" class="form-control form-control-sm" value="96k">
                 </div>
 
-                <div class="mb-3">
+                <div class="mb-2">
                     <div class="form-check">
                         <input type="checkbox" id="skip-crop" class="form-check-input">
                         <label for="skip-crop" class="form-check-label small">Skip Crop</label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold mb-1">Max Resolution</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="resolution" id="res-720" value="720">
+                        <label class="btn btn-outline-secondary btn-sm" for="res-720">720p</label>
+                        <input type="radio" class="btn-check" name="resolution" id="res-1080" value="1080" checked>
+                        <label class="btn btn-outline-secondary btn-sm" for="res-1080">1080p</label>
+                        <input type="radio" class="btn-check" name="resolution" id="res-4k" value="2160">
+                        <label class="btn btn-outline-secondary btn-sm" for="res-4k">4K</label>
                     </div>
                 </div>
 
