@@ -14,6 +14,7 @@ Place `.mkv` sample files in this directory **before building** the Docker image
 sample/
   normal_clip.mkv      # Live-action content (movies, TV shows)
   animated_clip.mkv    # Animated content (anime, cartoons)
+  4k_hdr_clip.mkv      # 4K HDR content (exercises scale + HDR paths)
 ```
 
 ## Sample Requirements
@@ -22,6 +23,8 @@ sample/
 - **Duration**: At least 10-15 seconds each
 - **Content**: Representative of what you'll be converting
 - **Codecs**: H.264 or HEVC (typical source formats)
+- **Resolution**: Include a 4K sample to train the downscale code path
+- **HDR**: Include an HDR10 or HLG sample to train HDR color handling
 
 ## Benefits
 
