@@ -101,7 +101,27 @@ train_pgo() {
 
     for f in /build/samples/*.mkv; do
         [ -f "$f" ] || continue
-        echo "Training: $(basename "$f")"
+        basename_f=$(basename "$f")
+        echo "Training: $basename_f"
+
+        # Map sample filename prefix to preset params
+        preset_crf=26
+        svt_base="tune=0:film-grain=8"
+        case "$basename_f" in
+            animated_*)
+                preset_crf=35
+                svt_base="tune=0:enable-qm=1:max-tx-size=32"
+                echo "    Preset: animated (CRF $preset_crf, $svt_base)"
+                ;;
+            grainy_*)
+                preset_crf=26
+                svt_base="tune=0:film-grain=16:film-grain-denoise=1"
+                echo "    Preset: grainy (CRF $preset_crf, $svt_base)"
+                ;;
+            *)
+                echo "    Preset: default (CRF $preset_crf, $svt_base)"
+                ;;
+        esac
 
         echo "  Stage: crop_detect"
         crop=$(ffmpeg -hide_banner -i "$f" -t 1 -vf cropdetect -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
@@ -129,7 +149,7 @@ train_pgo() {
         fi
         echo "    Measured: I=${i} LUFS, TP=${tp} dBTP, LRA=${lra} LU"
 
-        # Detect source height for resolution downscale training
+        # Detect source height for resolution downscale training (default: 1080p cap)
         src_height=$(ffprobe -v error -select_streams v:0 \
             -show_entries stream=height -of csv=p=0 "$f")
         vf_chain="$crop,format=yuv420p10le"
@@ -157,7 +177,7 @@ train_pgo() {
         ffmpeg -hide_banner -i "$f" -t 15 \
             -vf "$vf_chain" \
             -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:measured_I=${i}:measured_TP=${tp}:measured_LRA=${lra}:measured_thresh=${thresh}:offset=${offset}" \
-            -c:v libsvtav1 -preset 4 -crf 26 -g 225 -svtav1-params "tune=0:film-grain=8${svt_hdr}" \
+            -c:v libsvtav1 -preset 4 -crf $preset_crf -g 225 -svtav1-params "${svt_base}${svt_hdr}" \
             $color_flags \
             -c:a libopus -b:a 96k -f matroska -y /dev/null || { echo "ERROR: Encoding failed"; exit 1; }
     done

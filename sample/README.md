@@ -8,14 +8,16 @@ Profile-Guided Optimization trains FFmpeg during compilation using real video sa
 
 ## How to Use
 
-Place `.mkv` sample files in this directory **before building** the Docker image:
+Place `.mkv` sample files in this directory **before building** the Docker image. Name files with the preset prefix so PGO training uses the matching encoder settings:
 
 ```
 sample/
-  normal_clip.mkv      # Live-action content (movies, TV shows)
-  animated_clip.mkv    # Animated content (anime, cartoons)
-  4k_hdr_clip.mkv      # 4K HDR content (exercises scale + HDR paths)
+  default_movie.4k.mkv     # Live-action (CRF 26, film-grain=8)
+  animated_show.1080p.mkv   # Animated (CRF 35, enable-qm=1, max-tx-size=32)
+  grainy_film.1080p.mkv     # Grainy (CRF 26, film-grain=16, film-grain-denoise=1)
 ```
+
+Files without a recognized prefix (`default_`, `animated_`, `grainy_`) are trained with the default preset.
 
 ## Sample Requirements
 
@@ -23,7 +25,7 @@ sample/
 - **Duration**: At least 10-15 seconds each
 - **Content**: Representative of what you'll be converting
 - **Codecs**: H.264 or HEVC (typical source formats)
-- **Resolution**: Include a 4K sample to train the downscale code path
+- **Resolution**: Include a 4K sample to train the downscale code path (all presets default to 1080p cap)
 - **HDR**: Include an HDR10 or HLG sample to train HDR color handling
 
 ## Benefits
