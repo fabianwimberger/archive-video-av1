@@ -121,30 +121,31 @@ content_light=""
 
 if [[ $is_hdr -eq 1 && "$color_transfer" == "smpte2084" ]]; then
     echo "STATUS:Extracting HDR10 static metadata..."
-    hdr_side_data=$(ffprobe -v error -select_streams v:0 \
-        -show_entries frame=side_data_list \
-        -read_intervals "%+#1" -print_format json "$INPUT_FILE" 2>/dev/null)
+    # Use -show_frames (not -show_entries frame=side_data_list) to get populated side data
+    hdr_side_data=$(ffprobe -v quiet -select_streams v:0 \
+        -show_frames -read_intervals "%+#1" \
+        -print_format json "$INPUT_FILE" 2>/dev/null)
 
     if [[ -n "$hdr_side_data" ]]; then
         # Extract mastering display color volume
-        # Parse red, green, blue primaries, white point, and luminance from JSON
-        red_x=$(echo "$hdr_side_data" | sed -n 's/.*"red_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        red_y=$(echo "$hdr_side_data" | sed -n 's/.*"red_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        green_x=$(echo "$hdr_side_data" | sed -n 's/.*"green_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        green_y=$(echo "$hdr_side_data" | sed -n 's/.*"green_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        blue_x=$(echo "$hdr_side_data" | sed -n 's/.*"blue_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        blue_y=$(echo "$hdr_side_data" | sed -n 's/.*"blue_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        white_x=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_x"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        white_y=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_y"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        min_lum=$(echo "$hdr_side_data" | sed -n 's/.*"min_luminance"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        max_lum=$(echo "$hdr_side_data" | sed -n 's/.*"max_luminance"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        # Values are fractions like "34000/50000" — extract numerator for SVT-AV1 format
+        red_x=$(echo "$hdr_side_data" | sed -n 's/.*"red_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        red_y=$(echo "$hdr_side_data" | sed -n 's/.*"red_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        green_x=$(echo "$hdr_side_data" | sed -n 's/.*"green_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        green_y=$(echo "$hdr_side_data" | sed -n 's/.*"green_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        blue_x=$(echo "$hdr_side_data" | sed -n 's/.*"blue_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        blue_y=$(echo "$hdr_side_data" | sed -n 's/.*"blue_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        white_x=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        white_y=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        min_lum=$(echo "$hdr_side_data" | sed -n 's/.*"min_luminance"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        max_lum=$(echo "$hdr_side_data" | sed -n 's/.*"max_luminance"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
 
         if [[ -n "$green_x" && -n "$green_y" && -n "$blue_x" && -n "$blue_y" && -n "$red_x" && -n "$red_y" && -n "$white_x" && -n "$white_y" && -n "$max_lum" && -n "$min_lum" ]]; then
             mastering_display="G(${green_x},${green_y})B(${blue_x},${blue_y})R(${red_x},${red_y})WP(${white_x},${white_y})L(${max_lum},${min_lum})"
             echo "STATUS:Mastering display: $mastering_display"
         fi
 
-        # Extract content light level
+        # Extract content light level (unquoted integers in JSON)
         max_cll=$(echo "$hdr_side_data" | sed -n 's/.*"max_content"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         max_fall=$(echo "$hdr_side_data" | sed -n 's/.*"max_average"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
 
@@ -211,19 +212,31 @@ fi
 
 # --- VIDEO FILTER CHAIN ---
 # Determine if downscaling is needed
+# Map MAX_HEIGHT to bounding box (long edge x short edge)
+case "$MAX_HEIGHT" in
+    720)  MAX_WIDTH=1280 ;;
+    1080) MAX_WIDTH=1920 ;;
+    2160) MAX_WIDTH=3840 ;;
+    *)    MAX_WIDTH=1920; MAX_HEIGHT=1080 ;;
+esac
+
 scale_filter=""
 if [[ $is_av1 -eq 0 ]]; then
-    # Get source height (use post-crop height if crop is applied)
+    # Get source dimensions (use post-crop if crop is applied)
     if [[ -n "$crop" ]]; then
+        source_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
         source_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
     else
-        source_height=$(ffprobe -v error -select_streams v:0 \
-            -show_entries stream=height -of csv=p=0 "$INPUT_FILE")
+        source_res=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width,height -of csv=p=0 "$INPUT_FILE")
+        source_width=$(echo "$source_res" | cut -d',' -f1)
+        source_height=$(echo "$source_res" | cut -d',' -f2)
     fi
 
-    if [[ -n "$source_height" && "$source_height" -gt "$MAX_HEIGHT" ]]; then
-        scale_filter="scale=-2:${MAX_HEIGHT}"
-        echo "STATUS:Downscaling from ${source_height}p to ${MAX_HEIGHT}p"
+    if [[ -n "$source_width" && -n "$source_height" ]] && \
+       [[ "$source_width" -gt "$MAX_WIDTH" || "$source_height" -gt "$MAX_HEIGHT" ]]; then
+        scale_filter="scale=${MAX_WIDTH}:${MAX_HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2"
+        echo "STATUS:Downscaling ${source_width}x${source_height} to fit ${MAX_WIDTH}x${MAX_HEIGHT}"
     fi
 fi
 

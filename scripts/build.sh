@@ -80,7 +80,7 @@ build_all() {
         --enable-demuxer=matroska,mov,mpegts --enable-muxer=matroska,null \
         --enable-decoder=h264,hevc,av1,aac,ac3,eac3,dca,truehd,mlp,pgssub \
         --enable-encoder=libsvtav1,libopus,pcm_s16le,wrapped_avframe \
-        --enable-filter=cropdetect,crop,format,aformat,aresample,loudnorm \
+        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm \
         --enable-libsvtav1 --enable-libopus --enable-zlib \
         --extra-cflags="$CFLAGS -I/usr/local/include" \
         --extra-ldflags="$LDFLAGS -L/usr/local/lib"
@@ -101,7 +101,27 @@ train_pgo() {
 
     for f in /build/samples/*.mkv; do
         [ -f "$f" ] || continue
-        echo "Training: $(basename "$f")"
+        basename_f=$(basename "$f")
+        echo "Training: $basename_f"
+
+        # Map sample filename prefix to preset params
+        preset_crf=26
+        svt_base="tune=0:film-grain=8"
+        case "$basename_f" in
+            animated_*)
+                preset_crf=35
+                svt_base="tune=0"
+                echo "    Preset: animated (CRF $preset_crf, $svt_base)"
+                ;;
+            grainy_*)
+                preset_crf=26
+                svt_base="tune=0:film-grain=16:film-grain-denoise=1"
+                echo "    Preset: grainy (CRF $preset_crf, $svt_base)"
+                ;;
+            *)
+                echo "    Preset: default (CRF $preset_crf, $svt_base)"
+                ;;
+        esac
 
         echo "  Stage: crop_detect"
         crop=$(ffmpeg -hide_banner -i "$f" -t 1 -vf cropdetect -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
@@ -129,11 +149,38 @@ train_pgo() {
         fi
         echo "    Measured: I=${i} LUFS, TP=${tp} dBTP, LRA=${lra} LU"
 
+        # Detect source dimensions for resolution downscale training (default: 1080p cap)
+        src_res=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width,height -of csv=p=0 "$f")
+        src_width=$(echo "$src_res" | cut -d',' -f1)
+        src_height=$(echo "$src_res" | cut -d',' -f2)
+        vf_chain="$crop,format=yuv420p10le"
+        if [ -n "$src_width" ] && [ -n "$src_height" ] && { [ "$src_width" -gt 1920 ] || [ "$src_height" -gt 1080 ]; }; then
+            vf_chain="$crop,scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p10le"
+            echo "    Scale: ${src_width}x${src_height} -> fit 1920x1080"
+        fi
+
+        # Detect HDR for color flag training
+        color_transfer=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=color_transfer -of csv=p=0 "$f")
+        color_flags=""
+        svt_hdr=""
+        if [ "$color_transfer" = "smpte2084" ]; then
+            color_flags="-color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc -color_range tv"
+            svt_hdr=":color-primaries=9:transfer-characteristics=16:matrix-coefficients=9"
+            echo "    HDR: PQ/HDR10 detected"
+        elif [ "$color_transfer" = "arib-std-b67" ]; then
+            color_flags="-color_primaries bt2020 -color_trc arib-std-b67 -colorspace bt2020nc -color_range tv"
+            svt_hdr=":color-primaries=9:transfer-characteristics=18:matrix-coefficients=9"
+            echo "    HDR: HLG detected"
+        fi
+
         echo "  Stage: encoding"
         ffmpeg -hide_banner -i "$f" -t 15 \
-            -vf "$crop,format=yuv420p10le" \
+            -vf "$vf_chain" \
             -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:measured_I=${i}:measured_TP=${tp}:measured_LRA=${lra}:measured_thresh=${thresh}:offset=${offset}" \
-            -c:v libsvtav1 -preset 4 -crf 26 -g 225 -svtav1-params "tune=0:film-grain=8" \
+            -c:v libsvtav1 -preset 4 -crf $preset_crf -g 225 -svtav1-params "${svt_base}${svt_hdr}" \
+            $color_flags \
             -c:a libopus -b:a 96k -f matroska -y /dev/null || { echo "ERROR: Encoding failed"; exit 1; }
     done
     echo "Profiles: $(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l)"
