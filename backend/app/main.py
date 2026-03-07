@@ -135,6 +135,7 @@ async def get_presets():
             svt_params="tune=0:film-grain=8",
             audio_bitrate="96k",
             skip_crop_detect=False,
+            max_resolution=1080,
         ).model_dump(),
         "animated": ConversionSettings(
             crf=35,
@@ -142,6 +143,7 @@ async def get_presets():
             svt_params="tune=0:enable-qm=1:max-tx-size=32",
             audio_bitrate="96k",
             skip_crop_detect=False,
+            max_resolution=1080,
         ).model_dump(),
         "grainy": ConversionSettings(
             crf=26,
@@ -149,6 +151,7 @@ async def get_presets():
             svt_params="tune=0:film-grain=16:film-grain-denoise=1",
             audio_bitrate="96k",
             skip_crop_detect=False,
+            max_resolution=1080,
         ).model_dump(),
     }
 

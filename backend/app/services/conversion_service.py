@@ -72,6 +72,11 @@ class ConversionService:
         if not isinstance(preset, int) or not (0 <= preset <= 13):
             raise ValueError("Preset must be an integer between 0 and 13.")
 
+        # Validate max_resolution
+        max_resolution = settings.get("max_resolution", 1080)
+        if max_resolution not in {720, 1080, 2160}:
+            raise ValueError("max_resolution must be one of 720, 1080, or 2160.")
+
     async def convert_file(
         self,
         job_id: int,
@@ -108,6 +113,7 @@ class ConversionService:
             conversion_settings["svt_params"],
             conversion_settings["audio_bitrate"],
             "1" if conversion_settings["skip_crop_detect"] else "0",
+            str(conversion_settings.get("max_resolution", 1080)),
         ]
 
         logger.info(f"Starting conversion job {job_id}: {source_file} -> {output_file}")
