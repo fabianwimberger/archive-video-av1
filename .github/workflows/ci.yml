@@ -47,7 +47,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image (amd64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: archive-video-av1:test-amd64
@@ -77,7 +77,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image (arm64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: archive-video-av1:test-arm64
