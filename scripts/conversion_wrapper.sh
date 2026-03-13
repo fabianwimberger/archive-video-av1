@@ -128,17 +128,19 @@ if [[ $is_hdr -eq 1 && "$color_transfer" == "smpte2084" ]]; then
 
     if [[ -n "$hdr_side_data" ]]; then
         # Extract mastering display color volume
-        # Values are fractions like "34000/50000" — extract numerator for SVT-AV1 format
-        red_x=$(echo "$hdr_side_data" | sed -n 's/.*"red_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        red_y=$(echo "$hdr_side_data" | sed -n 's/.*"red_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        green_x=$(echo "$hdr_side_data" | sed -n 's/.*"green_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        green_y=$(echo "$hdr_side_data" | sed -n 's/.*"green_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        blue_x=$(echo "$hdr_side_data" | sed -n 's/.*"blue_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        blue_y=$(echo "$hdr_side_data" | sed -n 's/.*"blue_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        white_x=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_x"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        white_y=$(echo "$hdr_side_data" | sed -n 's/.*"white_point_y"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        min_lum=$(echo "$hdr_side_data" | sed -n 's/.*"min_luminance"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
-        max_lum=$(echo "$hdr_side_data" | sed -n 's/.*"max_luminance"[[:space:]]*:[[:space:]]*"\([0-9]*\)\/[0-9]*".*/\1/p' | head -1)
+        # Values are fractions like "34000/50000" — divide to get SVT-AV1 format
+        # Chromaticity: 0.0-1.0 (CIE 1931), Luminance: cd/m² (nits)
+        extract_frac() { echo "$hdr_side_data" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([0-9]*\/[0-9]*\)\".*/\1/p" | head -1 | awk -F'/' '{printf "%.4f", $1/$2}'; }
+        red_x=$(extract_frac red_x)
+        red_y=$(extract_frac red_y)
+        green_x=$(extract_frac green_x)
+        green_y=$(extract_frac green_y)
+        blue_x=$(extract_frac blue_x)
+        blue_y=$(extract_frac blue_y)
+        white_x=$(extract_frac white_point_x)
+        white_y=$(extract_frac white_point_y)
+        min_lum=$(extract_frac min_luminance)
+        max_lum=$(extract_frac max_luminance)
 
         if [[ -n "$green_x" && -n "$green_y" && -n "$blue_x" && -n "$blue_y" && -n "$red_x" && -n "$red_y" && -n "$white_x" && -n "$white_y" && -n "$max_lum" && -n "$min_lum" ]]; then
             mastering_display="G(${green_x},${green_y})B(${blue_x},${blue_y})R(${red_x},${red_y})WP(${white_x},${white_y})L(${max_lum},${min_lum})"
@@ -279,11 +281,11 @@ ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$audio_idx \
     -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
 
 # Parse JSON output (using sed for BusyBox compatibility)
-MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | tail -1)
-MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | tail -1)
-MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | tail -1)
-MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | tail -1)
-TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | tail -1)
+MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
 
 rm -f "$LOUDNORM_JSON"
 
