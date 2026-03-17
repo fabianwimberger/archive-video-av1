@@ -137,11 +137,11 @@ train_pgo() {
             -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:print_format=json" \
             -vn -f null - 2>&1 | grep -A20 'input_i')
 
-        i=$(echo "$json" | grep 'input_i' | sed 's/.*: "\([^"]*\)".*/\1/')
-        tp=$(echo "$json" | grep 'input_tp' | sed 's/.*: "\([^"]*\)".*/\1/')
-        lra=$(echo "$json" | grep 'input_lra' | sed 's/.*: "\([^"]*\)".*/\1/')
-        thresh=$(echo "$json" | grep 'input_thresh' | sed 's/.*: "\([^"]*\)".*/\1/')
-        offset=$(echo "$json" | grep 'target_offset' | sed 's/.*: "\([^"]*\)".*/\1/')
+        i=$(echo "$json" | grep 'input_i' | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')
+        tp=$(echo "$json" | grep 'input_tp' | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')
+        lra=$(echo "$json" | grep 'input_lra' | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')
+        thresh=$(echo "$json" | grep 'input_thresh' | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')
+        offset=$(echo "$json" | grep 'target_offset' | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')
 
         if [ -z "$i" ] || [ -z "$tp" ] || [ -z "$lra" ] || [ -z "$thresh" ] || [ -z "$offset" ]; then
             echo "ERROR: Loudnorm measurement failed"
