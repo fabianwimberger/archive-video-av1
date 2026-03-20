@@ -94,7 +94,7 @@ WORKDIR /app
 COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
 
 # Install Python runtime dependencies and add license notices
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-install-recommends \
     python3 python3-venv ca-certificates mkvtoolnix bash \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/share/licenses \
