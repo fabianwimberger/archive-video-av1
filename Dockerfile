@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:26.04 AS builder
 
+ARG FFMPEG_VERSION="8.1"
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.0.1"
 ARG ENABLE_PGO="false"
@@ -13,7 +14,7 @@ ENV ENABLE_LTO=${ENABLE_LTO}
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential cmake nasm pkg-config \
-    wget ca-certificates tar xz-utils git \
+    wget ca-certificates tar xz-utils \
     autoconf automake libtool zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,7 +25,9 @@ RUN wget -q "https://downloads.xiph.org/releases/opus/opus-${OPUS_VERSION}.tar.g
     tar -xzf "opus-${OPUS_VERSION}.tar.gz" && rm "opus-${OPUS_VERSION}.tar.gz" && \
     wget -q "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v${SVT_AV1_VERSION}/SVT-AV1-v${SVT_AV1_VERSION}.tar.gz" && \
     tar -xzf SVT-AV1-v${SVT_AV1_VERSION}.tar.gz && rm SVT-AV1-v${SVT_AV1_VERSION}.tar.gz && \
-    git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git FFmpeg
+    wget -q "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz" && \
+    tar -xzf "ffmpeg-${FFMPEG_VERSION}.tar.gz" && rm "ffmpeg-${FFMPEG_VERSION}.tar.gz" && \
+    mv "ffmpeg-${FFMPEG_VERSION}" FFmpeg
 
 # Copy build script (cached unless script changes)
 COPY scripts/build.sh /build/build.sh
