@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 from sqlalchemy import select, update
 from app.database import AsyncSessionLocal
@@ -271,6 +272,20 @@ class JobQueue:
                 job.completed_at = datetime.now(timezone.utc)
                 job.progress_percent = 100.0 if success else job.progress_percent
                 job.log = log
+
+                # Calculate file sizes for completed jobs
+                if success:
+                    try:
+                        source_path = Path(job.source_file)
+                        output_path = Path(job.output_file)
+                        if source_path.exists():
+                            job.source_size_bytes = source_path.stat().st_size
+                        if output_path.exists():
+                            job.output_size_bytes = output_path.stat().st_size
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not calculate file sizes for job {job_id}: {e}"
+                        )
 
                 await db.commit()
 
