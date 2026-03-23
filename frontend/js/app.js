@@ -5,6 +5,9 @@ class ConversionApp {
     async init() {
         console.log('Initializing Conversion App...');
 
+        // Initialize theme first
+        this.initTheme();
+
         // Initialize components
         await settingsPanel.init();
         window.settingsPanel = settingsPanel;  // Expose globally
@@ -15,6 +18,34 @@ class ConversionApp {
         wsClient.connect();
 
         console.log('Conversion App initialized');
+    }
+
+    initTheme() {
+        const themeToggle = document.getElementById('theme-toggle');
+        const html = document.documentElement;
+        const icon = themeToggle.querySelector('i');
+
+        // Load saved theme or default to light
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        html.setAttribute('data-bs-theme', savedTheme);
+        this.updateThemeIcon(savedTheme, icon);
+
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = html.getAttribute('data-bs-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            html.setAttribute('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            this.updateThemeIcon(newTheme, icon);
+        });
+    }
+
+    updateThemeIcon(theme, icon) {
+        if (theme === 'dark') {
+            icon.className = 'bi bi-sun-fill';
+        } else {
+            icon.className = 'bi bi-moon-fill';
+        }
     }
 
     showNotification(message, type = 'info') {

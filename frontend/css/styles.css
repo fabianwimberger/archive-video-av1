@@ -84,6 +84,19 @@ body {
     background: #a8a8a8;
 }
 
+/* Dark mode scrollbar */
+[data-bs-theme="dark"] .custom-scrollbar::-webkit-scrollbar-track {
+    background: #2b2b2b;
+}
+
+[data-bs-theme="dark"] .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #555;
+}
+
+[data-bs-theme="dark"] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+
 .cursor-pointer {
     cursor: pointer;
 }
