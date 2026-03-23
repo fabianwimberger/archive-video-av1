@@ -160,7 +160,7 @@ class FileBrowser {
         // Parent directory button
         if (this.currentPath) {
             const parentButton = document.createElement('div');
-            parentButton.className = 'list-group-item list-group-item-action cursor-pointer bg-light text-secondary';
+            parentButton.className = 'list-group-item list-group-item-action cursor-pointer bg-body-tertiary text-secondary';
             parentButton.innerHTML = `
                 <div class="d-flex align-items-center">
                     <i class="bi bi-arrow-return-left me-3 fs-5"></i>
