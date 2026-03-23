@@ -58,6 +58,8 @@ class JobResponse(BaseModel):
     completed_at: Optional[datetime]
     error_message: Optional[str]
     log: str
+    source_size_bytes: Optional[int]
+    output_size_bytes: Optional[int]
 
     model_config = ConfigDict(from_attributes=True)
 

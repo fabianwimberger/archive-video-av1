@@ -1,7 +1,7 @@
 """Job database model."""
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, Index
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, Index, BigInteger
 from app.database import Base
 
 
@@ -39,6 +39,10 @@ class Job(Base):
     # Error handling
     error_message = Column(Text, nullable=True)
     log = Column(Text, default="")
+
+    # File size tracking (for completed jobs)
+    source_size_bytes = Column(BigInteger, nullable=True)
+    output_size_bytes = Column(BigInteger, nullable=True)
 
     # Indexes
     __table_args__ = (

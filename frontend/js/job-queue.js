@@ -241,7 +241,8 @@ class JobQueue {
         }
 
         if (job.status === 'completed') {
-            return '<div class="text-success small"><i class="bi bi-check-all me-1"></i>Conversion complete</div>';
+            const savings = this.formatSavings(job.source_size_bytes, job.output_size_bytes);
+            return `<div class="text-success small"><i class="bi bi-check-all me-1"></i>Conversion complete${savings}</div>`;
         }
 
         if (job.status === 'cancelled') {
@@ -368,6 +369,28 @@ class JobQueue {
         const secs = Math.floor(seconds % 60);
 
         return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    formatSavings(sourceBytes, outputBytes) {
+        if (!sourceBytes || !outputBytes) return '';
+        
+        const saved = sourceBytes - outputBytes;
+        const percent = Math.round((saved / sourceBytes) * 100);
+        
+        if (saved <= 0) {
+            return ` <span class="text-muted">(no savings)</span>`;
+        }
+        
+        const savedStr = this.formatBytes(saved);
+        return ` <span class="text-success" title="Saved ${savedStr} (${percent}%)">(-${percent}%)</span>`;
+    }
+
+    formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
     startRefresh() {
