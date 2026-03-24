@@ -3,7 +3,7 @@
 set -e
 
 OPUS_VERSION="${OPUS_VERSION:-1.6.1}"
-SVT_AV1_VERSION="${SVT_AV1_VERSION:-4.0.1}"
+SVT_AV1_VERSION="${SVT_AV1_VERSION:-4.1.0}"
 BUILD_TYPE="${1:-}"  # "pgo-generate", "pgo-train", or "pgo-use"
 
 # Determine architecture flags
