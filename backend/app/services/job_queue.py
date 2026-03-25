@@ -297,6 +297,8 @@ class JobQueue:
                             "job_id": job_id,
                             "status": job.status,
                             "error": job.error_message,
+                            "source_size_bytes": job.source_size_bytes,
+                            "output_size_bytes": job.output_size_bytes,
                         }
                     )
 
