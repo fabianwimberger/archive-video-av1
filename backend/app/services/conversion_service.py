@@ -205,7 +205,7 @@ class ConversionService:
                                 )
 
                         # Emit progress update (throttle to every 1 second)
-                        current_time = asyncio.get_event_loop().time()
+                        current_time = asyncio.get_running_loop().time()
                         if current_time - last_progress_emit >= 1.0:
                             # Add current log to progress data
                             progress_data["current_log"] = "\n".join(log_lines)

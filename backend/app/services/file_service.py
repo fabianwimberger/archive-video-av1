@@ -20,9 +20,7 @@ def _directory_has_videos(directory: Path) -> bool:
         True if any .mkv files found, False otherwise
     """
     try:
-        return any(
-            f.suffix.lower() == ".mkv" for f in directory.rglob("*") if f.is_file()
-        )
+        return any(directory.rglob("*.mkv"))
     except (OSError, PermissionError):
         return False
 
