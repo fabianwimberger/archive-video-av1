@@ -19,7 +19,7 @@ class JobQueue {
         });
 
         wsClient.on('job_status', (message) => {
-            this.updateJobStatus(message.job_id, message.status, message.error);
+            this.updateJobStatus(message.job_id, message.status, message.error, message);
         });
 
         wsClient.on('queue_update', () => {
@@ -291,7 +291,7 @@ class JobQueue {
         }
     }
 
-    updateJobStatus(jobId, status, error) {
+    updateJobStatus(jobId, status, error, message = {}) {
         const job = this.jobs.get(jobId);
         if (!job) {
             this.loadJobs();
@@ -303,6 +303,8 @@ class JobQueue {
 
         if (status === 'completed') {
             job.progress_percent = 100;
+            if (message.source_size_bytes != null) job.source_size_bytes = message.source_size_bytes;
+            if (message.output_size_bytes != null) job.output_size_bytes = message.output_size_bytes;
         }
 
         this.updateStats();
