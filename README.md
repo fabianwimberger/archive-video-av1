@@ -10,6 +10,16 @@ A self-hosted, web-based video conversion service running in Docker. Converts vi
 
 AV1 offers superior compression efficiency compared to H.264 and H.265, reducing file sizes by 30-50% while maintaining quality. However, AV1 encoding is computationally intensive and most existing tools are either CLI-only or require complex setups. This project provides a simple, web-based interface for batch converting video libraries to AV1 without sacrificing quality.
 
+**Goals:**
+- Provide a simple web UI for AV1 batch conversion
+- Optimize encoding quality per content type (live-action, animated, grainy)
+- Track progress in real-time without CLI complexity
+
+<p align="center">
+  <img src="assets/demo.gif" width="100%" alt="Web UI Demo">
+  <br><em>Browse files, select a preset, convert — with real-time progress tracking</em>
+</p>
+
 ## Features
 
 - **Web UI** with real-time progress (FPS, ETA, percentage) via WebSocket
@@ -87,18 +97,6 @@ make up
 # Open UI at http://localhost:8000
 ```
 
-**Build Differences:**
-
-| Build Type | PGO | LTO | Architecture | Best For |
-|------------|-----|-----|--------------|----------|
-| CI (ci.yml) | ❌ | ❌ | Generic | Fast test builds |
-| Release (GitHub) | ❌ | ✅ | Generic | Optimized, portable, multi-arch |
-| Local `make build` | ✅ | ✅ | Native (`-march=native`) | Maximum performance on your CPU |
-
-To disable optimizations for local builds:
-- Disable PGO: `ENABLE_PGO=false make build`
-- Disable LTO: `ENABLE_LTO=false make build`
-
 ### Available Image Tags
 
 The following image tags are available from `ghcr.io/fabianwimberger/archive-video-av1`:
@@ -149,59 +147,9 @@ docker restart convert-service
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `TZ` | `UTC` | Container timezone |
 
-### Performance Optimizations
-
-The Docker build compiles FFmpeg from source with:
-
-- **PGO (Profile-Guided Optimization)** — train on your actual content for optimal codepath selection (local builds only)
-- **LTO (Link-Time Optimization)** — whole-program analysis
-- **Architecture-specific optimizations** — native for local builds, generic for pre-built images
-- **`-O3`** — maximum optimization level
-
-**Pre-built Images (GitHub Registry):**
-- Multi-arch support: `linux/amd64` and `linux/arm64`
-- Generic architecture (no `-march` flag)
-- PGO and LTO disabled for faster, reproducible builds
-
-**Local Builds (`make build`):**
-- Uses `-march=native` for your specific CPU
-- PGO and LTO enabled by default for maximum performance
-- To disable: `ENABLE_PGO=false` and/or `ENABLE_LTO=false`
-- **Note:** Because of `-march=native`, locally built images are tied to the CPU architecture they were built on. Rebuild when moving to different hardware.
-
-## Project Structure
-
-```
-backend/
-  app/
-    main.py                  # FastAPI entry point
-    config.py                # Environment-based settings
-    services/                # Business logic
-    routes/                  # API endpoints
-    models/                  # Database models
-frontend/
-  index.html                 # Single-page app
-  css/styles.css             # Layout & styles
-  js/                        # JavaScript modules
-scripts/
-  build.sh                   # FFmpeg build with PGO
-  conversion_wrapper.sh      # Per-file conversion pipeline
-```
-
 ## Security
 
-This application has **no built-in authentication**. It is intended to run on a trusted local network or behind a reverse proxy with authentication.
-
-### Recommended: Bind to Local Interface
-
-```yaml
-ports:
-  - "127.0.0.1:8000:8000"  # Only accessible locally
-```
-
-### Alternative: Reverse Proxy
-
-See [docker-compose.yml](docker-compose.yml) example for Traefik configuration with basic auth.
+No built-in authentication — intended for trusted networks or behind a reverse proxy with auth. Bind to `127.0.0.1:8000:8000` to restrict access to localhost.
 
 ## License
 
