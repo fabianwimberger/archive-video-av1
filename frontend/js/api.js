@@ -124,6 +124,10 @@ class ApiClient {
     async getPresets() {
         return this.request('/presets');
     }
+
+    async analyzeFile(path) {
+        return this.request(`/files/analyze?path=${encodeURIComponent(path)}`);
+    }
 }
 
 // Global API client instance

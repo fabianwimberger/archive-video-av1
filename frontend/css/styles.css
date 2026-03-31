@@ -126,6 +126,14 @@ body {
     font-size: 1.1em;
 }
 
+/* Extra small button */
+.btn-xs {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.75rem;
+    line-height: 1;
+    border-radius: 0.2rem;
+}
+
 /* Mobile responsive layout */
 @media (max-width: 992px) {
     .main-content {
