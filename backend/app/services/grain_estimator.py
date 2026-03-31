@@ -21,9 +21,16 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
     """
     # Get duration
     duration_proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", file_path,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        file_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await duration_proc.communicate()
     try:
@@ -36,10 +43,18 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
 
     # Get resolution and bitrate
     res_proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "csv=p=0", file_path,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "csv=p=0",
+        file_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await res_proc.communicate()
     width, height = 1920, 1080
@@ -53,9 +68,16 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
         pass
 
     bitrate_proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "error", "-show_entries", "format=bit_rate",
-        "-of", "default=noprint_wrappers=1:nokey=1", file_path,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=bit_rate",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        file_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await bitrate_proc.communicate()
     try:
@@ -73,12 +95,25 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
 
     for time_pos in samples:
         cmd = [
-            "ffmpeg", "-hide_banner", "-ss", str(time_pos),
-            "-i", file_path, "-frames:v", "1", "-vf", "showinfo",
-            "-an", "-f", "null", "-"
+            "ffmpeg",
+            "-hide_banner",
+            "-ss",
+            str(time_pos),
+            "-i",
+            file_path,
+            "-frames:v",
+            "1",
+            "-vf",
+            "showinfo",
+            "-an",
+            "-f",
+            "null",
+            "-",
         ]
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
 
@@ -102,15 +137,17 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
 
     # Resolution normalization factor
     megapixels = (width * height) / 1_000_000
-    if megapixels >= 7.0:       # 4K+
+    if megapixels >= 7.0:  # 4K+
         norm_factor = 3.0
-    elif megapixels >= 1.8:     # 1080p
+    elif megapixels >= 1.8:  # 1080p
         norm_factor = 1.5
-    else:                       # 720p or lower
+    else:  # 720p or lower
         norm_factor = 1.0
 
     y_norm = avg_y / norm_factor
-    bitrate_per_mp = bitrate / megapixels / 1000 if megapixels > 0 and bitrate > 0 else 0
+    bitrate_per_mp = (
+        bitrate / megapixels / 1000 if megapixels > 0 and bitrate > 0 else 0
+    )
 
     # Estimation logic
     # Animation detection: high chroma variation relative to luma
