@@ -150,8 +150,9 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
     )
 
     # Estimation logic
-    # Animation detection: high chroma variation relative to luma
-    if avg_u > 8.0 and avg_v > 8.0:
+    # Animation detection: high chroma variation with LOW luma (flat colors)
+    # Grainy film has high chroma too, but also high luma from texture
+    if avg_u > 8.0 and avg_v > 8.0 and y_norm < 20.0:
         return {
             "film_grain": 0,
             "denoise": 0,
@@ -161,13 +162,14 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
             "raw_v": round(avg_v, 2),
             "y_norm": round(y_norm, 2),
             "bitrate_per_mp": round(bitrate_per_mp, 1),
-            "reason": "High chroma variation (animation-like content)",
+            "reason": "High chroma, low luma variation (animation-like content)",
         }
 
-    # Grainy film detection: moderate luma, low chroma
-    if avg_u < 8.0 and avg_v < 8.0 and 20.0 < y_norm < 60.0:
+    # Grainy film detection: moderate-to-high luma variation (grain creates texture)
+    # Film grain affects all channels, so chroma can be high too - focus on luma
+    if 20.0 < y_norm < 60.0:
         return {
-            "film_grain": 16,
+            "film_grain": 10,
             "denoise": 1,
             "confidence": "medium",
             "raw_y": round(avg_y, 2),
@@ -175,7 +177,7 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
             "raw_v": round(avg_v, 2),
             "y_norm": round(y_norm, 2),
             "bitrate_per_mp": round(bitrate_per_mp, 1),
-            "reason": "Low chroma with moderate luma texture (grainy film)",
+            "reason": "Moderate luma texture (grainy film)",
         }
 
     # High detail content
