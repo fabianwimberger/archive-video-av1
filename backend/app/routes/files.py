@@ -3,6 +3,7 @@
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from app.services.file_service import file_service
+from app.services.grain_estimator import estimate_grain
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,36 @@ async def get_file_info(path: str = Query(..., description="Absolute path to fil
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error getting file info: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/analyze")
+async def analyze_file(path: str = Query(..., description="Absolute path to file")):
+    """
+    Analyze a video file to estimate optimal film grain and denoise settings.
+
+    Args:
+        path: Absolute path to file
+
+    Returns:
+        Estimated film_grain, denoise, and diagnostic values
+    """
+    try:
+        from pathlib import Path
+
+        resolved = Path(path).resolve()
+        if not file_service._is_safe_path(resolved):
+            raise ValueError("Invalid path")
+
+        if not resolved.exists() or not resolved.is_file():
+            raise ValueError("File does not exist")
+
+        result = await estimate_grain(path)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error analyzing file: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

@@ -270,6 +270,9 @@ class FileBrowser {
                 }
                 this.updateSelectionCount();
                 this.updateButtonStates();
+                if (window.settingsPanel) {
+                    window.settingsPanel.updateEstimateButtonState();
+                }
             });
 
             fileElement.addEventListener('click', (e) => {
@@ -296,6 +299,9 @@ class FileBrowser {
             }
         });
         this.renderFiles();
+        if (window.settingsPanel) {
+            window.settingsPanel.updateEstimateButtonState();
+        }
     }
 
     /**
@@ -308,6 +314,9 @@ class FileBrowser {
             }
         });
         this.renderFiles();
+        if (window.settingsPanel) {
+            window.settingsPanel.updateEstimateButtonState();
+        }
     }
 
     updateSelectionCount() {
@@ -363,6 +372,9 @@ class FileBrowser {
     clearSelection() {
         this.selectedFiles.clear();
         this.renderFiles();
+        if (window.settingsPanel) {
+            window.settingsPanel.updateEstimateButtonState();
+        }
     }
 
     _isConvFile(file) {

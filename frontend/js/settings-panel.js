@@ -26,6 +26,11 @@ class SettingsPanel {
             this.applyMode(e.target.value);
         });
 
+        // Auto-estimate button
+        document.getElementById('btn-auto-estimate').addEventListener('click', () => {
+            this.autoEstimate();
+        });
+
         // CRF slider
         const crfSlider = document.getElementById('crf-slider');
         const crfValue = document.getElementById('crf-value');
@@ -62,6 +67,71 @@ class SettingsPanel {
             const maxRes = preset.max_resolution || 1080;
             const resRadio = document.querySelector(`input[name="resolution"][value="${maxRes}"]`);
             if (resRadio) resRadio.checked = true;
+        }
+
+        // Clear estimate info when switching modes
+        document.getElementById('estimate-info').textContent = '';
+    }
+
+    updateEstimateButtonState() {
+        const btn = document.getElementById('btn-auto-estimate');
+        const selected = window.fileBrowser ? window.fileBrowser.getSelectedFiles() : [];
+        const mode = document.getElementById('mode-select').value;
+        btn.disabled = selected.length === 0 || mode !== 'default';
+    }
+
+    async autoEstimate() {
+        const selected = window.fileBrowser ? window.fileBrowser.getSelectedFiles() : [];
+        if (selected.length === 0) {
+            window.app.showNotification('Please select a file first', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('btn-auto-estimate');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+        try {
+            // Analyze the first selected file
+            const result = await api.analyzeFile(selected[0]);
+
+            // Build SVT params based on estimate, preserving other params like tune=0
+            const currentParams = document.getElementById('svt-params').value;
+            let params = currentParams;
+
+            // Remove existing film-grain and film-grain-denoise params
+            params = params.replace(/:?\bfilm-grain=[^:]*/g, '');
+            params = params.replace(/:?\bfilm-grain-denoise=[^:]*/g, '');
+            // Clean up empty segments
+            params = params.replace(/::+/g, ':');
+            params = params.replace(/^:|:$/g, '');
+
+            // Add estimated params
+            const grainParts = [];
+            if (result.film_grain > 0) {
+                grainParts.push(`film-grain=${result.film_grain}`);
+            }
+            if (result.denoise > 0) {
+                grainParts.push(`film-grain-denoise=${result.denoise}`);
+            }
+            if (grainParts.length > 0) {
+                params = params ? `${params}:${grainParts.join(':')}` : grainParts.join(':');
+            }
+
+            document.getElementById('svt-params').value = params;
+
+            const info = document.getElementById('estimate-info');
+            info.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Estimated: grain=${result.film_grain}, denoise=${result.denoise} (${utils.escapeHtml(result.reason)})</span>`;
+
+            window.app.showNotification(`Estimated: grain=${result.film_grain}, denoise=${result.denoise}`, 'success');
+        } catch (error) {
+            console.error('Error analyzing file:', error);
+            document.getElementById('estimate-info').innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Analysis failed: ${utils.escapeHtml(error.message)}</span>`;
+            window.app.showNotification(`Analysis failed: ${error.message}`, 'danger');
+        } finally {
+            btn.innerHTML = originalHtml;
+            this.updateEstimateButtonState();
         }
     }
 
