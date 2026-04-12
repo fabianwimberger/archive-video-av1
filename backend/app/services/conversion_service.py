@@ -154,7 +154,8 @@ class ConversionService:
             last_log_append = 0.0
             progress_buffer = {}
 
-            assert process.stdout is not None
+            if process.stdout is None:
+                raise RuntimeError("Process stdout is None")
             async for line in process.stdout:
                 line_str = line.decode().strip()
 
@@ -257,7 +258,8 @@ class ConversionService:
             await process.wait()
 
             # Capture stderr
-            assert process.stderr is not None
+            if process.stderr is None:
+                raise RuntimeError("Process stderr is None")
             stderr_output = await process.stderr.read()
             if stderr_output:
                 stderr_str = stderr_output.decode().strip()
