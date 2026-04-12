@@ -22,7 +22,9 @@ class Settings:
     CONVERSION_WRAPPER_SCRIPT: str = "/app/scripts/conversion_wrapper.sh"
 
     # CORS
-    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    CORS_ORIGINS: list = os.getenv(
+        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
 
     @classmethod
     def ensure_directories(cls):

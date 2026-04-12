@@ -181,7 +181,7 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
         }
 
     # High detail content
-    if y_norm > 50.0:
+    if y_norm >= 60.0:
         if bitrate_per_mp > 0 and bitrate_per_mp < 3000:
             return {
                 "film_grain": 16,
