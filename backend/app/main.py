@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Video Conversion Service",
     description="Web-based video conversion service with real-time progress tracking",
-    version="1.0.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -140,7 +140,7 @@ async def get_presets():
         "animated": ConversionSettings(
             crf=35,
             preset=4,
-            svt_params="tune=0",
+            svt_params="tune=0:enable-qm=1:max-tx-size=32",
             audio_bitrate="96k",
             skip_crop_detect=False,
             max_resolution=1080,
