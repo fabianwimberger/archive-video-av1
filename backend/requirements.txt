@@ -2,5 +2,5 @@ fastapi==0.135.3
 uvicorn[standard]==0.44.0
 sqlalchemy==2.0.49
 aiosqlite==0.22.1
-python-multipart==0.0.24
+python-multipart==0.0.26
 websockets==16.0
