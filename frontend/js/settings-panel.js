@@ -3,32 +3,63 @@
  */
 class SettingsPanel {
     constructor() {
-        this.presets = null;
+        this.presets = [];
+        this.selectedPresetId = null;
     }
 
     async init() {
         await this.loadPresets();
+        this.populatePresetSelect();
         this.setupEventListeners();
-        this.applyMode('default');
     }
 
     async loadPresets() {
         try {
-            this.presets = await api.getPresets();
+            this.presets = await api.listPresets();
         } catch (error) {
             console.error('Error loading presets:', error);
         }
     }
 
-    setupEventListeners() {
-        // Mode selector
-        document.getElementById('mode-select').addEventListener('change', (e) => {
-            this.applyMode(e.target.value);
+    populatePresetSelect() {
+        const select = document.getElementById('preset-select');
+        select.innerHTML = '';
+
+        this.presets.forEach(preset => {
+            const option = document.createElement('option');
+            option.value = preset.id;
+            option.textContent = preset.name + (preset.is_default ? ' (default)' : '');
+            if (preset.is_default) {
+                option.selected = true;
+                this.selectedPresetId = preset.id;
+                this.applyPreset(preset.id);
+            }
+            select.appendChild(option);
         });
 
-        // Auto-estimate button
+        // If no default found, select first
+        if (!this.selectedPresetId && this.presets.length > 0) {
+            select.value = this.presets[0].id;
+            this.selectedPresetId = this.presets[0].id;
+            this.applyPreset(this.presets[0].id);
+        }
+    }
+
+    setupEventListeners() {
+        // Preset selector
+        document.getElementById('preset-select').addEventListener('change', (e) => {
+            this.selectedPresetId = parseInt(e.target.value);
+            this.applyPreset(this.selectedPresetId);
+            this.checkModified();
+        });
+
+        // Auto-estimate buttons
         document.getElementById('btn-auto-estimate').addEventListener('click', () => {
             this.autoEstimate();
+        });
+
+        document.getElementById('btn-auto-preset').addEventListener('click', () => {
+            this.autoPreset();
         });
 
         // CRF slider
@@ -36,6 +67,7 @@ class SettingsPanel {
         const crfValue = document.getElementById('crf-value');
         crfSlider.addEventListener('input', (e) => {
             crfValue.textContent = e.target.value;
+            this.checkModified();
         });
 
         // Preset slider
@@ -43,6 +75,16 @@ class SettingsPanel {
         const presetValue = document.getElementById('preset-value');
         presetSlider.addEventListener('input', (e) => {
             presetValue.textContent = e.target.value;
+            this.checkModified();
+        });
+
+        // Other inputs
+        ['svt-params', 'audio-bitrate'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => this.checkModified());
+        });
+        document.getElementById('skip-crop').addEventListener('change', () => this.checkModified());
+        document.querySelectorAll('input[name="resolution"]').forEach(el => {
+            el.addEventListener('change', () => this.checkModified());
         });
 
         // Convert selected button
@@ -51,33 +93,52 @@ class SettingsPanel {
         });
     }
 
-    applyMode(mode) {
-        const preset = this.presets ? this.presets[mode] : null;
+    applyPreset(presetId) {
+        const preset = this.presets.find(p => p.id === presetId);
+        if (!preset) return;
 
-        if (preset) {
-            document.getElementById('crf-slider').value = preset.crf;
-            document.getElementById('crf-value').textContent = preset.crf;
-            document.getElementById('preset-slider').value = preset.preset;
-            document.getElementById('preset-value').textContent = preset.preset;
-            document.getElementById('svt-params').value = preset.svt_params;
-            document.getElementById('audio-bitrate').value = preset.audio_bitrate;
-            document.getElementById('skip-crop').checked = preset.skip_crop_detect;
+        document.getElementById('crf-slider').value = preset.crf;
+        document.getElementById('crf-value').textContent = preset.crf;
+        document.getElementById('preset-slider').value = preset.encoder_preset;
+        document.getElementById('preset-value').textContent = preset.encoder_preset;
+        document.getElementById('svt-params').value = preset.svt_params || '';
+        document.getElementById('audio-bitrate').value = preset.audio_bitrate;
+        document.getElementById('skip-crop').checked = preset.skip_crop_detect;
 
-            // Apply max_resolution (default to 1080 if not in preset)
-            const maxRes = preset.max_resolution || 1080;
-            const resRadio = document.querySelector(`input[name="resolution"][value="${maxRes}"]`);
-            if (resRadio) resRadio.checked = true;
-        }
+        const maxRes = preset.max_resolution || 1080;
+        const resRadio = document.querySelector(`input[name="resolution"][value="${maxRes}"]`);
+        if (resRadio) resRadio.checked = true;
 
-        // Clear estimate info when switching modes
         document.getElementById('estimate-info').textContent = '';
+        this.checkModified();
+    }
+
+    checkModified() {
+        if (!this.selectedPresetId) {
+            document.getElementById('preset-modified-badge').classList.add('d-none');
+            return;
+        }
+        const preset = this.presets.find(p => p.id === this.selectedPresetId);
+        if (!preset) return;
+
+        const current = this.getCurrentSettings();
+        const isModified =
+            current.crf !== preset.crf ||
+            current.encoder_preset !== preset.encoder_preset ||
+            current.svt_params !== (preset.svt_params || '') ||
+            current.audio_bitrate !== preset.audio_bitrate ||
+            current.skip_crop_detect !== preset.skip_crop_detect ||
+            current.max_resolution !== preset.max_resolution;
+
+        document.getElementById('preset-modified-badge').classList.toggle('d-none', !isModified);
     }
 
     updateEstimateButtonState() {
-        const btn = document.getElementById('btn-auto-estimate');
+        const btnEstimate = document.getElementById('btn-auto-estimate');
+        const btnPreset = document.getElementById('btn-auto-preset');
         const selected = window.fileBrowser ? window.fileBrowser.getSelectedFiles() : [];
-        const mode = document.getElementById('mode-select').value;
-        btn.disabled = selected.length === 0 || mode !== 'default';
+        btnEstimate.disabled = selected.length === 0;
+        btnPreset.disabled = selected.length === 0;
     }
 
     async autoEstimate() {
@@ -93,21 +154,16 @@ class SettingsPanel {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
 
         try {
-            // Analyze the first selected file
             const result = await api.analyzeFile(selected[0]);
 
-            // Build SVT params based on estimate, preserving other params like tune=0
             const currentParams = document.getElementById('svt-params').value;
             let params = currentParams;
 
-            // Remove existing film-grain and film-grain-denoise params
             params = params.replace(/:?\bfilm-grain=[^:]*/g, '');
             params = params.replace(/:?\bfilm-grain-denoise=[^:]*/g, '');
-            // Clean up empty segments
             params = params.replace(/::+/g, ':');
-            params = params.replace(/^:|:$/g, '');
+            params = params.replace(/^:|$/g, '');
 
-            // Add estimated params
             const grainParts = [];
             if (result.film_grain > 0) {
                 grainParts.push(`film-grain=${result.film_grain}`);
@@ -120,6 +176,7 @@ class SettingsPanel {
             }
 
             document.getElementById('svt-params').value = params;
+            this.checkModified();
 
             const info = document.getElementById('estimate-info');
             info.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Estimated: grain=${result.film_grain}, denoise=${result.denoise} (${utils.escapeHtml(result.reason)})</span>`;
@@ -135,11 +192,41 @@ class SettingsPanel {
         }
     }
 
+    async autoPreset() {
+        const selected = window.fileBrowser ? window.fileBrowser.getSelectedFiles() : [];
+        if (selected.length === 0) {
+            window.app.showNotification('Please select a file first', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('btn-auto-preset');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+        try {
+            const result = await api.analyzeFile(selected[0], true);
+            if (result.suggested_preset_id) {
+                const select = document.getElementById('preset-select');
+                select.value = result.suggested_preset_id;
+                this.selectedPresetId = result.suggested_preset_id;
+                this.applyPreset(result.suggested_preset_id);
+                window.app.showNotification(`Suggested preset: ${result.reason}`, 'success');
+            } else {
+                window.app.showNotification('No preset suggestion available', 'warning');
+            }
+        } catch (error) {
+            window.app.showNotification(`Auto-preset failed: ${error.message}`, 'danger');
+        } finally {
+            btn.innerHTML = originalHtml;
+            this.updateEstimateButtonState();
+        }
+    }
+
     getCurrentSettings() {
         return {
-            mode: document.getElementById('mode-select').value,
             crf: parseInt(document.getElementById('crf-slider').value),
-            preset: parseInt(document.getElementById('preset-slider').value),
+            encoder_preset: parseInt(document.getElementById('preset-slider').value),
             svt_params: document.getElementById('svt-params').value,
             audio_bitrate: document.getElementById('audio-bitrate').value,
             skip_crop_detect: document.getElementById('skip-crop').checked,
@@ -149,15 +236,19 @@ class SettingsPanel {
 
     async convertSingleFile(filePath) {
         const settings = this.getCurrentSettings();
+        const preset = this.presets.find(p => p.id === this.selectedPresetId);
+
+        // Determine if we should send preset_id, settings, or both
+        const isModified = !document.getElementById('preset-modified-badge').classList.contains('d-none');
+        const presetId = this.selectedPresetId;
+        const settingsToSend = isModified ? settings : null;
 
         try {
-            const result = await api.createJob(filePath, settings.mode, settings);
+            const result = await api.createJob(filePath, presetId, settingsToSend);
             if (result.job_ids && result.job_ids.length > 0) {
                 console.log(`Created job ${result.job_ids[0]} for ${filePath}`);
-                // Reload job queue to show the new job
                 await jobQueue.loadJobs();
 
-                // Show success notification
                 const fileName = filePath.split('/').pop();
                 window.app.showNotification(`Conversion started: ${fileName}`, 'success');
 
