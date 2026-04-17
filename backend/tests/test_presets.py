@@ -92,15 +92,18 @@ class TestDeleteAllPresets:
     def test_delete_all_user_presets(self, seeded_client):
         # Create a couple user presets
         for name in ("UserA", "UserB"):
-            seeded_client.post("/api/presets", json={
-                "name": name,
-                "crf": 24,
-                "encoder_preset": 4,
-                "svt_params": "tune=0",
-                "audio_bitrate": "128k",
-                "skip_crop_detect": True,
-                "max_resolution": 1080,
-            })
+            seeded_client.post(
+                "/api/presets",
+                json={
+                    "name": name,
+                    "crf": 24,
+                    "encoder_preset": 4,
+                    "svt_params": "tune=0",
+                    "audio_bitrate": "128k",
+                    "skip_crop_detect": True,
+                    "max_resolution": 1080,
+                },
+            )
 
         response = seeded_client.delete("/api/presets/all")
         assert response.status_code == 204
@@ -113,15 +116,18 @@ class TestDeleteAllPresets:
         assert all(p["is_builtin"] for p in data)
 
     def test_delete_all_resets_default_to_builtin(self, seeded_client):
-        create_resp = seeded_client.post("/api/presets", json={
-            "name": "MyDefault",
-            "crf": 24,
-            "encoder_preset": 4,
-            "svt_params": "tune=0",
-            "audio_bitrate": "128k",
-            "skip_crop_detect": True,
-            "max_resolution": 1080,
-        })
+        create_resp = seeded_client.post(
+            "/api/presets",
+            json={
+                "name": "MyDefault",
+                "crf": 24,
+                "encoder_preset": 4,
+                "svt_params": "tune=0",
+                "audio_bitrate": "128k",
+                "skip_crop_detect": True,
+                "max_resolution": 1080,
+            },
+        )
         preset_id = create_resp.json()["id"]
         seeded_client.post(f"/api/presets/{preset_id}/set-default")
 
