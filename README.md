@@ -35,7 +35,7 @@ AV1 offers superior compression efficiency compared to H.264 and H.265, reducing
 - **Persistent** — conversion history, custom presets, and queue state survive restarts
 - **Conversion presets:**
   - **Default** — CRF 26, film grain preservation (`film-grain=8`)
-  - **Animated** — CRF 35, tune=0 (visual quality), enable-qm=1, max-tx-size=32 — optimized for animated content with sharp lines
+  - **Animated** — CRF 35, tune=0 (visual quality) — optimized for animated content
   - **Grainy** — CRF 26, heavy grain preservation (`film-grain=16:film-grain-denoise=1`)
   - **Custom presets** — create, edit, duplicate, import/export your own presets
 - **Automatic crop detection** (consensus-based, 8-point sampling)
