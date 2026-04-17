@@ -1,5 +1,6 @@
 """Main FastAPI application."""
 
+import asyncio
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -40,7 +41,7 @@ async def lifespan(app: FastAPI):
 
     cfg = Config("/app/alembic.ini")
     cfg.set_main_option("script_location", "/app/alembic")
-    command.upgrade(cfg, "head")
+    await asyncio.to_thread(command.upgrade, cfg, "head")
     logger.info("Database migrated to head")
 
     await init_db()
