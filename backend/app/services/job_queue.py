@@ -20,27 +20,27 @@ logger = logging.getLogger(__name__)
 class JobQueue:
     """Manages job queue and background worker."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.current_job_id: Optional[int] = None
         self.current_process: Optional[asyncio.subprocess.Process] = None
         self.running = False
         self.worker_task: Optional[asyncio.Task] = None
         self.websocket_manager = None
-        self.cancelled_job_ids = set()
+        self.cancelled_job_ids: set[int] = set()
         self._wake_event: Optional[asyncio.Event] = None
         self._paused_event: Optional[asyncio.Event] = None
 
-    def set_websocket_manager(self, ws_manager):
+    def set_websocket_manager(self, ws_manager) -> None:
         """Set WebSocket manager for broadcasting updates."""
         self.websocket_manager = ws_manager
 
-    def pause(self):
+    def pause(self) -> None:
         """Pause the worker loop."""
         if self._paused_event:
             self._paused_event.clear()
         logger.info("Queue paused")
 
-    def resume(self):
+    def resume(self) -> None:
         """Resume the worker loop."""
         if self._paused_event:
             self._paused_event.set()
@@ -105,7 +105,7 @@ class JobQueue:
                 }
             )
 
-    async def start_worker(self):
+    async def start_worker(self) -> None:
         """Start background worker task."""
         if self.running:
             logger.warning("Worker already running")
@@ -132,7 +132,7 @@ class JobQueue:
         self.worker_task = asyncio.create_task(self._worker_loop())
         logger.info("Job queue worker started")
 
-    async def stop_worker(self):
+    async def stop_worker(self) -> None:
         """Stop background worker task."""
         if not self.running:
             return
