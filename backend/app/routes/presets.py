@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.preset import Preset
@@ -138,6 +138,24 @@ async def update_preset(
 
     default_id = await _get_default_preset_id(db)
     return _preset_to_response(preset, default_id)
+
+
+@router.delete("/all", status_code=204)
+async def delete_all_presets(db: AsyncSession = Depends(get_db)):
+    """Delete all user (non-built-in) presets."""
+    default_id = await _get_default_preset_id(db)
+    default_preset = await db.get(Preset, default_id)
+    if default_preset and not default_preset.is_builtin:
+        # Reset to Default built-in
+        default_result = await db.execute(
+            select(Preset).where(Preset.name == "Default")
+        )
+        builtin_default = default_result.scalar_one_or_none()
+        new_default_id = builtin_default.id if builtin_default else 1
+        await _set_default_preset_id(db, new_default_id)  # type: ignore
+
+    await db.execute(delete(Preset).where(Preset.is_builtin.is_(False)))
+    await db.commit()
 
 
 @router.delete("/{preset_id}", status_code=204)
