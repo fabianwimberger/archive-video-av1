@@ -39,6 +39,10 @@ class PresetManager {
             this.importPresets();
         });
 
+        document.getElementById('btn-preset-remove-all').addEventListener('click', () => {
+            this.removeAllPresets();
+        });
+
         document.getElementById('btn-preset-edit-save').addEventListener('click', () => {
             this.saveEdit();
         });
@@ -190,6 +194,21 @@ class PresetManager {
         try {
             await api.deletePreset(id);
             window.app.showNotification('Preset deleted', 'success');
+            await this.loadPresets();
+            this.renderList();
+            await window.settingsPanel.loadPresets();
+            await window.settingsPanel.populatePresetSelect();
+            if (window.historyView) window.historyView.loadPresetsForFilter();
+        } catch (error) {
+            window.app.showNotification(`Error: ${error.message}`, 'danger');
+        }
+    }
+
+    async removeAllPresets() {
+        if (!confirm('Remove all user presets? Built-in presets will be kept.')) return;
+        try {
+            await api.deleteAllPresets();
+            window.app.showNotification('All user presets removed', 'success');
             await this.loadPresets();
             this.renderList();
             await window.settingsPanel.loadPresets();
