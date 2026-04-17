@@ -30,6 +30,9 @@ class ApiClient {
                 throw new Error(errorMessage);
             }
 
+            if (response.status === 204 || response.headers.get('content-length') === '0') {
+                return null;
+            }
             return await response.json();
         } catch (error) {
             console.error(`API request failed: ${endpoint}`, error);
@@ -181,6 +184,12 @@ class ApiClient {
 
     async deletePreset(id) {
         return this.request(`/presets/${id}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async deleteAllPresets() {
+        return this.request('/presets/all', {
             method: 'DELETE',
         });
     }
