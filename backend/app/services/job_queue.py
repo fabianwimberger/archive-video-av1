@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from app.database import AsyncSessionLocal
 from app.models.job import Job
 from app.services.conversion_service import conversion_service
+from app.services.lifecycle import prune_history
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +21,32 @@ class JobQueue:
     """Manages job queue and background worker."""
 
     def __init__(self):
-        self.queue: asyncio.Queue = asyncio.Queue()
         self.current_job_id: Optional[int] = None
         self.current_process: Optional[asyncio.subprocess.Process] = None
         self.running = False
         self.worker_task: Optional[asyncio.Task] = None
         self.websocket_manager = None
         self.cancelled_job_ids = set()
-        self.removed_job_ids = set()
+        self._wake_event: Optional[asyncio.Event] = None
+        self._paused_event: Optional[asyncio.Event] = None
 
     def set_websocket_manager(self, ws_manager):
         """Set WebSocket manager for broadcasting updates."""
         self.websocket_manager = ws_manager
+
+    def pause(self):
+        """Pause the worker loop."""
+        if self._paused_event:
+            self._paused_event.clear()
+        logger.info("Queue paused")
+
+    def resume(self):
+        """Resume the worker loop."""
+        if self._paused_event:
+            self._paused_event.set()
+        if self._wake_event:
+            self._wake_event.set()
+        logger.info("Queue resumed")
 
     async def cancel_current_job(self) -> bool:
         """
@@ -70,21 +85,23 @@ class JobQueue:
 
     async def add_job(self, job_id: int):
         """
-        Add job to queue.
+        Signal worker that a new job is available.
 
         Args:
-            job_id: Database job ID
+            job_id: Database job ID (unused, wake only)
         """
-        await self.queue.put(job_id)
-        logger.info(f"Job {job_id} added to queue. Queue size: {self.queue.qsize()}")
+        if self._wake_event:
+            self._wake_event.set()
+        logger.info(f"Job {job_id} signaled worker")
 
         # Broadcast queue update
         if self.websocket_manager:
+            status = self.get_queue_status()
             await self.websocket_manager.broadcast(
                 {
                     "type": "queue_update",
-                    "queue_size": self.queue.qsize(),
-                    "active_job_id": self.current_job_id,
+                    "queue_size": status["pending_count"],
+                    "active_job_id": status["active_job_id"],
                 }
             )
 
@@ -93,6 +110,23 @@ class JobQueue:
         if self.running:
             logger.warning("Worker already running")
             return
+
+        self._wake_event = asyncio.Event()
+        self._paused_event = asyncio.Event()
+
+        # Rehydrate pause state from DB (restart under paused stays paused)
+        async with AsyncSessionLocal() as db:
+            from app.models.app_state import AppState
+
+            result = await db.execute(
+                select(AppState).where(AppState.key == "queue_paused")
+            )
+            row = result.scalar_one_or_none()
+            if row and row.value.lower() == "true":
+                self._paused_event.clear()
+                logger.info("Queue started in paused state")
+            else:
+                self._paused_event.set()
 
         self.running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
@@ -104,6 +138,8 @@ class JobQueue:
             return
 
         self.running = False
+        if self._wake_event:
+            self._wake_event.set()
         if self.worker_task:
             self.worker_task.cancel()
             try:
@@ -113,40 +149,58 @@ class JobQueue:
         logger.info("Job queue worker stopped")
 
     async def _worker_loop(self):
-        """Background worker that processes jobs sequentially."""
+        """Background worker that processes jobs sequentially from DB."""
         logger.info("Worker loop started")
 
         while self.running:
             try:
-                # Get next job from queue (with timeout to allow checking running flag)
-                try:
-                    job_id = await asyncio.wait_for(self.queue.get(), timeout=1.0)
-                except asyncio.TimeoutError:
+                # Check pause state
+                if self._paused_event and not self._paused_event.is_set():
+                    try:
+                        await asyncio.wait_for(self._paused_event.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
+
+                async with AsyncSessionLocal() as db:
+                    # Load next pending job by queue_position
+                    result = await db.execute(
+                        select(Job)
+                        .where(Job.status == "pending")
+                        .order_by(
+                            Job.queue_position.asc().nullslast(), Job.created_at.asc()
+                        )
+                        .limit(1)
+                    )
+                    job = result.scalar_one_or_none()
+
+                if job is None:
+                    # No pending jobs; wait for wake signal
+                    if self._wake_event:
+                        self._wake_event.clear()
+                        try:
+                            await asyncio.wait_for(self._wake_event.wait(), timeout=1.0)
+                        except asyncio.TimeoutError:
+                            pass
+                    else:
+                        await asyncio.sleep(1.0)
                     continue
 
-                # Skip jobs that were removed while queued
-                if job_id in self.removed_job_ids:
-                    self.removed_job_ids.discard(job_id)
-                    self.queue.task_done()
-                    continue
-
-                self.current_job_id = job_id
-                logger.info(f"Processing job {job_id}")
+                self.current_job_id = job.id
+                logger.info(f"Processing job {job.id}")
 
                 # Process the job
-                await self._process_job(job_id)
+                await self._process_job(job.id)
 
-                # Mark task as done
-                self.queue.task_done()
                 self.current_job_id = None
 
                 # Broadcast queue update
                 if self.websocket_manager:
+                    status = self.get_queue_status()
                     await self.websocket_manager.broadcast(
                         {
                             "type": "queue_update",
-                            "queue_size": self.queue.qsize(),
-                            "active_job_id": self.current_job_id,
+                            "queue_size": status["pending_count"],
+                            "active_job_id": status["active_job_id"],
                         }
                     )
 
@@ -175,8 +229,8 @@ class JobQueue:
                     return
 
                 # Update status to processing
-                job.status = "processing"
-                job.started_at = datetime.now(timezone.utc)
+                job.status = "processing"  # type: ignore[assignment]
+                job.started_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 await db.commit()
 
                 # Broadcast status change
@@ -191,7 +245,7 @@ class JobQueue:
                     )
 
                 # Parse settings
-                settings = json.loads(job.settings) if job.settings else {}
+                settings = json.loads(job.settings) if job.settings else {}  # type: ignore
 
                 # Define progress callback
                 async def on_progress(job_id: int, progress_data: dict):
@@ -239,8 +293,8 @@ class JobQueue:
                 # Execute conversion
                 success, log = await conversion_service.convert_file(
                     job_id=job_id,
-                    source_file=job.source_file,
-                    output_file=job.output_file,
+                    source_file=job.source_file,  # type: ignore
+                    output_file=job.output_file,  # type: ignore
                     conversion_settings=settings,
                     progress_callback=on_progress,
                     process_callback=on_process,
@@ -251,13 +305,13 @@ class JobQueue:
 
                 # Check if job was explicitly cancelled
                 if job_id in self.cancelled_job_ids:
-                    job.status = "cancelled"
-                    job.error_message = "Cancelled by user"
+                    job.status = "cancelled"  # type: ignore[assignment]
+                    job.error_message = "Cancelled by user"  # type: ignore[assignment]
                     self.cancelled_job_ids.remove(job_id)
                     success = False
                 else:
                     # Update final status
-                    job.status = "completed" if success else "failed"
+                    job.status = "completed" if success else "failed"  # type: ignore[assignment]
                     if not success:
                         # Extract error message from log
                         error_lines = [
@@ -266,12 +320,12 @@ class JobQueue:
                             if line.startswith("ERROR:")
                         ]
                         job.error_message = (
-                            error_lines[-1] if error_lines else "Conversion failed"
+                            error_lines[-1] if error_lines else "Conversion failed"  # type: ignore[assignment]
                         )
 
-                job.completed_at = datetime.now(timezone.utc)
-                job.progress_percent = 100.0 if success else job.progress_percent
-                job.log = log
+                job.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                job.progress_percent = 100.0 if success else job.progress_percent  # type: ignore[assignment]
+                job.log = log  # type: ignore[assignment]
 
                 # Calculate file sizes for completed jobs
                 if success:
@@ -279,9 +333,9 @@ class JobQueue:
                         source_path = Path(job.source_file)
                         output_path = Path(job.output_file)
                         if source_path.exists():
-                            job.source_size_bytes = source_path.stat().st_size
+                            job.source_size_bytes = source_path.stat().st_size  # type: ignore[assignment]
                         if output_path.exists():
-                            job.output_size_bytes = output_path.stat().st_size
+                            job.output_size_bytes = output_path.stat().st_size  # type: ignore[assignment]
                     except Exception as e:
                         logger.warning(
                             f"Could not calculate file sizes for job {job_id}: {e}"
@@ -312,9 +366,9 @@ class JobQueue:
                     result = await db.execute(select(Job).where(Job.id == job_id))
                     job = result.scalar_one_or_none()
                     if job:
-                        job.status = "failed"
-                        job.error_message = str(e)
-                        job.completed_at = datetime.now(timezone.utc)
+                        job.status = "failed"  # type: ignore[assignment]
+                        job.error_message = str(e)  # type: ignore[assignment]
+                        job.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                         await db.commit()
 
                         if self.websocket_manager:
@@ -329,10 +383,34 @@ class JobQueue:
                 except Exception as db_error:
                     logger.error(f"Error updating failed job {job_id}: {db_error}")
 
+        # Prune history after each finished job
+        try:
+            await prune_history()
+        except Exception as e:
+            logger.error(f"Error pruning history: {e}")
+
     def get_queue_status(self) -> dict:
-        """Get current queue status."""
+        """Get current queue status (synchronous, returns last known pending count)."""
         return {
-            "queue_size": self.queue.qsize(),
+            "pending_count": 0,
+            "active_job_id": self.current_job_id,
+            "running": self.running,
+        }
+
+    async def get_queue_status_async(self) -> dict:
+        """Get current queue status asynchronously."""
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import func
+
+            result = await db.execute(
+                select(func.count()).select_from(
+                    select(Job).where(Job.status == "pending").subquery()
+                )
+            )
+            pending_count = result.scalar() or 0
+
+        return {
+            "pending_count": pending_count,
             "active_job_id": self.current_job_id,
             "running": self.running,
         }

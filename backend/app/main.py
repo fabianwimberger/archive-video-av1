@@ -1,7 +1,6 @@
 """Main FastAPI application."""
 
 import logging
-import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -33,19 +32,29 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting conversion service...")
 
-    # Clean slate: Delete database if it exists
-    if os.path.exists(settings.DATABASE_PATH):
-        try:
-            os.remove(settings.DATABASE_PATH)
-            logger.info(
-                f"Deleted existing database at {settings.DATABASE_PATH} for clean startup"
-            )
-        except Exception as e:
-            logger.error(f"Failed to delete database: {e}")
-
     settings.ensure_directories()
+
+    # Run Alembic migrations
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config("/app/alembic.ini")
+    cfg.set_main_option("script_location", "/app/alembic")
+    command.upgrade(cfg, "head")
+    logger.info("Database migrated to head")
+
     await init_db()
-    logger.info("Database initialized")
+
+    # Sync built-in presets and recover jobs
+    from app.services.lifecycle import (
+        sync_builtin_presets,
+        recover_interrupted_jobs,
+        prune_history,
+    )
+
+    await sync_builtin_presets()
+    await recover_interrupted_jobs()
+    await prune_history()
 
     # Import and set up WebSocket manager
     from app.services.websocket_manager import websocket_manager
@@ -85,7 +94,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Video Conversion Service",
     description="Web-based video conversion service with real-time progress tracking",
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -102,10 +111,12 @@ app.add_middleware(
 )
 
 # Include routers
-from app.routes import files, jobs, websocket  # noqa: E402
+from app.routes import files, jobs, websocket, presets, queue  # noqa: E402
 
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
+app.include_router(presets.router, prefix="/api/presets", tags=["presets"])
+app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
 app.include_router(websocket.router, tags=["websocket"])
 
 
@@ -114,45 +125,12 @@ async def health_check():
     """Health check endpoint."""
     from app.services.job_queue import job_queue
 
-    queue_status = job_queue.get_queue_status()
+    queue_status = await job_queue.get_queue_status_async()
 
     return {
         "status": "healthy",
-        "queue_size": queue_status["queue_size"],
+        "pending_count": queue_status["pending_count"],
         "active_job": queue_status["active_job_id"],
-    }
-
-
-@app.get("/api/presets")
-async def get_presets():
-    """Get conversion presets."""
-    from app.models.schemas import ConversionSettings
-
-    return {
-        "default": ConversionSettings(
-            crf=26,
-            preset=4,
-            svt_params="tune=0:film-grain=8",
-            audio_bitrate="96k",
-            skip_crop_detect=False,
-            max_resolution=1080,
-        ).model_dump(),
-        "animated": ConversionSettings(
-            crf=35,
-            preset=4,
-            svt_params="tune=0:enable-qm=1:max-tx-size=32",
-            audio_bitrate="96k",
-            skip_crop_detect=False,
-            max_resolution=1080,
-        ).model_dump(),
-        "grainy": ConversionSettings(
-            crf=26,
-            preset=4,
-            svt_params="tune=0:film-grain=16:film-grain-denoise=1",
-            audio_bitrate="96k",
-            skip_crop_detect=False,
-            max_resolution=1080,
-        ).model_dump(),
     }
 
 
