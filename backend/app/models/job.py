@@ -1,7 +1,17 @@
 """Job database model."""
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, Index, BigInteger
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Text,
+    DateTime,
+    Index,
+    BigInteger,
+    ForeignKey,
+)
 from app.database import Base
 
 
@@ -17,16 +27,19 @@ class Job(Base):
     source_file = Column(String, nullable=False)
     output_file = Column(String, nullable=False)
 
-    # Conversion settings
-    mode = Column(
-        String, nullable=False, default="default"
-    )  # 'default', 'animated' or 'grainy'
+    # Conversion settings snapshot
+    preset_id = Column(
+        Integer, ForeignKey("presets.id", ondelete="SET NULL"), nullable=True
+    )
+    preset_name_snapshot = Column(String, nullable=True)
     settings = Column(Text, default="{}")  # JSON string with CRF, preset, etc.
+    notes = Column(Text, nullable=True)
+    queue_position = Column(Integer, nullable=True)
 
     # Status tracking
     status = Column(
         String, nullable=False, default="pending"
-    )  # pending, processing, completed, failed
+    )  # pending, processing, completed, failed, cancelled
     progress_percent = Column(Float, default=0.0)
     eta_seconds = Column(Integer, nullable=True)
     current_fps = Column(Float, nullable=True)
@@ -46,6 +59,7 @@ class Job(Base):
 
     # Indexes
     __table_args__ = (
-        Index("idx_jobs_status", "status"),
-        Index("idx_jobs_created_at", "created_at"),
+        Index("idx_jobs_status_completed_at", "status", "completed_at"),
+        Index("idx_jobs_source_file", "source_file"),
+        Index("idx_jobs_status_queue_position", "status", "queue_position"),
     )

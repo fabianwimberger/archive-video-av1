@@ -7,9 +7,13 @@ services:
       - "8000:8000"
     volumes:
       - /path/to/your/videos:/videos
+      - app-data:/app/data
     environment:
       - TZ=UTC
       - SOURCE_MOUNT=/videos
       - TEMP_DIR=/app/temp
       - DATABASE_PATH=/app/data/app.db
       - LOG_LEVEL=INFO
+
+volumes:
+  app-data:

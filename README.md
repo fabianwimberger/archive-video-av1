@@ -6,6 +6,13 @@
 
 A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
 
+> **⚠️ Upgrade Note (v0.6.0):** This release introduces a new persistent database schema. Before upgrading, remove the previous data volume to avoid compatibility issues:
+> ```bash
+> docker compose down
+> docker volume rm archive-video-av1_app-data  # or your project's data volume
+> docker compose up -d
+> ```
+
 ## Why This Project?
 
 AV1 offers superior compression efficiency compared to H.264 and H.265, reducing file sizes by 30-50% while maintaining quality. However, AV1 encoding is computationally intensive and most existing tools are either CLI-only or require complex setups. This project provides a simple, web-based interface for batch converting video libraries to AV1 without sacrificing quality.
@@ -25,15 +32,17 @@ AV1 offers superior compression efficiency compared to H.264 and H.265, reducing
 - **Web UI** with real-time progress (FPS, ETA, percentage) via WebSocket
 - **AV1 encoding** using SVT-AV1 with PGO-optimized FFmpeg
 - **Batch processing** with sequential job queue
+- **Persistent** — conversion history, custom presets, and queue state survive restarts
 - **Conversion presets:**
-  - **Standard** — CRF 26, film grain preservation (`film-grain=8`)
+  - **Default** — CRF 26, film grain preservation (`film-grain=8`)
   - **Animated** — CRF 35, tune=0 (visual quality), enable-qm=1, max-tx-size=32 — optimized for animated content with sharp lines
   - **Grainy** — CRF 26, heavy grain preservation (`film-grain=16:film-grain-denoise=1`)
+  - **Custom presets** — create, edit, duplicate, import/export your own presets
 - **Automatic crop detection** (consensus-based, 8-point sampling)
 - **Two-pass audio normalization** (loudnorm, Opus stereo output)
 - **Language-aware track selection** (German > English > first available)
 - **Skips re-encoding** if source is already AV1
-- **Stateless** — database is wiped on restart; no persistent state to manage
+- **History view** with filtering, search, retry, and per-job settings inspection
 
 ## Quick Start
 
@@ -66,6 +75,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8000:8000 \
   -v /path/to/your/videos:/videos \
+  -v archive-video-av1-data:/app/data \
   -e TZ=UTC \
   -e SOURCE_MOUNT=/videos \
   -e LOG_LEVEL=INFO \
@@ -135,6 +145,15 @@ docker restart convert-service
 5. **Real-time updates** are pushed to the browser via WebSocket
 6. **Output** is saved alongside the source with `_conv` suffix
 
+## Presets
+
+Presets are stored in the SQLite database and survive restarts.
+
+- **Built-in presets** (`Default`, `Animated`, `Grainy`) are seeded automatically and synced on startup. They cannot be edited or deleted, but you can duplicate them to create user presets.
+- **User presets** can be created from the settings panel, or saved from any past job's settings snapshot.
+- **Import / Export** — share presets as JSON documents via the Manage Presets modal.
+- **Default preset** — one preset can be marked as default; it is pre-selected in the UI on load.
+
 ## Configuration
 
 ### Environment Variables
@@ -143,8 +162,10 @@ docker restart convert-service
 |----------|---------|-------------|
 | `SOURCE_MOUNT` | `/videos` | Mount point for source video files |
 | `TEMP_DIR` | `/app/temp` | Temporary directory for in-progress conversions |
-| `DATABASE_PATH` | `/app/data/app.db` | SQLite database path (wiped on restart) |
+| `DATABASE_PATH` | `/app/data/app.db` | SQLite database path (persistent) |
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `JOB_HISTORY_RETENTION_DAYS` | `0` | Delete finished jobs older than N days (`0` = keep forever) |
+| `JOB_HISTORY_MAX_ROWS` | `0` | Maximum number of finished jobs to keep (`0` = unlimited) |
 | `TZ` | `UTC` | Container timezone |
 
 ## Security
