@@ -3,8 +3,11 @@
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
+from sqlalchemy import select
+from app.database import AsyncSessionLocal
 from app.config import settings
 from app.utils.ffprobe import get_video_info, has_converted_file
+from app.models.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +78,38 @@ class FileService:
             directories = []
             files = []
 
+            # Pre-load last jobs for all source files in this directory
+            file_paths = []
+            for item in sorted(target_path.iterdir()):
+                if item.is_file() and item.suffix.lower() in self.VIDEO_EXTENSIONS:
+                    file_paths.append(str(item))
+
+            last_jobs = {}
+            if file_paths:
+                async with AsyncSessionLocal() as db:
+                    for fp in file_paths:
+                        result = await db.execute(
+                            select(Job)
+                            .where(Job.source_file == fp)
+                            .order_by(
+                                Job.completed_at.desc().nullslast(),
+                                Job.created_at.desc(),
+                            )
+                            .limit(1)
+                        )
+                        job = result.scalar_one_or_none()
+                        if job:
+                            last_jobs[fp] = {
+                                "job_id": job.id,
+                                "status": job.status,
+                                "preset_name_snapshot": job.preset_name_snapshot,
+                                "completed_at": job.completed_at.isoformat()
+                                if job.completed_at
+                                else None,
+                                "source_size_bytes": job.source_size_bytes,
+                                "output_size_bytes": job.output_size_bytes,
+                            }
+
             # Scan directory
             for item in sorted(target_path.iterdir()):
                 if item.is_dir():
@@ -105,6 +140,7 @@ class FileService:
                             "has_converted": has_conv,
                             "converted_path": conv_path,
                             "is_converted_file": is_conv_file,
+                            "last_job": last_jobs.get(str(item)),
                         }
                     )
 
@@ -158,6 +194,37 @@ class FileService:
         except Exception as e:
             logger.error(f"Error getting file info for {file_path}: {e}")
             raise
+
+    async def suggest_preset(self, film_grain: float) -> tuple:
+        """
+        Suggest a preset based on film grain estimate.
+
+        Returns:
+            (suggested_preset_id, reason)
+        """
+        from app.models.preset import Preset
+
+        async with AsyncSessionLocal() as db:
+            if film_grain >= 12:
+                grainy_result = await db.execute(
+                    select(Preset).where(Preset.name == "Grainy")
+                )
+                grainy = grainy_result.scalar_one_or_none()
+                preset_id = grainy.id if grainy else None
+                return (
+                    preset_id,
+                    f"High film grain detected ({film_grain}), using Grainy preset",
+                )
+            else:
+                default_result = await db.execute(
+                    select(Preset).where(Preset.name == "Default")
+                )
+                default_preset = default_result.scalar_one_or_none()
+                preset_id = default_preset.id if default_preset else None
+                return (
+                    preset_id,
+                    f"Film grain level ({film_grain}) within normal range, using Default preset",
+                )
 
     async def delete_converted_file(self, converted_path: str) -> bool:
         """

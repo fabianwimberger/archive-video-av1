@@ -11,6 +11,10 @@ services:
     image: archive-video-av1:local
     volumes:
       - /your/local/path:/videos
+      - app-data:/app/data
     # You can also override ports, environment, etc.
     # ports:
     #   - "8001:8000"
+
+volumes:
+  app-data:

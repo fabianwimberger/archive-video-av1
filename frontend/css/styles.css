@@ -14,6 +14,12 @@ body {
 
 .main-content {
     flex: 1;
+    padding: 1rem 1.5rem;
+    overflow: hidden;
+    min-height: 0;
+}
+
+#view-convert.main-content {
     display: grid;
     grid-template-columns: 2fr 1fr; /* Files get 2/3 width */
     grid-template-rows: minmax(0, 60%) minmax(0, 1fr); /* Top 60%, Bottom rest */
@@ -21,8 +27,17 @@ body {
         "files settings"
         "queue queue";
     gap: 1rem;
-    padding: 1rem 1.5rem; /* Consistent padding */
-    overflow: hidden;
+}
+
+#view-history.main-content {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+#view-history.main-content > .card {
+    flex: 1;
+    min-height: 0;
 }
 
 /* Grid Areas */

@@ -21,6 +21,10 @@ class Settings:
     # Scripts
     CONVERSION_WRAPPER_SCRIPT: str = "/app/scripts/conversion_wrapper.sh"
 
+    # History retention
+    JOB_HISTORY_RETENTION_DAYS: int = int(os.getenv("JOB_HISTORY_RETENTION_DAYS", "0"))
+    JOB_HISTORY_MAX_ROWS: int = int(os.getenv("JOB_HISTORY_MAX_ROWS", "0"))
+
     # CORS
     CORS_ORIGINS: list = os.getenv(
         "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"

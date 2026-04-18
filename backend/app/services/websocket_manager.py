@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 class WebSocketManager:
     """Manages WebSocket connections and broadcasting."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.connections: Set[WebSocket] = set()
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket) -> None:
         """
         Accept and register new WebSocket connection.
 
@@ -24,7 +24,7 @@ class WebSocketManager:
         self.connections.add(websocket)
         logger.info(f"WebSocket connected. Total connections: {len(self.connections)}")
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket: WebSocket) -> None:
         """
         Remove WebSocket connection.
 
@@ -36,7 +36,7 @@ class WebSocketManager:
             f"WebSocket disconnected. Total connections: {len(self.connections)}"
         )
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, message: dict) -> None:
         """
         Broadcast message to all connected clients.
 

@@ -93,7 +93,6 @@ class FileBrowser {
     }
 
     async convertSelected() {
-        const settings = window.settingsPanel.getCurrentSettings();
         const selected = Array.from(this.selectedFiles);
 
         // Filter to only convertible files (original files without _conv version)
@@ -113,7 +112,11 @@ class FileBrowser {
 
         try {
             const filePaths = convertibleFiles.map(f => f.path);
-            await api.createBatchJobs(filePaths, settings.mode, settings);
+            const settings = window.settingsPanel.getCurrentSettings();
+            const presetId = window.settingsPanel.selectedPresetId;
+            const isModified = !document.getElementById('preset-modified-badge').classList.contains('d-none');
+
+            await api.createBatchJobs(filePaths, presetId, isModified ? settings : null);
 
             await window.jobQueue.loadJobs();
             this.clearSelection();
@@ -234,8 +237,17 @@ class FileBrowser {
             }
 
             // Original files: selectable
-            // Red text = no _conv yet (needs converting), normal text = has _conv (can delete)
             const textClass = file.has_converted ? '' : 'text-danger';
+            let lastJobHtml = '';
+            if (file.last_job) {
+                const isSuccess = file.last_job.status === 'completed';
+                const icon = isSuccess ? 'bi-check-circle' : 'bi-exclamation-triangle';
+                const color = isSuccess ? 'text-success' : 'text-warning';
+                const badge = isSuccess
+                    ? `${file.last_job.preset_name_snapshot || ''} · ${this.formatSavings(file.last_job.source_size_bytes, file.last_job.output_size_bytes)}`
+                    : `${file.last_job.status}`;
+                lastJobHtml = `<div class="small ${color}"><i class="bi ${icon} me-1"></i>${utils.escapeHtml(badge)}</div>`;
+            }
 
             if (this.selectedFiles.has(file.path)) {
                 fileElement.classList.add('list-group-item-primary');
@@ -254,6 +266,7 @@ class FileBrowser {
                         <div class="small text-muted">
                             <span>${size}</span>${file.hdr ? ` <span class="badge bg-warning text-dark ms-1">${utils.escapeHtml(file.hdr_format || 'HDR')}</span>` : ''}
                         </div>
+                        ${lastJobHtml}
                     </div>
                 </div>
             `;
@@ -275,8 +288,21 @@ class FileBrowser {
                 }
             });
 
+            // Click last job badge to jump to history
+            const lastJobDiv = fileElement.querySelector('.small.text-success, .small.text-warning');
+            if (lastJobDiv && file.last_job) {
+                lastJobDiv.style.cursor = 'pointer';
+                lastJobDiv.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.app.switchView('history');
+                    if (window.historyView) {
+                        window.historyView.filterByFile(file.path);
+                    }
+                });
+            }
+
             fileElement.addEventListener('click', (e) => {
-                if (e.target !== checkbox) {
+                if (e.target !== checkbox && e.target !== lastJobDiv) {
                     checkbox.checked = !checkbox.checked;
                     checkbox.dispatchEvent(new Event('change'));
                 }
@@ -287,6 +313,14 @@ class FileBrowser {
 
         this.updateSelectionCount();
         this.updateButtonStates();
+    }
+
+    formatSavings(sourceBytes, outputBytes) {
+        if (!sourceBytes || !outputBytes) return '';
+        const saved = sourceBytes - outputBytes;
+        const percent = Math.round((saved / sourceBytes) * 100);
+        if (saved <= 0) return 'no savings';
+        return `-${percent}%`;
     }
 
     /**

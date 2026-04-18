@@ -55,15 +55,19 @@ async def get_file_info(path: str = Query(..., description="Absolute path to fil
 
 
 @router.get("/analyze")
-async def analyze_file(path: str = Query(..., description="Absolute path to file")):
+async def analyze_file(
+    path: str = Query(..., description="Absolute path to file"),
+    suggest_preset: bool = Query(False, description="Include preset suggestion"),
+):
     """
     Analyze a video file to estimate optimal film grain and denoise settings.
 
     Args:
         path: Absolute path to file
+        suggest_preset: Whether to include preset suggestion
 
     Returns:
-        Estimated film_grain, denoise, and diagnostic values
+        Estimated film_grain, denoise, and optional suggested_preset_id
     """
     try:
         from pathlib import Path
@@ -76,6 +80,14 @@ async def analyze_file(path: str = Query(..., description="Absolute path to file
             raise ValueError("File does not exist")
 
         result = await estimate_grain(path)
+
+        if suggest_preset:
+            suggested_preset_id, reason = await file_service.suggest_preset(
+                result.get("film_grain", 0)
+            )
+            result["suggested_preset_id"] = suggested_preset_id
+            result["reason"] = reason
+
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

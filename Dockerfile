@@ -123,6 +123,8 @@ RUN python3 -m venv /app/venv \
 
 COPY scripts/ /app/scripts/
 COPY backend/app/ /app/app/
+COPY backend/alembic/ /app/alembic/
+COPY backend/alembic.ini /app/
 COPY frontend/ /app/frontend/
 RUN chmod +x /app/scripts/*.sh && python3 scripts/download_vendors.py
 
