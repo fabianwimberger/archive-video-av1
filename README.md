@@ -6,13 +6,6 @@
 
 A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
 
-> **⚠️ Upgrade Note (v0.6.0):** This release introduces a new persistent database schema. Before upgrading, remove the previous data volume to avoid compatibility issues:
-> ```bash
-> docker compose down
-> docker volume rm archive-video-av1_app-data  # or your project's data volume
-> docker compose up -d
-> ```
-
 ## Why This Project?
 
 AV1 offers superior compression efficiency compared to H.264 and H.265, reducing file sizes by 30-50% while maintaining quality. However, AV1 encoding is computationally intensive and most existing tools are either CLI-only or require complex setups. This project provides a simple, web-based interface for batch converting video libraries to AV1 without sacrificing quality.

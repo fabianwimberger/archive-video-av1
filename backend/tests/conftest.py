@@ -79,13 +79,6 @@ from app.models.preset import Preset  # noqa: E402
 from app.models.app_state import AppState  # noqa: E402
 
 
-@pytest_asyncio.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture(scope="function")
 async def db_session():
     async with engine.begin() as conn:
