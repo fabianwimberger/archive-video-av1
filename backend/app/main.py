@@ -4,9 +4,10 @@ import asyncio
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
@@ -119,6 +120,11 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(presets.router, prefix="/api/presets", tags=["presets"])
 app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
 app.include_router(websocket.router, tags=["websocket"])
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 @app.get("/api/health")
