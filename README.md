@@ -6,14 +6,9 @@
 
 A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
 
-## Why This Project?
+## Background
 
-AV1 offers superior compression efficiency compared to H.264 and H.265, reducing file sizes by 30-50% while maintaining quality. However, AV1 encoding is computationally intensive and most existing tools are either CLI-only or require complex setups. This project provides a simple, web-based interface for batch converting video libraries to AV1 without sacrificing quality.
-
-**Goals:**
-- Provide a simple web UI for AV1 batch conversion
-- Optimize encoding quality per content type (live-action, animated, grainy)
-- Track progress in real-time without CLI complexity
+AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools are CLI-only. This runs SVT-AV1 behind a browser UI so batch jobs can be queued, watched, and retried without shell access. Presets cover live-action, animated, and grainy sources.
 
 <p align="center">
   <img src="assets/demo.gif" width="100%" alt="Web UI Demo">
