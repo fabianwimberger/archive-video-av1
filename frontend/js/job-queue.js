@@ -129,7 +129,7 @@ class JobQueue {
 
     async loadJobs() {
         try {
-            const data = await api.listJobs({ status: 'pending,processing', limit: 100, offset: 0 });
+            const data = await api.listJobs({ status: 'pending,processing', limit: 100, offset: 0, order: 'asc' });
             this.jobs.clear();
             data.jobs.forEach(job => {
                 this.jobs.set(job.id, job);
