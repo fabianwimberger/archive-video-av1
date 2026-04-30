@@ -88,7 +88,9 @@ RUN echo "=== Verifying optimizations ==="; \
 # Runtime stage
 FROM ubuntu:26.04
 ENV PYTHONUNBUFFERED=1 \
-    PATH="/app/venv/bin:$PATH"
+    PATH="/app/venv/bin:$PATH" \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
