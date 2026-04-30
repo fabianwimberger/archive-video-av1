@@ -100,6 +100,8 @@ class ConversionService:
                 env={
                     "TEMP_DIR": settings.TEMP_DIR,
                     "PATH": "/usr/bin:/bin:/usr/local/bin",
+                    "LC_ALL": "C.UTF-8",
+                    "LANG": "C.UTF-8",
                 },
             )
 
