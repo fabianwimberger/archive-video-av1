@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:26.04 AS builder
 
-ARG FFMPEG_VERSION="8.1"
+ARG FFMPEG_VERSION="8.1.1"
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.1.0"
 ARG ENABLE_PGO="false"
@@ -13,10 +13,12 @@ ENV ARCH_FLAGS=${ARCH_FLAGS}
 ENV ENABLE_LTO=${ENABLE_LTO}
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-    build-essential cmake nasm pkg-config \
+    build-essential gcc-16 g++-16 cmake nasm pkg-config \
     wget ca-certificates tar xz-utils \
     autoconf automake libtool zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
+
+ENV CC=gcc-16 CXX=g++-16
 
 WORKDIR /build
 

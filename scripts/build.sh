@@ -72,6 +72,7 @@ build_all() {
     export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
     ./configure \
         --prefix=/usr/local --pkg-config-flags="--static" --extra-libs="-lpthread -lm" \
+        --cc="${CC:-gcc}" --cxx="${CXX:-g++}" \
         --enable-lto --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
         --disable-runtime-cpudetect --disable-autodetect --disable-programs \
         --enable-ffmpeg --enable-ffprobe \
