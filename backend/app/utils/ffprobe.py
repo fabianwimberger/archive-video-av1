@@ -78,7 +78,7 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
             "duration": float(format_info.get("duration", 0)),
             "size": int(format_info.get("size", 0)),
             "bitrate": int(format_info.get("bit_rate", 0)),
-            "fps": eval_fps(video_stream.get("r_frame_rate", "0/1")),
+            "fps": parse_fps(video_stream.get("r_frame_rate", "0/1")),
             "color_transfer": color_transfer,
             "color_primaries": color_primaries,
             "hdr": is_hdr,
@@ -90,9 +90,9 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def eval_fps(fps_string: str) -> float:
+def parse_fps(fps_string: str) -> float:
     """
-    Evaluate FPS from fraction string (e.g., "30000/1001").
+    Parse FPS from fraction string (e.g., "30000/1001").
 
     Args:
         fps_string: FPS as fraction string
@@ -128,6 +128,8 @@ async def has_converted_file(source_file: str) -> tuple[bool, Optional[str]]:
 
     converted_path = parent / f"{stem}_conv{ext}"
 
-    return converted_path.exists(), str(
-        converted_path
-    ) if converted_path.exists() else None
+    if not converted_path.exists():
+        return False, None
+    if converted_path.stat().st_size == 0:
+        return False, None
+    return True, str(converted_path)

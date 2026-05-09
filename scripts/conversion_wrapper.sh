@@ -309,6 +309,10 @@ if [[ -n "$german_audio" ]]; then
 elif [[ -n "$english_audio" ]]; then
     english_sub=$(echo "$subtitle_info" | grep -m1 ",eng\|,en" | cut -d',' -f1)
     [[ -n "$english_sub" ]] && sub_map="-map 0:$english_sub"
+else
+    # Fallback: map first subtitle track when no language-matched audio was found
+    first_sub=$(echo "$subtitle_info" | head -1 | cut -d',' -f1)
+    [[ -n "$first_sub" ]] && sub_map="-map 0:$first_sub"
 fi
 
 # Determine video encoding parameters

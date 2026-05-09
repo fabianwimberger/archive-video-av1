@@ -340,7 +340,7 @@ async def patch_job_position(
             )
 
         await db.commit()
-        job_queue._wake_event.set()  # type: ignore
+        job_queue.wake()
         return {"success": True}
 
     except HTTPException:
@@ -453,7 +453,7 @@ async def clear_queued_jobs(db: AsyncSession = Depends(get_db)):
         await db.commit()
 
         # Wake worker so it re-evaluates
-        job_queue._wake_event.set()  # type: ignore
+        job_queue.wake()
 
         logger.info(f"Cleared {deleted_count} queued jobs")
         return {"deleted_count": deleted_count}
@@ -495,7 +495,7 @@ async def clear_all_jobs(db: AsyncSession = Depends(get_db)):
         await db.commit()
 
         # Wake worker
-        job_queue._wake_event.set()  # type: ignore
+        job_queue.wake()
 
         logger.info(f"Cleared all {deleted_count} jobs (force clear)")
         return {"deleted_count": deleted_count}

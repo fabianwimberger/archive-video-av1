@@ -16,7 +16,9 @@ class Settings:
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # Database
-    DATABASE_URL: str = f"sqlite+aiosqlite:///{DATABASE_PATH}"
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"sqlite+aiosqlite:///{self.DATABASE_PATH}"
 
     # Scripts
     CONVERSION_WRAPPER_SCRIPT: str = "/app/scripts/conversion_wrapper.sh"
