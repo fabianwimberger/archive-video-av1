@@ -552,7 +552,7 @@ async def delete_or_cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
             else:  # pending
                 await db.delete(job)
                 await db.commit()
-                job_queue._wake_event.set()  # type: ignore
+                job_queue.wake()
 
             logger.info(f"Cancelled job {job_id}")
             return {"success": True, "message": f"Job {job_id} cancelled"}

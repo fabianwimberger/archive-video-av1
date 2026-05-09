@@ -96,7 +96,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Video Conversion Service",
     description="Web-based video conversion service with real-time progress tracking",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 

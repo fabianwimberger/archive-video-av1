@@ -84,7 +84,7 @@ class FileService:
                 if item.is_file() and item.suffix.lower() in self.VIDEO_EXTENSIONS:
                     file_paths.append(str(item))
 
-            last_jobs = {}
+            last_jobs: dict[str, dict[str, Any]] = {}
             if file_paths:
                 async with AsyncSessionLocal() as db:
                     from sqlalchemy import func
@@ -111,7 +111,7 @@ class FileService:
                     JobAlias = aliased(Job, subq)
                     result = await db.execute(select(JobAlias).where(subq.c.rn == 1))
                     for job in result.scalars().all():
-                        fp = job.source_file
+                        fp = str(job.source_file)
                         last_jobs[fp] = {
                             "job_id": job.id,
                             "status": job.status,

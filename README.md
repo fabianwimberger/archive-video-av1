@@ -29,7 +29,7 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
   - **Custom presets** — create, edit, duplicate, import/export your own presets
 - **Automatic crop detection** (consensus-based, 8-point sampling)
 - **Two-pass audio normalization** (loudnorm, Opus stereo output)
-- **Language-aware track selection** (German > English > first available)
+- **Configurable track selection** (default: German > English > first available)
 - **Skips re-encoding** if source is already AV1
 - **History view** with filtering, search, retry, and per-job settings inspection
 
@@ -68,6 +68,10 @@ docker run -d \
   -e TZ=UTC \
   -e SOURCE_MOUNT=/videos \
   -e LOG_LEVEL=INFO \
+  -e AUDIO_TRACK_MODE=preferred \
+  -e SUBTITLE_TRACK_MODE=preferred \
+  -e PREFERRED_AUDIO_LANGUAGES=ger,deu,de,eng,en \
+  -e PREFERRED_SUBTITLE_LANGUAGES=ger,deu,de,eng,en \
   ghcr.io/fabianwimberger/archive-video-av1:latest
 ```
 
@@ -129,6 +133,7 @@ docker restart convert-service
    - Detect video codec (skip re-encode if AV1)
    - Crop detection via 8-point consensus sampling
    - Two-pass loudnorm audio measurement and normalization
+   - Configurable audio and subtitle stream selection
    - SVT-AV1 encoding with progress output
    - `mkvmerge` finalization with metadata
 5. **Real-time updates** are pushed to the browser via WebSocket
@@ -153,6 +158,10 @@ Presets are stored in the SQLite database and survive restarts.
 | `TEMP_DIR` | `/app/temp` | Temporary directory for in-progress conversions |
 | `DATABASE_PATH` | `/app/data/app.db` | SQLite database path (persistent) |
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `AUDIO_TRACK_MODE` | `preferred` | Audio stream mode: `preferred` selects one track and normalizes it, `all` copies all audio tracks |
+| `SUBTITLE_TRACK_MODE` | `preferred` | Subtitle stream mode: `preferred` selects one matching track, `all` copies all subtitle tracks, `none` drops subtitles |
+| `PREFERRED_AUDIO_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `AUDIO_TRACK_MODE=preferred` |
+| `PREFERRED_SUBTITLE_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `SUBTITLE_TRACK_MODE=preferred` |
 | `JOB_HISTORY_RETENTION_DAYS` | `0` | Delete finished jobs older than N days (`0` = keep forever) |
 | `JOB_HISTORY_MAX_ROWS` | `0` | Maximum number of finished jobs to keep (`0` = unlimited) |
 | `TZ` | `UTC` | Container timezone |
