@@ -12,6 +12,11 @@ services:
     volumes:
       - /your/local/path:/videos
       - app-data:/app/data
+    environment:
+      AUDIO_TRACK_MODE: preferred
+      SUBTITLE_TRACK_MODE: preferred
+      PREFERRED_AUDIO_LANGUAGES: ger,deu,de,eng,en
+      PREFERRED_SUBTITLE_LANGUAGES: ger,deu,de,eng,en
     # You can also override ports, environment, etc.
     # ports:
     #   - "8001:8000"

@@ -84,31 +84,44 @@ class FileService:
                 if item.is_file() and item.suffix.lower() in self.VIDEO_EXTENSIONS:
                     file_paths.append(str(item))
 
-            last_jobs = {}
+            last_jobs: dict[str, dict[str, Any]] = {}
             if file_paths:
                 async with AsyncSessionLocal() as db:
-                    for fp in file_paths:
-                        result = await db.execute(
-                            select(Job)
-                            .where(Job.source_file == fp)
-                            .order_by(
-                                Job.completed_at.desc().nullslast(),
-                                Job.created_at.desc(),
+                    from sqlalchemy import func
+
+                    # Single query: latest job per source_file using ROW_NUMBER
+                    from sqlalchemy.orm import aliased
+
+                    subq = (
+                        select(
+                            Job,
+                            func.row_number()
+                            .over(
+                                partition_by=Job.source_file,
+                                order_by=(
+                                    Job.completed_at.desc().nullslast(),
+                                    Job.created_at.desc(),
+                                ),
                             )
-                            .limit(1)
+                            .label("rn"),
                         )
-                        job = result.scalar_one_or_none()
-                        if job:
-                            last_jobs[fp] = {
-                                "job_id": job.id,
-                                "status": job.status,
-                                "preset_name_snapshot": job.preset_name_snapshot,
-                                "completed_at": job.completed_at.isoformat()
-                                if job.completed_at
-                                else None,
-                                "source_size_bytes": job.source_size_bytes,
-                                "output_size_bytes": job.output_size_bytes,
-                            }
+                        .where(Job.source_file.in_(file_paths))
+                        .subquery()
+                    )
+                    JobAlias = aliased(Job, subq)
+                    result = await db.execute(select(JobAlias).where(subq.c.rn == 1))
+                    for job in result.scalars().all():
+                        fp = str(job.source_file)
+                        last_jobs[fp] = {
+                            "job_id": job.id,
+                            "status": job.status,
+                            "preset_name_snapshot": job.preset_name_snapshot,
+                            "completed_at": job.completed_at.isoformat()
+                            if job.completed_at
+                            else None,
+                            "source_size_bytes": job.source_size_bytes,
+                            "output_size_bytes": job.output_size_bytes,
+                        }
 
             # Scan directory
             for item in sorted(target_path.iterdir()):
@@ -277,11 +290,16 @@ class FileService:
             if not path.exists() or not path.is_file():
                 raise ValueError("File does not exist")
 
-            # Safety check: Only allow deleting if converted file exists
-            has_conv, _ = await has_converted_file(str(path))
+            # Safety check: Only allow deleting if converted file exists and is valid
+            has_conv, conv_path = await has_converted_file(str(path))
             if not has_conv:
                 raise ValueError(
                     "Cannot delete source file: No converted version found"
+                )
+            conv = Path(conv_path) if conv_path else None
+            if conv and (not conv.exists() or conv.stat().st_size == 0):
+                raise ValueError(
+                    "Cannot delete source file: Converted file is empty or missing"
                 )
 
             # Delete the file

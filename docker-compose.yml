@@ -14,6 +14,10 @@ services:
       - TEMP_DIR=/app/temp
       - DATABASE_PATH=/app/data/app.db
       - LOG_LEVEL=INFO
+      - AUDIO_TRACK_MODE=preferred
+      - SUBTITLE_TRACK_MODE=preferred
+      - PREFERRED_AUDIO_LANGUAGES=ger,deu,de,eng,en
+      - PREFERRED_SUBTITLE_LANGUAGES=ger,deu,de,eng,en
 
 volumes:
   app-data:

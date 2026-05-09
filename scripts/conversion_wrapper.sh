@@ -12,6 +12,10 @@ SKIP_CROP="$7"
 MAX_HEIGHT="${8:-1080}"
 
 TEMP_DIR="${TEMP_DIR:-/app/temp}"
+AUDIO_TRACK_MODE="${AUDIO_TRACK_MODE:-preferred}"
+SUBTITLE_TRACK_MODE="${SUBTITLE_TRACK_MODE:-preferred}"
+PREFERRED_AUDIO_LANGUAGES="${PREFERRED_AUDIO_LANGUAGES:-ger,deu,de,eng,en}"
+PREFERRED_SUBTITLE_LANGUAGES="${PREFERRED_SUBTITLE_LANGUAGES:-ger,deu,de,eng,en}"
 
 # --- TRAP SIGNALS ---
 
@@ -52,6 +56,34 @@ get_total_frames() {
         fi
     fi
     echo "${frames:-0}"
+}
+
+find_preferred_stream() {
+    local streams="$1"
+    local languages="$2"
+
+    awk -F',' -v languages="$languages" '
+        BEGIN {
+            count = split(languages, preferred, ",")
+            for (i = 1; i <= count; i++) {
+                gsub(/^[ \t]+|[ \t]+$/, "", preferred[i])
+                preferred[i] = tolower(preferred[i])
+            }
+        }
+        {
+            stream_language = tolower($2)
+            for (i = 1; i <= count; i++) {
+                if (stream_language == preferred[i]) {
+                    print $1
+                    exit
+                }
+            }
+        }
+    ' <<< "$streams"
+}
+
+first_stream() {
+    awk -F',' 'NF && $1 != "" { print $1; exit }' <<< "$1"
 }
 
 
@@ -251,65 +283,98 @@ vf="-vf $vf_parts"
 
 # Detect audio/subs
 audio_streams=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
-german_audio=$(echo "$audio_streams" | grep -m1 ",ger\|,deu\|,de" | cut -d',' -f1)
-english_audio=$(echo "$audio_streams" | grep -m1 ",eng\|,en" | cut -d',' -f1)
-first_audio=$(echo "$audio_streams" | head -1 | cut -d',' -f1)
-audio_idx="${german_audio:-${english_audio:-$first_audio}}"
+preferred_audio=$(find_preferred_stream "$audio_streams" "$PREFERRED_AUDIO_LANGUAGES")
+first_audio=$(first_stream "$audio_streams")
+audio_idx="${preferred_audio:-$first_audio}"
 
 if [[ -z "$audio_idx" ]]; then
     echo "ERROR:No audio streams found"
     exit 1
 fi
 
+case "$AUDIO_TRACK_MODE" in
+    preferred)
+        audio_map="-map 0:$audio_idx"
+        encode_audio=1
+        echo "STATUS:Audio track mode: preferred (stream $audio_idx)"
+        ;;
+    all)
+        audio_map="-map 0:a"
+        encode_audio=0
+        echo "STATUS:Audio track mode: all"
+        ;;
+    *)
+        echo "ERROR:Invalid AUDIO_TRACK_MODE '$AUDIO_TRACK_MODE' (expected preferred or all)"
+        exit 1
+        ;;
+esac
+
 # --- AUDIO FILTER CHAIN ---
-# Two-pass loudnorm with safe downmix
-# Pass 1: Measure audio characteristics
-# Pass 2: Apply normalization with measured values (eliminates pumping)
 TARGET_I="-20"
 TARGET_TP="-2"
 TARGET_LRA="13"
+af_filter=""
+audio_params="-c:a copy"
 
-echo "STAGE:audio_measure"
-echo "STATUS:Measuring audio for two-pass normalization..."
+if [[ $encode_audio -eq 1 ]]; then
+    echo "STAGE:audio_measure"
+    echo "STATUS:Measuring audio for two-pass normalization..."
 
-# Create temp file for measurement JSON
-LOUDNORM_JSON=$(mktemp)
+    # Create temp file for measurement JSON
+    LOUDNORM_JSON=$(mktemp)
 
-# Run pass 1: measurement
-ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$audio_idx \
-    -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
-    -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
+    # Run pass 1: measurement
+    ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$audio_idx \
+        -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
+        -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
 
-# Parse JSON output (using sed for BusyBox compatibility)
-MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+    # Parse JSON output (using sed for BusyBox compatibility)
+    MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+    MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+    MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+    MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+    TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
 
-rm -f "$LOUDNORM_JSON"
+    rm -f "$LOUDNORM_JSON"
 
-# Validate we got measurements
-if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
-    echo "ERROR:Failed to parse loudnorm measurements"
-    exit 1
+    # Validate we got measurements
+    if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
+        echo "ERROR:Failed to parse loudnorm measurements"
+        exit 1
+    fi
+
+    echo "STATUS:Audio measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
+
+    # Build pass 2 filter with measured values
+    af_filter="-af aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
+    audio_params="-c:a libopus -b:a $AUDIO_BITRATE"
+    echo "STATUS:Audio: two-pass normalization (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
+else
+    echo "STATUS:Audio: copying all tracks without loudness normalization"
 fi
-
-echo "STATUS:Audio measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
-
-# Build pass 2 filter with measured values
-af_filter="-af aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
-echo "STATUS:Audio: two-pass normalization (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
 
 subtitle_info=$(ffprobe -v error -select_streams s -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
 sub_map=""
-if [[ -n "$german_audio" ]]; then
-    german_sub=$(echo "$subtitle_info" | grep -m1 ",ger\|,deu\|,de" | cut -d',' -f1)
-    [[ -n "$german_sub" ]] && sub_map="-map 0:$german_sub"
-elif [[ -n "$english_audio" ]]; then
-    english_sub=$(echo "$subtitle_info" | grep -m1 ",eng\|,en" | cut -d',' -f1)
-    [[ -n "$english_sub" ]] && sub_map="-map 0:$english_sub"
-fi
+case "$SUBTITLE_TRACK_MODE" in
+    preferred)
+        preferred_sub=$(find_preferred_stream "$subtitle_info" "$PREFERRED_SUBTITLE_LANGUAGES")
+        first_sub=$(first_stream "$subtitle_info")
+        subtitle_idx="${preferred_sub:-$first_sub}"
+        [[ -n "$subtitle_idx" ]] && sub_map="-map 0:$subtitle_idx"
+        echo "STATUS:Subtitle track mode: preferred${subtitle_idx:+ (stream $subtitle_idx)}"
+        ;;
+    all)
+        sub_map="-map 0:s?"
+        echo "STATUS:Subtitle track mode: all"
+        ;;
+    none)
+        echo "STATUS:Subtitle track mode: none"
+        ;;
+    *)
+        echo "ERROR:Invalid SUBTITLE_TRACK_MODE '$SUBTITLE_TRACK_MODE' (expected preferred, all, or none)"
+        exit 1
+        ;;
+esac
 
 # Determine video encoding parameters
 # Only copy if input is AV1 AND no crop/scale needed
@@ -364,17 +429,17 @@ echo "STAGE:encoding"
 echo "STATUS:Encoding video..."
 
 # Build the full ffmpeg command (stored in MKV metadata for reproducibility)
-FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 -map 0:$audio_idx $sub_map $vf $af_filter $video_params $color_flags -c:a libopus -b:a $AUDIO_BITRATE -c:s copy -f matroska -y \"$OUTPUT_FILE\""
+FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 $audio_map $sub_map $vf $af_filter $video_params $color_flags $audio_params -c:s copy -f matroska -y \"$OUTPUT_FILE\""
 echo "CMD:$FFMPEG_CMD"
 
 nice -n 10 ffmpeg -v quiet -progress - -nostats \
     -i "$INPUT_FILE" \
-    -map 0:v:0 -map 0:$audio_idx $sub_map \
+    -map 0:v:0 $audio_map $sub_map \
     $vf \
     $af_filter \
     $video_params \
     $color_flags \
-    -c:a libopus -b:a $AUDIO_BITRATE \
+    $audio_params \
     -c:s copy \
     -f matroska -y "$temp_file" 2>&1
 
