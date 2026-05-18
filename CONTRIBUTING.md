@@ -11,6 +11,7 @@
 - Prefix commits semantically (`feat:`, `fix:`, `docs:`, `ci:`, `deps:`).
 - One logical change per PR.
 - Make sure CI is green before requesting review.
+- For UI changes, check both a desktop viewport and a phone-sized viewport before opening the PR.
 
 ## License
 

@@ -139,14 +139,14 @@ class HistoryView {
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td title="${utils.escapeHtml(job.source_file)}">${utils.escapeHtml(fileName)}</td>
-                <td>${presetBadge}</td>
-                <td><div class="small text-muted" title="${utils.escapeHtml(summary)}">${utils.escapeHtml(summary)}</div></td>
-                <td>${statusBadge}</td>
-                <td>${savings}</td>
-                <td class="small text-muted">${completed}</td>
-                <td class="small text-muted">${notes}</td>
-                <td class="text-end">
+                <td data-label="File" title="${utils.escapeHtml(job.source_file)}">${utils.escapeHtml(fileName)}</td>
+                <td data-label="Preset">${presetBadge}</td>
+                <td data-label="Settings"><div class="small text-muted" title="${utils.escapeHtml(summary)}">${utils.escapeHtml(summary)}</div></td>
+                <td data-label="Status">${statusBadge}</td>
+                <td data-label="Savings">${savings}</td>
+                <td data-label="Completed" class="small text-muted">${completed}</td>
+                <td data-label="Notes" class="small text-muted">${notes}</td>
+                <td data-label="Actions" class="text-end">
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">Actions</button>
                         <ul class="dropdown-menu dropdown-menu-end">

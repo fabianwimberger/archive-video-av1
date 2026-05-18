@@ -206,11 +206,11 @@ class JobQueue {
         const dragHandle = isPending ? '<i class="bi bi-grip-vertical me-2 text-muted"></i>' : '';
 
         element.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-2 job-item-header">
                 <div class="fw-medium text-truncate me-3" title="${utils.escapeHtml(job.source_file)}">
                     ${dragHandle}<i class="bi bi-film me-2 text-muted"></i>${utils.escapeHtml(fileName)}
                 </div>
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 job-item-actions">
                     ${presetBadge}
                     <span class="badge ${badgeClass}">${job.status}</span>
                     <button class="btn btn-outline-danger btn-sm cancel-btn" data-job-id="${job.id}" title="Cancel job"><i class="bi bi-x-lg"></i></button>
