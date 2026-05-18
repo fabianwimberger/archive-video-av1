@@ -136,13 +136,27 @@ class JobResponse(BaseModel):
     @classmethod
     def model_validate(cls, obj, **kwargs):
         # Convert JSON settings string to dict
-        data = {}
-        for key in dir(obj):
-            if not key.startswith("_"):
-                try:
-                    data[key] = getattr(obj, key)
-                except Exception:
-                    pass
+        data = {
+            "id": getattr(obj, "id", None),
+            "source_file": getattr(obj, "source_file", None),
+            "output_file": getattr(obj, "output_file", None),
+            "preset_id": getattr(obj, "preset_id", None),
+            "preset_name_snapshot": getattr(obj, "preset_name_snapshot", None),
+            "settings": getattr(obj, "settings", None),
+            "notes": getattr(obj, "notes", None),
+            "queue_position": getattr(obj, "queue_position", None),
+            "status": getattr(obj, "status", None),
+            "progress_percent": getattr(obj, "progress_percent", None),
+            "eta_seconds": getattr(obj, "eta_seconds", None),
+            "current_fps": getattr(obj, "current_fps", None),
+            "created_at": getattr(obj, "created_at", None),
+            "started_at": getattr(obj, "started_at", None),
+            "completed_at": getattr(obj, "completed_at", None),
+            "error_message": getattr(obj, "error_message", None),
+            "log": getattr(obj, "log", None),
+            "source_size_bytes": getattr(obj, "source_size_bytes", None),
+            "output_size_bytes": getattr(obj, "output_size_bytes", None),
+        }
         if isinstance(data.get("settings"), str):
             try:
                 data["settings"] = (

@@ -1,5 +1,6 @@
 """WebSocket connection manager for broadcasting updates."""
 
+import asyncio
 import logging
 from typing import Set
 from fastapi import WebSocket
@@ -48,11 +49,16 @@ class WebSocketManager:
 
         dead_connections = set()
 
-        for connection in list(self.connections):
-            try:
-                await connection.send_json(message)
-            except Exception as e:
-                logger.error(f"Error sending message to WebSocket: {e}")
+        async def _send(connection: WebSocket) -> None:
+            await connection.send_json(message)
+
+        results = await asyncio.gather(
+            *[_send(c) for c in list(self.connections)],
+            return_exceptions=True,
+        )
+        for connection, result in zip(list(self.connections), results):
+            if isinstance(result, Exception):
+                logger.error(f"Error sending message to WebSocket: {result}")
                 dead_connections.add(connection)
 
         # Remove dead connections

@@ -15,7 +15,6 @@ TEST_DATABASE_URL = f"sqlite+aiosqlite:///{TEST_DB_FILE.name}"
 # Patch config BEFORE importing app modules
 import app.config as _config_module  # noqa: E402
 
-_config_module.settings.DATABASE_URL = TEST_DATABASE_URL
 _config_module.settings.DATABASE_PATH = TEST_DB_FILE.name
 
 # Patch other things

@@ -5,6 +5,7 @@ set -e
 OPUS_VERSION="${OPUS_VERSION:-1.6.1}"
 SVT_AV1_VERSION="${SVT_AV1_VERSION:-4.1.0}"
 BUILD_TYPE="${1:-}"  # "pgo-generate", "pgo-train", or "pgo-use"
+PREFERRED_AUDIO_LANGUAGES="${PREFERRED_AUDIO_LANGUAGES:-ger,deu,de,eng,en}"
 
 # Determine architecture flags
 # ARCH_FLAGS can be:
@@ -28,6 +29,34 @@ else
     BASE_LDFLAGS="-Wl,-O3 -Wl,--gc-sections -flto"
 fi
 PGO_DIR="/build/profiles"
+
+find_preferred_stream() {
+    local streams="$1"
+    local languages="$2"
+
+    awk -F',' -v languages="$languages" '
+        BEGIN {
+            count = split(languages, preferred, ",")
+            for (i = 1; i <= count; i++) {
+                gsub(/^[ \t]+|[ \t]+$/, "", preferred[i])
+                preferred[i] = tolower(preferred[i])
+            }
+        }
+        {
+            stream_language = tolower($2)
+            for (i = 1; i <= count; i++) {
+                if (stream_language == preferred[i]) {
+                    print $1
+                    exit
+                }
+            }
+        }
+    ' <<< "$streams"
+}
+
+first_stream() {
+    awk -F',' 'NF && $1 != "" { print $1; exit }' <<< "$1"
+}
 
 # Build Opus (only once, no PGO flags)
 build_opus() {
@@ -124,6 +153,16 @@ train_pgo() {
                 ;;
         esac
 
+        audio_streams=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language -of csv=p=0 "$f")
+        preferred_audio=$(find_preferred_stream "$audio_streams" "$PREFERRED_AUDIO_LANGUAGES")
+        first_audio=$(first_stream "$audio_streams")
+        audio_idx="${preferred_audio:-$first_audio}"
+        if [ -z "$audio_idx" ]; then
+            echo "ERROR: No audio streams found"
+            exit 1
+        fi
+        echo "    Audio: stream $audio_idx"
+
         echo "  Stage: crop_detect"
         crop=$(ffmpeg -hide_banner -i "$f" -t 1 -vf cropdetect -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
         if [ -z "$crop" ]; then
@@ -134,9 +173,9 @@ train_pgo() {
         echo "    Detected: $crop"
 
         echo "  Stage: audio_measure"
-        json=$(ffmpeg -hide_banner -i "$f" -t 10 \
+        json=$(ffmpeg -hide_banner -i "$f" -map 0:$audio_idx -t 10 \
             -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:print_format=json" \
-            -vn -f null - 2>&1 | grep -A20 'input_i')
+            -vn -sn -dn -f null - 2>&1 | grep -A20 'input_i')
 
         i=$(echo "$json" | grep 'input_i' | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')
         tp=$(echo "$json" | grep 'input_tp' | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')
@@ -177,7 +216,7 @@ train_pgo() {
         fi
 
         echo "  Stage: encoding"
-        ffmpeg -hide_banner -i "$f" -t 15 \
+        ffmpeg -hide_banner -i "$f" -map 0:v:0 -map 0:$audio_idx -t 15 \
             -vf "$vf_chain" \
             -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:measured_I=${i}:measured_TP=${tp}:measured_LRA=${lra}:measured_thresh=${thresh}:offset=${offset}" \
             -c:v libsvtav1 -preset 4 -crf $preset_crf -g 225 -svtav1-params "${svt_base}${svt_hdr}" \

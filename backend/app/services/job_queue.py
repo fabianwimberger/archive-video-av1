@@ -96,7 +96,7 @@ class JobQueue:
 
         # Broadcast queue update
         if self.websocket_manager:
-            status = self.get_queue_status()
+            status = await self.get_queue_status_async()
             await self.websocket_manager.broadcast(
                 {
                     "type": "queue_update",
@@ -122,7 +122,7 @@ class JobQueue:
                 select(AppState).where(AppState.key == "queue_paused")
             )
             row = result.scalar_one_or_none()
-            if row and row.value.lower() == "true":
+            if row and row.value and row.value.lower() == "true":
                 self._paused_event.clear()
                 logger.info("Queue started in paused state")
             else:
@@ -392,10 +392,15 @@ class JobQueue:
     def get_queue_status(self) -> dict:
         """Get current queue status (synchronous, returns last known pending count)."""
         return {
-            "pending_count": 0,
+            "pending_count": len(self.cancelled_job_ids),
             "active_job_id": self.current_job_id,
             "running": self.running,
         }
+
+    def wake(self) -> None:
+        """Signal the worker to re-evaluate the queue."""
+        if self._wake_event:
+            self._wake_event.set()
 
     async def get_queue_status_async(self) -> dict:
         """Get current queue status asynchronously."""
