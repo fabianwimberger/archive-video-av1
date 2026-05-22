@@ -1,9 +1,9 @@
-# Video Conversion Service
-
 [![CI](https://github.com/fabianwimberger/archive-video-av1/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/archive-video-av1/actions)
 [![codecov](https://codecov.io/gh/fabianwimberger/archive-video-av1/branch/main/graph/badge.svg)](https://codecov.io/gh/fabianwimberger/archive-video-av1)
 [![Docker](https://github.com/fabianwimberger/archive-video-av1/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/fabianwimberger/archive-video-av1/pkgs/container/archive-video-av1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+# Video Conversion Service
 
 A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and an intuitive browser UI.
 
@@ -11,14 +11,13 @@ A self-hosted, web-based video conversion service running in Docker. Converts vi
 
 AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools are CLI-only. This runs SVT-AV1 behind a browser UI so batch jobs can be queued, watched, and retried without shell access. Presets cover live-action, animated, and grainy sources.
 
-<p align="center">
-  <img src="assets/demo.gif" width="100%" alt="Web UI Demo">
-  <br><em>Browse files, select a preset, convert — with real-time progress tracking</em>
-</p>
+| Desktop | Mobile |
+|---------|--------|
+| <img src="assets/screenshot-desktop.png" alt="Desktop web UI" width="720"> | <img src="assets/screenshot-mobile.png" alt="Mobile web UI" width="260"> |
 
 ## Features
 
-- **Web UI** with real-time progress (FPS, ETA, percentage) via WebSocket
+- **Responsive web UI** with file browsing, queue controls, history filters, and real-time progress via WebSocket
 - **AV1 encoding** using SVT-AV1 with PGO-optimized FFmpeg
 - **Batch processing** with sequential job queue
 - **Persistent** — conversion history, custom presets, and queue state survive restarts
@@ -32,6 +31,7 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
 - **Configurable track selection** (default: German > English > first available)
 - **Skips re-encoding** if source is already AV1
 - **History view** with filtering, search, retry, and per-job settings inspection
+- **Mobile and desktop layouts** with touch-friendly controls and compact queue/history views
 
 ## Quick Start
 
@@ -123,6 +123,16 @@ docker compose up -d
 docker pull ghcr.io/fabianwimberger/archive-video-av1:latest
 docker restart convert-service
 ```
+
+## Web UI
+
+Open `http://localhost:8000` after starting the container.
+
+- **Convert** — browse mounted `.mkv` files, search within the current folder, select unconverted files for encoding, or select converted originals for cleanup.
+- **Settings** — choose a preset, adjust CRF, encoder speed, SVT-AV1 parameters, audio bitrate, crop detection, and maximum resolution.
+- **Auto Speed / Auto Grain** — analyze the selected file and apply a suggested preset or grain settings.
+- **Active Queue** — watch running jobs, pause or resume processing, cancel jobs, clear queued work, and inspect logs for active encodes.
+- **History** — filter completed, failed, or cancelled jobs; inspect settings and logs; retry jobs; save settings as a preset; export the current page to CSV.
 
 ## How It Works
 
