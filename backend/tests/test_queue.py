@@ -4,6 +4,7 @@ import time
 
 import pytest
 from app.config import settings
+from app.models.job import Job
 from app.routes.cluster import get_cluster_status
 from app.services.job_queue import JobQueue
 from app.models.app_state import AppState
@@ -45,6 +46,7 @@ class TestClusterStatus:
         data = response.json()
         assert data["enabled"] is False
         assert data["node_id"]
+        assert data["leader_url"] is None
         assert data["is_leader"] is True
         assert data["peers"] == []
 
@@ -94,10 +96,10 @@ class TestClusterStatus:
             captured["path"] = path
             return {
                 "enabled": True,
-                "node_id": "server",
-                "node_name": "server",
-                "public_url": "http://server:8000",
-                "leader_url": "http://server:8000",
+                "node_id": "node-a",
+                "node_name": "node-a",
+                "public_url": "http://node-a:8000",
+                "leader_url": "http://node-a:8000",
                 "is_leader": True,
                 "pending_count": 0,
                 "active_job_id": None,
@@ -110,7 +112,160 @@ class TestClusterStatus:
         response = await get_cluster_status(cluster=True)
 
         assert captured == {"method": "GET", "path": "/api/cluster/status"}
-        assert response["node_id"] == "server"
+        assert response["node_id"] == "node-a"
+
+    def test_live_node_is_elected_by_stable_hash(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", None)
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://node-b:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_LEADER_URL", "")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEER_TTL_SECONDS", 20)
+
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="node-a",
+                node_name="node-a",
+                base_url="http://node-a:8000",
+                last_seen=time.monotonic(),
+            )
+        )
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="node-c",
+                node_name="node-c",
+                base_url="http://node-c:8000",
+                last_seen=time.monotonic(),
+            )
+        )
+
+        expected = max(
+            distributed_service.cluster_nodes(),
+            key=lambda node: distributed_service._election_key(node.node_id),
+        )
+        assert distributed_service.leader_url == expected.base_url
+        assert distributed_service.is_leader is (expected.node_id == "node-b")
+
+    def test_leader_moves_when_current_leader_expires(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", None)
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://node-b:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_LEADER_URL", "")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEER_TTL_SECONDS", 20)
+
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="node-c",
+                node_name="node-c",
+                base_url="http://node-c:8000",
+                last_seen=time.monotonic() - 21,
+            )
+        )
+
+        assert distributed_service.leader_url == "http://node-b:8000"
+        assert distributed_service.is_leader is True
+
+    def test_returning_node_keeps_established_leader(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", "node-c")
+        monkeypatch.setattr(distributed_service, "_leader_since", time.monotonic())
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "node-c")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "node-c")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://node-c:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_LEADER_URL", "")
+
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="node-b",
+                node_name="node-b",
+                base_url="http://node-b:8000",
+                last_seen=time.monotonic(),
+            )
+        )
+
+        distributed_service._remember_reported_leader(
+            {
+                "node_id": "node-b",
+                "leader_url": "http://node-b:8000",
+                "is_leader": True,
+                "leader_age_seconds": 30,
+            }
+        )
+
+        assert distributed_service.leader_url == "http://node-b:8000"
+        assert distributed_service.is_leader is False
+
+    def test_simultaneous_leaders_resolve_by_election_key(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        node_ids = ["node-a", "node-b"]
+        current_id = min(node_ids, key=distributed_service._election_key)
+        reported_id = max(node_ids, key=distributed_service._election_key)
+        monkeypatch.setattr(distributed_service, "_leader_id", current_id)
+        monkeypatch.setattr(distributed_service, "_leader_since", time.monotonic())
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", current_id)
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", current_id)
+        monkeypatch.setattr(
+            settings, "DISTRIBUTED_PUBLIC_URL", f"http://{current_id}:8000"
+        )
+        monkeypatch.setattr(settings, "DISTRIBUTED_LEADER_URL", "")
+
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id=reported_id,
+                node_name=reported_id,
+                base_url=f"http://{reported_id}:8000",
+                last_seen=time.monotonic(),
+            )
+        )
+
+        distributed_service._remember_reported_leader(
+            {
+                "node_id": reported_id,
+                "leader_url": f"http://{reported_id}:8000",
+                "is_leader": True,
+                "leader_age_seconds": distributed_service.leader_age_seconds(),
+            }
+        )
+
+        assert distributed_service.leader_url == f"http://{reported_id}:8000"
+        assert distributed_service.is_leader is False
+
+    @pytest.mark.asyncio
+    async def test_remote_job_is_requeued_when_worker_expires(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+
+        job = Job(
+            source_file="/videos/test.mkv",
+            output_file="/videos/test.av1.mkv",
+            settings="{}",
+            status="processing",
+            assigned_worker_id="node-a",
+            assigned_worker_name="node-a",
+            assigned_worker_url="http://node-a:8000",
+            remote_job_id=7,
+            progress_percent=42,
+        )
+
+        class FakeResult:
+            def scalar(self):
+                return 0
+
+        class FakeDb:
+            async def execute(self, _statement):
+                return FakeResult()
+
+        assert distributed_service._peer_is_fresh("http://node-a:8000") is False
+
+        await distributed_service._requeue_remote_job(FakeDb(), job)
+
+        requeued = job
+        assert requeued.status == "pending"
+        assert requeued.assigned_worker_id is None
+        assert requeued.remote_job_id is None
+        assert requeued.queue_position == 1
 
 
 class TestQueuePauseRehydration:

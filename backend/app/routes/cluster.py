@@ -30,8 +30,15 @@ async def get_cluster_status(
         "node_id": settings.DISTRIBUTED_NODE_ID,
         "node_name": settings.DISTRIBUTED_NODE_NAME,
         "public_url": distributed_service.public_url,
-        "leader_url": distributed_service.leader_url or None,
+        "leader_url": (
+            distributed_service.leader_url if settings.DISTRIBUTED_ENABLED else None
+        ),
         "is_leader": distributed_service.is_leader,
+        "leader_age_seconds": (
+            distributed_service.leader_age_seconds()
+            if settings.DISTRIBUTED_ENABLED
+            else None
+        ),
         "pending_count": queue_status["pending_count"],
         "active_job_id": queue_status["active_job_id"],
         "peers": [

@@ -234,6 +234,7 @@ class ClusterStatusResponse(BaseModel):
     public_url: str
     leader_url: Optional[str] = None
     is_leader: bool
+    leader_age_seconds: Optional[float] = None
     pending_count: int
     active_job_id: Optional[int] = None
     peers: list[ClusterPeerResponse]

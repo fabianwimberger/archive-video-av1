@@ -179,7 +179,7 @@ Presets are stored in the SQLite database and survive restarts.
 | `DISTRIBUTED_NODE_ID` | container hostname | Stable node identifier advertised to peers |
 | `DISTRIBUTED_NODE_NAME` | `DISTRIBUTED_NODE_ID` | Display name for this worker node |
 | `DISTRIBUTED_PUBLIC_URL` | `http://<hostname>:8000` | URL other nodes use to reach this service |
-| `DISTRIBUTED_LEADER_URL` | empty | Optional leader URL; when set, queue writes and active queue reads are coordinated through this node |
+| `DISTRIBUTED_LEADER_URL` | empty | Optional pinned leader URL; when empty, nodes elect a live leader automatically |
 | `DISTRIBUTED_PEERS` | empty | Comma-separated peer URLs used when multicast discovery is unavailable |
 | `DISTRIBUTED_DISCOVERY_GROUP` | `239.255.42.99` | Multicast group for peer discovery |
 | `DISTRIBUTED_DISCOVERY_PORT` | `9988` | UDP port for peer discovery |
@@ -189,7 +189,7 @@ Presets are stored in the SQLite database and survive restarts.
 
 ## Distributed Processing
 
-Distributed mode lets several trusted LAN devices run the container and share AV1 jobs. Set `DISTRIBUTED_LEADER_URL` to the same node URL on every participant to use one selected leader. Queue jobs from any node; non-leader nodes forward queue changes to the leader, the leader delegates pending work to discovered idle peers, and every node shows the same cluster-wide active queue with worker assignments.
+Distributed mode lets several trusted LAN devices run the container and share AV1 jobs. Queue jobs from any node; non-leader nodes forward queue changes to the current leader, the leader delegates pending work to discovered idle peers, and every node shows the same cluster-wide active queue with worker assignments. By default, nodes use a deterministic tie-break when no leader is known, then keep the current leader until it disappears. Set `DISTRIBUTED_LEADER_URL` only when you want to pin one coordinator.
 
 Cluster state is shown in the Active Queue panel and is also available at `/api/cluster/status`. Active job listings include peer jobs by default; pass `cluster=false` to `/api/jobs` when a node-local view is needed.
 
@@ -197,7 +197,7 @@ Requirements:
 
 - All participating nodes must mount the same media library at the same in-container `SOURCE_MOUNT` path.
 - Every node must be reachable from every other node through `DISTRIBUTED_PUBLIC_URL`.
-- For a single shared queue, every node must use the same `DISTRIBUTED_LEADER_URL`; on the leader, set it to the leader's own public URL.
+- For automatic leader election, leave `DISTRIBUTED_LEADER_URL` empty on every node and use stable, unique `DISTRIBUTED_NODE_ID` values.
 - The network must allow UDP multicast on `DISTRIBUTED_DISCOVERY_PORT`, or `DISTRIBUTED_PEERS` must list peer URLs explicitly.
 - Docker host networking is the most reliable option for multicast discovery; otherwise use `DISTRIBUTED_PEERS`.
 - For three or more nodes, set each node's `DISTRIBUTED_PEERS` to the comma-separated URLs of the other nodes.
@@ -217,10 +217,11 @@ docker run -d \
   -e DISTRIBUTED_NODE_ID=notebook \
   -e DISTRIBUTED_NODE_NAME=notebook \
   -e DISTRIBUTED_PUBLIC_URL=http://192.168.1.10:8000 \
-  -e DISTRIBUTED_LEADER_URL=http://192.168.1.10:8000 \
   -e DISTRIBUTED_PEERS=http://192.168.1.11:8000,http://192.168.1.12:8000 \
   ghcr.io/fabianwimberger/archive-video-av1:latest
 ```
+
+If a worker disappears while it is processing a delegated job, the leader requeues that job after the worker has aged out of the peer list. Leader election does not replicate local SQLite queue rows from a failed leader; jobs accepted by that leader remain on that node and are available again when it returns.
 
 ## Security
 

@@ -1,6 +1,7 @@
 """LAN peer discovery and remote job delegation."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import socket
@@ -11,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -37,6 +38,8 @@ class DistributedService:
         self._tasks: list[asyncio.Task] = []
         self._client: Optional[httpx.AsyncClient] = None
         self._running = False
+        self._leader_id: Optional[str] = None
+        self._leader_since = time.monotonic()
 
     @property
     def node_id(self) -> str:
@@ -55,15 +58,20 @@ class DistributedService:
 
     @property
     def leader_url(self) -> str:
-        return settings.DISTRIBUTED_LEADER_URL.strip().rstrip("/")
+        configured_url = settings.DISTRIBUTED_LEADER_URL.strip().rstrip("/")
+        if configured_url:
+            return configured_url
+        return self._elected_leader().base_url
 
     @property
     def is_leader(self) -> bool:
-        leader_url = self.leader_url
-        return not leader_url or leader_url == self.public_url
+        configured_url = settings.DISTRIBUTED_LEADER_URL.strip().rstrip("/")
+        if configured_url:
+            return configured_url == self.public_url
+        return self._elected_leader().node_id == self.node_id
 
     def should_use_leader(self) -> bool:
-        return settings.DISTRIBUTED_ENABLED and bool(self.leader_url) and not self.is_leader
+        return settings.DISTRIBUTED_ENABLED and not self.is_leader
 
     async def start(self) -> None:
         if self._running or not settings.DISTRIBUTED_ENABLED:
@@ -77,10 +85,13 @@ class DistributedService:
         except OSError as exc:
             logger.warning("Multicast discovery unavailable: %s", exc)
         else:
-            self._tasks = [
-                asyncio.create_task(self._broadcast_loop()),
-                asyncio.create_task(self._listen_loop()),
-            ]
+            self._tasks.extend(
+                [
+                    asyncio.create_task(self._broadcast_loop()),
+                    asyncio.create_task(self._listen_loop()),
+                ]
+            )
+        self._tasks.append(asyncio.create_task(self._probe_loop()))
         logger.info("Distributed processing enabled as %s", self.node_id)
 
     async def stop(self) -> None:
@@ -117,6 +128,48 @@ class DistributedService:
 
         return sorted(fresh_peers, key=lambda peer: peer.node_name)
 
+    def cluster_nodes(self) -> list[PeerNode]:
+        return sorted(
+            [
+                PeerNode(
+                    node_id=self.node_id,
+                    node_name=self.node_name,
+                    base_url=self.public_url,
+                    last_seen=time.monotonic(),
+                ),
+                *self.peers(),
+            ],
+            key=lambda peer: peer.node_id,
+        )
+
+    def _elected_leader(self) -> PeerNode:
+        nodes = self.cluster_nodes()
+        if self._leader_id:
+            for node in nodes:
+                if node.node_id == self._leader_id:
+                    return node
+
+        leader = max(nodes, key=lambda node: self._election_key(node.node_id))
+        self._set_leader(leader.node_id)
+        return leader
+
+    def _election_key(self, node_id: str) -> str:
+        return hashlib.sha256(node_id.encode("utf-8")).hexdigest()
+
+    def leader_age_seconds(self) -> float:
+        self._elected_leader()
+        return time.monotonic() - self._leader_since
+
+    def _set_leader(self, node_id: str) -> None:
+        if self._leader_id != node_id:
+            self._leader_since = time.monotonic()
+        self._leader_id = node_id
+
+    def _current_leader_is_fresh(self) -> bool:
+        if self._leader_id == self.node_id:
+            return True
+        return any(peer.node_id == self._leader_id for peer in self.peers())
+
     def _peer_candidates(self) -> list[PeerNode]:
         candidates = {peer.base_url: peer for peer in self.peers()}
         for base_url in settings.DISTRIBUTED_PEERS:
@@ -133,6 +186,9 @@ class DistributedService:
             )
 
         return sorted(candidates.values(), key=lambda peer: peer.node_name)
+
+    def _peer_is_fresh(self, base_url: str) -> bool:
+        return any(peer.base_url == base_url for peer in self.peers())
 
     async def sync_remote_jobs(self, websocket_manager) -> None:
         if not settings.DISTRIBUTED_ENABLED:
@@ -154,6 +210,18 @@ class DistributedService:
                     job.assigned_worker_url, job.remote_job_id
                 )
                 if remote_job is None:
+                    if self._peer_is_fresh(job.assigned_worker_url):
+                        continue
+                    await self._requeue_remote_job(db, job)
+                    if websocket_manager:
+                        await websocket_manager.broadcast(
+                            {
+                                "type": "job_status",
+                                "job_id": job.id,
+                                "status": "pending",
+                                "error": None,
+                            }
+                        )
                     continue
 
                 job.progress_percent = remote_job.get(  # type: ignore[assignment]
@@ -203,6 +271,27 @@ class DistributedService:
                     )
 
             await db.commit()
+
+    async def _requeue_remote_job(self, db, job: Job) -> None:
+        result = await db.execute(
+            select(func.max(Job.queue_position)).where(Job.status == "pending")
+        )
+        max_pos = result.scalar() or 0
+        logger.warning(
+            "Requeued job %s after worker %s disappeared",
+            job.id,
+            job.assigned_worker_name or job.assigned_worker_url,
+        )
+        job.status = "pending"  # type: ignore[assignment]
+        job.assigned_worker_id = None  # type: ignore[assignment]
+        job.assigned_worker_name = None  # type: ignore[assignment]
+        job.assigned_worker_url = None  # type: ignore[assignment]
+        job.remote_job_id = None  # type: ignore[assignment]
+        job.started_at = None  # type: ignore[assignment]
+        job.queue_position = max_pos + 1  # type: ignore[assignment]
+        job.progress_percent = 0.0  # type: ignore[assignment]
+        job.eta_seconds = None  # type: ignore[assignment]
+        job.current_fps = None  # type: ignore[assignment]
 
     async def delegate_pending_jobs(self, websocket_manager) -> int:
         if not settings.DISTRIBUTED_ENABLED:
@@ -313,6 +402,7 @@ class DistributedService:
         peer.node_name = data.get("node_name") or peer.node_name
         peer.last_seen = time.monotonic()
         self._remember_peer(peer)
+        self._remember_reported_leader(data)
         return data
 
     async def list_peer_jobs(self, params: dict[str, object]) -> list[dict]:
@@ -347,7 +437,8 @@ class DistributedService:
         params: Optional[dict[str, object]] = None,
         json_body: Optional[dict] = None,
     ) -> dict:
-        if not self.leader_url:
+        leader_url = self.leader_url
+        if not leader_url:
             raise RuntimeError("Distributed leader URL is not configured")
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=5.0)
@@ -355,7 +446,7 @@ class DistributedService:
         try:
             response = await self._client.request(
                 method,
-                f"{self.leader_url}{path}",
+                f"{leader_url}{path}",
                 params=params,
                 json=json_body,
             )
@@ -420,6 +511,9 @@ class DistributedService:
                 "node_id": self.node_id,
                 "node_name": self.node_name,
                 "base_url": self.public_url,
+                "leader_url": self.leader_url,
+                "is_leader": self.is_leader,
+                "leader_age_seconds": self.leader_age_seconds(),
             }
             try:
                 await asyncio.get_running_loop().sock_sendto(
@@ -432,6 +526,12 @@ class DistributedService:
                 )
             except OSError as exc:
                 logger.debug("Cluster heartbeat failed: %s", exc)
+            await asyncio.sleep(settings.DISTRIBUTED_HEARTBEAT_SECONDS)
+
+    async def _probe_loop(self) -> None:
+        while self._running:
+            for peer in self._peer_candidates():
+                await self._get_peer_status(peer)
             await asyncio.sleep(settings.DISTRIBUTED_HEARTBEAT_SECONDS)
 
     async def _listen_loop(self) -> None:
@@ -469,6 +569,7 @@ class DistributedService:
                     last_seen=time.monotonic(),
                 )
             )
+            self._remember_reported_leader(payload)
 
     def _remember_peer(self, peer: PeerNode) -> None:
         if peer.node_id == self.node_id:
@@ -488,6 +589,42 @@ class DistributedService:
             self._peers.pop(existing_key, None)
 
         self._peers[peer.node_id] = peer
+
+    def _remember_reported_leader(self, payload: dict) -> None:
+        if settings.DISTRIBUTED_LEADER_URL.strip():
+            return
+
+        leader_url = str(payload.get("leader_url") or "").rstrip("/")
+        if not leader_url:
+            return
+
+        leader_id = ""
+        if payload.get("is_leader"):
+            leader_id = str(payload.get("node_id") or "")
+        elif leader_url == self.public_url:
+            leader_id = self.node_id
+        else:
+            for peer in self.peers():
+                if peer.base_url == leader_url:
+                    leader_id = peer.node_id
+                    break
+
+        if not leader_id or leader_id == self._leader_id:
+            return
+        if not self._current_leader_is_fresh():
+            self._set_leader(leader_id)
+            return
+
+        reported_age = float(payload.get("leader_age_seconds") or 0)
+        if payload.get("is_leader"):
+            current_age = self.leader_age_seconds()
+            if reported_age > current_age + 1 or (
+                abs(reported_age - current_age) <= 1
+                and self._leader_id is not None
+                and self._election_key(leader_id)
+                > self._election_key(self._leader_id)
+            ):
+                self._set_leader(leader_id)
 
     def _build_socket(self) -> socket.socket:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
