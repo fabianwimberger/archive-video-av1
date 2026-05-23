@@ -287,7 +287,7 @@ class HistoryView {
         document.getElementById('crf-value').textContent = settings.crf ?? 26;
         document.getElementById('preset-slider').value = settings.encoder_preset ?? settings.preset ?? 4;
         document.getElementById('preset-value').textContent = settings.encoder_preset ?? settings.preset ?? 4;
-        svtParamsForm.write('svt-profile', 'svt-extra-params', settings.svt_params || '');
+        document.getElementById('svt-params').value = settings.svt_params || '';
         document.getElementById('audio-bitrate').value = settings.audio_bitrate || '96k';
         document.getElementById('skip-crop').checked = settings.skip_crop_detect || false;
         const res = settings.max_resolution || 1080;

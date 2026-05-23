@@ -102,7 +102,7 @@
                 </div>
 
                 <div class="mb-2">
-                    <label for="svt-profile" class="form-label small mb-1 d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                    <label for="svt-params" class="form-label small mb-1 d-flex justify-content-between align-items-center gap-2 flex-wrap">
                         <span>SVT-AV1 Params</span>
                         <div class="d-flex gap-1 flex-wrap">
                             <button id="btn-auto-preset" class="btn btn-outline-info btn-xs" type="button" title="Auto-suggest encoding speed (0-10) for the selected file" disabled>
@@ -113,14 +113,7 @@
                             </button>
                         </div>
                     </label>
-                    <select id="svt-profile" class="form-select form-select-sm">
-                        <option value="tune=0:film-grain=8">Default grain</option>
-                        <option value="tune=0">Animation / clean</option>
-                        <option value="tune=0:film-grain=16:film-grain-denoise=1">Heavy grain</option>
-                        <option value="">None</option>
-                        <option value="__custom">Custom / additional only</option>
-                    </select>
-                    <input type="text" id="svt-extra-params" class="form-control form-control-sm mt-1" placeholder="Additional SVT params">
+                    <input type="text" id="svt-params" class="form-control form-control-sm" value="tune=0:film-grain=8">
                     <div id="estimate-info" class="form-text small text-muted mt-1" style="min-height: 1.2em;"></div>
                 </div>
 
@@ -329,14 +322,7 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">SVT Params</label>
-                                <select id="preset-edit-svt_profile" class="form-select form-select-sm">
-                                    <option value="tune=0:film-grain=8">Default grain</option>
-                                    <option value="tune=0">Animation / clean</option>
-                                    <option value="tune=0:film-grain=16:film-grain-denoise=1">Heavy grain</option>
-                                    <option value="">None</option>
-                                    <option value="__custom">Custom / additional only</option>
-                                </select>
-                                <input type="text" id="preset-edit-svt_extra_params" class="form-control form-control-sm mt-1" placeholder="Additional SVT params">
+                                <input type="text" id="preset-edit-svt_params" class="form-control form-control-sm">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">Audio Bitrate</label>
