@@ -303,3 +303,45 @@ const utils = {
         return ` <span class="text-success" title="Saved ${savedStr} (${percent}%)">(-${percent}%)</span>`;
     }
 };
+
+const svtParamsForm = {
+    profiles: [
+        'tune=0:film-grain=16:film-grain-denoise=1',
+        'tune=0:film-grain=8',
+        'tune=0',
+    ],
+
+    normalizeExtra(value) {
+        return (value || '').trim().replace(/^:+|:+$/g, '');
+    },
+
+    read(profileId, extraId) {
+        const profile = document.getElementById(profileId).value;
+        const extra = this.normalizeExtra(document.getElementById(extraId).value);
+        if (profile === '__custom' || profile === '') return extra;
+        return extra ? `${profile}:${extra}` : profile;
+    },
+
+    write(profileId, extraId, params) {
+        const select = document.getElementById(profileId);
+        const input = document.getElementById(extraId);
+        const value = this.normalizeExtra(params);
+
+        if (!value) {
+            select.value = '';
+            input.value = '';
+            return;
+        }
+
+        for (const profile of this.profiles) {
+            if (value === profile || value.startsWith(`${profile}:`)) {
+                select.value = profile;
+                input.value = value === profile ? '' : value.slice(profile.length + 1);
+                return;
+            }
+        }
+
+        select.value = '__custom';
+        input.value = value;
+    }
+};

@@ -119,7 +119,7 @@ class PresetManager {
         document.getElementById('preset-edit-description').value = '';
         document.getElementById('preset-edit-crf').value = current.crf;
         document.getElementById('preset-edit-encoder_preset').value = current.encoder_preset;
-        document.getElementById('preset-edit-svt_params').value = current.svt_params;
+        svtParamsForm.write('preset-edit-svt_profile', 'preset-edit-svt_extra_params', current.svt_params);
         document.getElementById('preset-edit-audio_bitrate').value = current.audio_bitrate;
         document.getElementById('preset-edit-skip_crop_detect').checked = current.skip_crop_detect;
         document.getElementById('preset-edit-max_resolution').value = current.max_resolution;
@@ -136,7 +136,7 @@ class PresetManager {
         document.getElementById('preset-edit-description').value = preset.description || '';
         document.getElementById('preset-edit-crf').value = preset.crf;
         document.getElementById('preset-edit-encoder_preset').value = preset.encoder_preset;
-        document.getElementById('preset-edit-svt_params').value = preset.svt_params || '';
+        svtParamsForm.write('preset-edit-svt_profile', 'preset-edit-svt_extra_params', preset.svt_params || '');
         document.getElementById('preset-edit-audio_bitrate').value = preset.audio_bitrate;
         document.getElementById('preset-edit-skip_crop_detect').checked = preset.skip_crop_detect;
         document.getElementById('preset-edit-max_resolution').value = preset.max_resolution;
@@ -150,7 +150,7 @@ class PresetManager {
             description: document.getElementById('preset-edit-description').value.trim() || null,
             crf: parseInt(document.getElementById('preset-edit-crf').value),
             encoder_preset: parseInt(document.getElementById('preset-edit-encoder_preset').value),
-            svt_params: document.getElementById('preset-edit-svt_params').value.trim(),
+            svt_params: svtParamsForm.read('preset-edit-svt_profile', 'preset-edit-svt_extra_params'),
             audio_bitrate: document.getElementById('preset-edit-audio_bitrate').value.trim(),
             skip_crop_detect: document.getElementById('preset-edit-skip_crop_detect').checked,
             max_resolution: parseInt(document.getElementById('preset-edit-max_resolution').value),
