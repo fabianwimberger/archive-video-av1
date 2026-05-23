@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import signal
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -282,10 +283,23 @@ class JobQueue:
         """Coordinate remote jobs while the local worker is busy."""
         from app.services.distributed import distributed_service
 
+        last_progress_sync = 0.0
+        last_coordination = 0.0
+
         while self.running:
             try:
-                await distributed_service.sync_remote_jobs(self.websocket_manager)
-                if distributed_service.is_leader:
+                now = time.monotonic()
+                progress_interval = max(0.5, settings.DISTRIBUTED_PROGRESS_SECONDS)
+                coordination_interval = max(1.0, settings.DISTRIBUTED_HEARTBEAT_SECONDS)
+
+                if now - last_progress_sync >= progress_interval:
+                    await distributed_service.sync_remote_jobs(self.websocket_manager)
+                    last_progress_sync = now
+
+                if (
+                    distributed_service.is_leader
+                    and now - last_coordination >= coordination_interval
+                ):
                     if distributed_service.leader_is_stable():
                         await distributed_service.promote_replicated_jobs(
                             self.websocket_manager
@@ -300,12 +314,18 @@ class JobQueue:
                             if delegated and self._wake_event:
                                 self._wake_event.set()
                         await distributed_service.replicate_queue()
+                    last_coordination = now
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error("Error in distributed loop: %s", e, exc_info=True)
 
-            await asyncio.sleep(settings.DISTRIBUTED_HEARTBEAT_SECONDS)
+            await asyncio.sleep(
+                min(
+                    max(0.5, settings.DISTRIBUTED_PROGRESS_SECONDS),
+                    max(1.0, settings.DISTRIBUTED_HEARTBEAT_SECONDS),
+                )
+            )
 
     async def _process_job(self, job_id: int):
         """

@@ -54,6 +54,9 @@ class Settings:
     DISTRIBUTED_HEARTBEAT_SECONDS: float = float(
         os.getenv("DISTRIBUTED_HEARTBEAT_SECONDS", "5")
     )
+    DISTRIBUTED_PROGRESS_SECONDS: float = float(
+        os.getenv("DISTRIBUTED_PROGRESS_SECONDS", "1")
+    )
     DISTRIBUTED_PEER_TTL_SECONDS: float = float(
         os.getenv("DISTRIBUTED_PEER_TTL_SECONDS", "20")
     )

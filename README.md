@@ -184,6 +184,7 @@ Presets are stored in the SQLite database and survive restarts.
 | `DISTRIBUTED_DISCOVERY_GROUP` | `239.255.42.99` | Multicast group for peer discovery |
 | `DISTRIBUTED_DISCOVERY_PORT` | `9988` | UDP port for peer discovery |
 | `DISTRIBUTED_HEARTBEAT_SECONDS` | `5` | Peer heartbeat and coordination interval |
+| `DISTRIBUTED_PROGRESS_SECONDS` | `1` | Remote worker progress sync interval |
 | `DISTRIBUTED_PEER_TTL_SECONDS` | `20` | Seconds before a silent peer is removed |
 | `TZ` | `UTC` | Container timezone |
 
