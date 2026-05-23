@@ -4,6 +4,7 @@ import time
 
 import pytest
 from app.config import settings
+from app.routes.cluster import get_cluster_status
 from app.services.job_queue import JobQueue
 from app.models.app_state import AppState
 from app.services.distributed import PeerNode, distributed_service
@@ -83,6 +84,33 @@ class TestClusterStatus:
         available = await distributed_service._available_peers()
 
         assert [peer.node_id for peer in available] == ["peer"]
+
+    @pytest.mark.asyncio
+    async def test_worker_cluster_status_forwards_to_leader(self, monkeypatch):
+        captured = {}
+
+        async def fake_request(method, path):
+            captured["method"] = method
+            captured["path"] = path
+            return {
+                "enabled": True,
+                "node_id": "server",
+                "node_name": "server",
+                "public_url": "http://server:8000",
+                "leader_url": "http://server:8000",
+                "is_leader": True,
+                "pending_count": 0,
+                "active_job_id": None,
+                "peers": [],
+            }
+
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: True)
+        monkeypatch.setattr(distributed_service, "request_leader", fake_request)
+
+        response = await get_cluster_status(cluster=True)
+
+        assert captured == {"method": "GET", "path": "/api/cluster/status"}
+        assert response["node_id"] == "server"
 
 
 class TestQueuePauseRehydration:

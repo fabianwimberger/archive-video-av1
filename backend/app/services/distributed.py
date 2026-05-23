@@ -296,7 +296,10 @@ class DistributedService:
             self._client = httpx.AsyncClient(timeout=5.0)
 
         try:
-            response = await self._client.get(f"{peer.base_url}/api/cluster/status")
+            response = await self._client.get(
+                f"{peer.base_url}/api/cluster/status",
+                params={"cluster": "false"},
+            )
             response.raise_for_status()
             data = response.json()
         except (httpx.HTTPError, ValueError) as exc:
