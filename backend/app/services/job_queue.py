@@ -257,19 +257,17 @@ class JobQueue:
         while self.running:
             try:
                 await distributed_service.sync_remote_jobs(self.websocket_manager)
-                if (
-                    distributed_service.is_leader
-                    and (self._paused_event is None or self._paused_event.is_set())
-                ):
+                if distributed_service.is_leader:
                     await distributed_service.promote_replicated_jobs(
                         self.websocket_manager
                     )
-                    async with self._dispatch_lock:
-                        delegated = await distributed_service.delegate_pending_jobs(
-                            self.websocket_manager
-                        )
-                    if delegated and self._wake_event:
-                        self._wake_event.set()
+                    if self._paused_event is None or self._paused_event.is_set():
+                        async with self._dispatch_lock:
+                            delegated = await distributed_service.delegate_pending_jobs(
+                                self.websocket_manager
+                            )
+                        if delegated and self._wake_event:
+                            self._wake_event.set()
                     await distributed_service.replicate_queue()
             except asyncio.CancelledError:
                 break
