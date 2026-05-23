@@ -493,3 +493,66 @@ class TestQueuePauseRehydration:
         finally:
             JobQueue.start_worker = patched_start
             JobQueue.stop_worker = patched_stop
+
+
+class TestDistributedStartupClaims:
+    @pytest.mark.asyncio
+    async def test_unstable_leader_does_not_claim_unassigned_jobs(
+        self, db_session, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "pc")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "PC")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://pc:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEER_TTL_SECONDS", 20)
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", "pc")
+        monkeypatch.setattr(distributed_service, "_leader_since", time.monotonic())
+
+        job = Job(
+            source_file="/videos/stale.mkv",
+            output_file="/videos/stale_conv.mkv",
+            settings="{}",
+            status="pending",
+            is_cluster_replica=False,
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        queue = JobQueue()
+        claimed = await queue._claim_next_job(db_session)
+
+        await db_session.refresh(job)
+        assert claimed is None
+        assert job.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_unstable_leader_claims_jobs_assigned_to_this_worker(
+        self, db_session, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "pc")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "PC")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://pc:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEER_TTL_SECONDS", 20)
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", "pc")
+        monkeypatch.setattr(distributed_service, "_leader_since", time.monotonic())
+
+        job = Job(
+            source_file="/videos/delegated.mkv",
+            output_file="/videos/delegated_conv.mkv",
+            settings="{}",
+            status="pending",
+            assigned_worker_id="pc",
+            is_cluster_replica=False,
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        queue = JobQueue()
+        claimed = await queue._claim_next_job(db_session)
+
+        assert claimed is not None
+        assert claimed.id == job.id
+        assert claimed.status == "processing"

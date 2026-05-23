@@ -168,16 +168,29 @@ class JobQueue:
             await distributed_service.stop()
         logger.info("Job queue worker stopped")
 
+    def _can_claim_unassigned_jobs(self) -> bool:
+        if not settings.DISTRIBUTED_ENABLED:
+            return True
+
+        from app.services.distributed import distributed_service
+
+        return (
+            distributed_service.is_leader
+            and distributed_service.leader_age_seconds()
+            >= settings.DISTRIBUTED_PEER_TTL_SECONDS
+        )
+
     async def _claim_next_job(self, db) -> Optional[Job]:
+        worker_filter = Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID
+        if self._can_claim_unassigned_jobs():
+            worker_filter = or_(Job.assigned_worker_id.is_(None), worker_filter)
+
         result = await db.execute(
             select(Job.id)
             .where(
                 Job.status == "pending",
                 Job.is_cluster_replica.is_(False),
-                or_(
-                    Job.assigned_worker_id.is_(None),
-                    Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID,
-                ),
+                worker_filter,
             )
             .order_by(
                 Job.queue_position.asc().nullslast(),
@@ -195,10 +208,7 @@ class JobQueue:
                 Job.id == job_id,
                 Job.status == "pending",
                 Job.is_cluster_replica.is_(False),
-                or_(
-                    Job.assigned_worker_id.is_(None),
-                    Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID,
-                ),
+                worker_filter,
             )
             .values(
                 status="processing",
@@ -276,17 +286,20 @@ class JobQueue:
             try:
                 await distributed_service.sync_remote_jobs(self.websocket_manager)
                 if distributed_service.is_leader:
-                    await distributed_service.promote_replicated_jobs(
-                        self.websocket_manager
-                    )
-                    if self._paused_event is None or self._paused_event.is_set():
-                        async with self._dispatch_lock:
-                            delegated = await distributed_service.delegate_pending_jobs(
-                                self.websocket_manager
-                            )
-                        if delegated and self._wake_event:
-                            self._wake_event.set()
-                    await distributed_service.replicate_queue()
+                    if distributed_service.leader_is_stable():
+                        await distributed_service.promote_replicated_jobs(
+                            self.websocket_manager
+                        )
+                        if self._paused_event is None or self._paused_event.is_set():
+                            async with self._dispatch_lock:
+                                delegated = (
+                                    await distributed_service.delegate_pending_jobs(
+                                        self.websocket_manager
+                                    )
+                                )
+                            if delegated and self._wake_event:
+                                self._wake_event.set()
+                        await distributed_service.replicate_queue()
             except asyncio.CancelledError:
                 break
             except Exception as e:

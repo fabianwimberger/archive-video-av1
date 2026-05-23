@@ -162,6 +162,9 @@ class DistributedService:
         self._elected_leader()
         return time.monotonic() - self._leader_since
 
+    def leader_is_stable(self) -> bool:
+        return self.leader_age_seconds() >= settings.DISTRIBUTED_PEER_TTL_SECONDS
+
     def _set_leader(self, node_id: str) -> None:
         if self._leader_id != node_id:
             self._leader_since = time.monotonic()
@@ -383,7 +386,11 @@ class DistributedService:
         return applied
 
     async def promote_replicated_jobs(self, websocket_manager) -> int:
-        if not settings.DISTRIBUTED_ENABLED or not self.is_leader:
+        if (
+            not settings.DISTRIBUTED_ENABLED
+            or not self.is_leader
+            or not self.leader_is_stable()
+        ):
             return 0
 
         async with AsyncSessionLocal() as db:
