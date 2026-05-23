@@ -5,6 +5,7 @@ import time
 import pytest
 from app.config import settings
 from app.models.job import Job
+from app.models.schemas import QueueReplicationRequest, ReplicatedJob
 from app.routes.cluster import get_cluster_status
 from app.services.job_queue import JobQueue
 from app.models.app_state import AppState
@@ -266,6 +267,110 @@ class TestClusterStatus:
         assert requeued.assigned_worker_id is None
         assert requeued.remote_job_id is None
         assert requeued.queue_position == 1
+
+    @pytest.mark.asyncio
+    async def test_queue_replication_stores_follower_copy(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", "node-a")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://node-b:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_LEADER_URL", "")
+
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="node-a",
+                node_name="node-a",
+                base_url="http://node-a:8000",
+                last_seen=time.monotonic(),
+            )
+        )
+
+        payload = QueueReplicationRequest(
+            leader_node_id="node-a",
+            leader_url="http://node-a:8000",
+            leader_age_seconds=30,
+            jobs=[
+                ReplicatedJob(
+                    cluster_job_id="node-a:1",
+                    cluster_origin_node_id="node-a",
+                    cluster_origin_job_id=1,
+                    source_file="/videos/a.mkv",
+                    output_file="/videos/a.av1.mkv",
+                    settings="{}",
+                    queue_position=1,
+                    status="pending",
+                )
+            ],
+        )
+
+        class FakeScalars:
+            def all(self):
+                return []
+
+        class FakeResult:
+            def scalars(self):
+                return FakeScalars()
+
+        class FakeDb:
+            def __init__(self):
+                self.added = []
+
+            async def execute(self, _statement):
+                return FakeResult()
+
+            def add(self, job):
+                self.added.append(job)
+
+            async def commit(self):
+                pass
+
+        db = FakeDb()
+        applied = await distributed_service.apply_queue_replication(db, payload)
+        replica = db.added[0]
+
+        assert applied == 1
+        assert replica.is_cluster_replica is True
+        assert replica.status == "pending"
+        assert replica.source_file == "/videos/a.mkv"
+
+    @pytest.mark.asyncio
+    async def test_replicated_jobs_promote_on_leader_takeover(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "node-b")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://node-b:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_LEADER_URL", "")
+
+        replica = Job(
+            cluster_job_id="node-a:1",
+            cluster_origin_node_id="node-a",
+            cluster_origin_job_id=1,
+            source_file="/videos/a.mkv",
+            output_file="/videos/a.av1.mkv",
+            settings="{}",
+            status="pending",
+            queue_position=1,
+            is_cluster_replica=True,
+        )
+        class FakeScalars:
+            def all(self):
+                return [replica]
+
+        class FakeResult:
+            def scalars(self):
+                return FakeScalars()
+
+        class FakeDb:
+            async def execute(self, _statement):
+                return FakeResult()
+
+        promoted = await distributed_service._promote_replicated_jobs(FakeDb())
+
+        assert promoted == [replica]
+        assert replica.is_cluster_replica is False
+        assert replica.status == "pending"
 
 
 class TestQueuePauseRehydration:

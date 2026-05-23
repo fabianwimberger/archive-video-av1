@@ -240,6 +240,41 @@ class ClusterStatusResponse(BaseModel):
     peers: list[ClusterPeerResponse]
 
 
+class ReplicatedJob(BaseModel):
+    cluster_job_id: str
+    cluster_origin_node_id: str
+    cluster_origin_job_id: int
+    source_file: str
+    output_file: str
+    preset_id: Optional[int] = None
+    preset_name_snapshot: Optional[str] = None
+    settings: str
+    notes: Optional[str] = None
+    queue_position: Optional[int] = None
+    status: str
+    assigned_worker_id: Optional[str] = None
+    assigned_worker_name: Optional[str] = None
+    assigned_worker_url: Optional[str] = None
+    remote_job_id: Optional[int] = None
+    progress_percent: float = 0.0
+    eta_seconds: Optional[int] = None
+    current_fps: Optional[float] = None
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    log: str = ""
+    source_size_bytes: Optional[int] = None
+    output_size_bytes: Optional[int] = None
+
+
+class QueueReplicationRequest(BaseModel):
+    leader_node_id: str
+    leader_url: str
+    leader_age_seconds: float
+    jobs: list[ReplicatedJob]
+
+
 class PresetExportDocument(BaseModel):
     """Schema for preset export document."""
 

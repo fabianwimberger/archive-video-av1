@@ -2,10 +2,12 @@
 
 import time
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.schemas import ClusterStatusResponse
+from app.database import get_db
+from app.models.schemas import ClusterStatusResponse, QueueReplicationRequest
 from app.services.distributed import LeaderRequestError, distributed_service
 from app.services.job_queue import job_queue
 
@@ -51,3 +53,13 @@ async def get_cluster_status(
             for peer in distributed_service.peers()
         ],
     }
+
+
+@router.post("/replication")
+async def apply_queue_replication(
+    payload: QueueReplicationRequest, db: AsyncSession = Depends(get_db)
+):
+    if not settings.DISTRIBUTED_ENABLED:
+        raise HTTPException(status_code=409, detail="Distributed mode is disabled")
+    applied = await distributed_service.apply_queue_replication(db, payload)
+    return {"success": True, "applied": applied}

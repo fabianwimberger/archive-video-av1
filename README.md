@@ -191,7 +191,7 @@ Presets are stored in the SQLite database and survive restarts.
 
 Distributed mode lets several trusted LAN devices run the container and share AV1 jobs. Queue jobs from any node; non-leader nodes forward queue changes to the current leader, the leader delegates pending work to discovered idle peers, and every node shows the same cluster-wide active queue with worker assignments. By default, nodes use a deterministic tie-break when no leader is known, then keep the current leader until it disappears. Set `DISTRIBUTED_LEADER_URL` only when you want to pin one coordinator.
 
-Cluster state is shown in the Active Queue panel and is also available at `/api/cluster/status`. Active job listings include peer jobs by default; pass `cluster=false` to `/api/jobs` when a node-local view is needed.
+Cluster state is shown in the Active Queue panel and is also available at `/api/cluster/status`. Active job listings include peer jobs by default; pass `cluster=false` to `/api/jobs` when a node-local view is needed. The leader replicates pending and active queue rows to followers every coordination interval so a newly elected leader can continue scheduling visible queue work.
 
 Requirements:
 
@@ -221,7 +221,7 @@ docker run -d \
   ghcr.io/fabianwimberger/archive-video-av1:latest
 ```
 
-If a worker disappears while it is processing a delegated job, the leader requeues that job after the worker has aged out of the peer list. Leader election does not replicate local SQLite queue rows from a failed leader; jobs accepted by that leader remain on that node and are available again when it returns.
+If a worker disappears while it is processing a delegated job, the leader requeues that job after the worker has aged out of the peer list. If the leader disappears, the next elected leader promotes its replicated queue copy and continues scheduling from there. Jobs created just before a leader fails can only fail over after they have reached at least one follower.
 
 ## Security
 

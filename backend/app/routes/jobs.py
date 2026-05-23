@@ -87,10 +87,22 @@ async def _resolve_job_settings(
 async def _assign_queue_position(db: AsyncSession) -> int:
     """Assign the next queue position for pending jobs."""
     result = await db.execute(
-        select(func.max(Job.queue_position)).where(Job.status == "pending")
+        select(func.max(Job.queue_position)).where(
+            Job.status == "pending",
+            Job.is_cluster_replica.is_(False),
+        )
     )
     max_pos = result.scalar() or 0
     return max_pos + 1
+
+
+def _assign_cluster_identity(job: Job) -> None:
+    if job.id is None or job.cluster_job_id:
+        return
+    job.cluster_origin_node_id = app_settings.DISTRIBUTED_NODE_ID  # type: ignore[assignment]
+    job.cluster_origin_job_id = job.id  # type: ignore[assignment]
+    job.cluster_job_id = f"{app_settings.DISTRIBUTED_NODE_ID}:{job.id}"  # type: ignore[assignment]
+    job.is_cluster_replica = False  # type: ignore[assignment]
 
 
 async def _leader_request(
@@ -208,6 +220,8 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
         )
 
         db.add(job)
+        await db.flush()
+        _assign_cluster_identity(job)
         await db.commit()
         await db.refresh(job)
 
@@ -284,6 +298,7 @@ async def create_batch_jobs(
             )
             db.add(job)
             await db.flush()
+            _assign_cluster_identity(job)
             job_ids.append(job.id)
 
         await db.commit()
@@ -612,6 +627,8 @@ async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
             status="pending",
         )
         db.add(new_job)
+        await db.flush()
+        _assign_cluster_identity(new_job)
         await db.commit()
         await db.refresh(new_job)
 

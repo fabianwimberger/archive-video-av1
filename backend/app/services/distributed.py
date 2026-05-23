@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -79,6 +80,7 @@ class DistributedService:
 
         self._running = True
         self._client = httpx.AsyncClient(timeout=5.0)
+        await self.ensure_local_cluster_job_ids()
 
         try:
             self._socket = self._build_socket()
@@ -190,6 +192,22 @@ class DistributedService:
     def _peer_is_fresh(self, base_url: str) -> bool:
         return any(peer.base_url == base_url for peer in self.peers())
 
+    async def ensure_local_cluster_job_ids(self) -> None:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Job).where(
+                    Job.cluster_job_id.is_(None),
+                    Job.is_cluster_replica.is_(False),
+                )
+            )
+            jobs = list(result.scalars().all())
+            for job in jobs:
+                job.cluster_origin_node_id = self.node_id  # type: ignore[assignment]
+                job.cluster_origin_job_id = job.id  # type: ignore[assignment]
+                job.cluster_job_id = f"{self.node_id}:{job.id}"  # type: ignore[assignment]
+            if jobs:
+                await db.commit()
+
     async def sync_remote_jobs(self, websocket_manager) -> None:
         if not settings.DISTRIBUTED_ENABLED:
             return
@@ -197,7 +215,9 @@ class DistributedService:
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Job).where(
-                    Job.status == "processing", Job.remote_job_id.is_not(None)
+                    Job.status == "processing",
+                    Job.remote_job_id.is_not(None),
+                    Job.is_cluster_replica.is_(False),
                 )
             )
             jobs = list(result.scalars().all())
@@ -272,9 +292,192 @@ class DistributedService:
 
             await db.commit()
 
+    async def replicate_queue(self) -> int:
+        if not settings.DISTRIBUTED_ENABLED or not self.is_leader:
+            return 0
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=5.0)
+
+        payload = await self._replication_payload()
+        replicated = 0
+        for peer in self.peers():
+            try:
+                response = await self._client.post(
+                    f"{peer.base_url}/api/cluster/replication",
+                    json=payload,
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                logger.debug("Queue replication failed for %s: %s", peer.base_url, exc)
+                continue
+            replicated += 1
+        return replicated
+
+    async def _replication_payload(self) -> dict:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Job)
+                .where(
+                    Job.status.in_(["pending", "processing"]),
+                    Job.is_cluster_replica.is_(False),
+                )
+                .order_by(Job.queue_position.asc().nullslast(), Job.created_at.asc())
+            )
+            jobs = []
+            for job in result.scalars().all():
+                if not job.cluster_job_id:
+                    job.cluster_origin_node_id = self.node_id  # type: ignore[assignment]
+                    job.cluster_origin_job_id = job.id  # type: ignore[assignment]
+                    job.cluster_job_id = f"{self.node_id}:{job.id}"  # type: ignore[assignment]
+                jobs.append(self._serialize_job(job))
+            await db.commit()
+
+        return {
+            "leader_node_id": self.node_id,
+            "leader_url": self.public_url,
+            "leader_age_seconds": self.leader_age_seconds(),
+            "jobs": jobs,
+        }
+
+    async def apply_queue_replication(self, db: AsyncSession, payload) -> int:
+        leader_node_id = payload.leader_node_id
+        if leader_node_id == self.node_id:
+            return 0
+
+        self._remember_reported_leader(
+            {
+                "node_id": leader_node_id,
+                "leader_url": payload.leader_url,
+                "is_leader": True,
+                "leader_age_seconds": payload.leader_age_seconds,
+            }
+        )
+        if self.is_leader:
+            return 0
+
+        incoming_ids = {job.cluster_job_id for job in payload.jobs}
+        if incoming_ids:
+            existing_result = await db.execute(
+                select(Job).where(Job.cluster_job_id.in_(incoming_ids))
+            )
+            existing = {
+                job.cluster_job_id: job for job in existing_result.scalars().all()
+            }
+        else:
+            existing = {}
+
+        applied = 0
+        for replica in payload.jobs:
+            job = existing.get(replica.cluster_job_id)
+            if job is None:
+                job = Job()
+                db.add(job)
+            self._apply_replica(job, replica)
+            applied += 1
+
+        stale_query = delete(Job).where(
+            Job.is_cluster_replica.is_(True),
+            Job.cluster_origin_node_id == leader_node_id,
+        )
+        if incoming_ids:
+            stale_query = stale_query.where(~Job.cluster_job_id.in_(incoming_ids))
+        await db.execute(stale_query)
+        await db.commit()
+        return applied
+
+    async def promote_replicated_jobs(self, websocket_manager) -> int:
+        if not settings.DISTRIBUTED_ENABLED or not self.is_leader:
+            return 0
+
+        async with AsyncSessionLocal() as db:
+            jobs = await self._promote_replicated_jobs(db)
+            if jobs:
+                await db.commit()
+
+        if jobs and websocket_manager:
+            await websocket_manager.broadcast({"type": "queue_update"})
+        return len(jobs)
+
+    async def _promote_replicated_jobs(self, db: AsyncSession) -> list[Job]:
+        result = await db.execute(
+            select(Job).where(
+                Job.is_cluster_replica.is_(True),
+                Job.status.in_(["pending", "processing"]),
+            )
+        )
+        jobs = list(result.scalars().all())
+        for job in jobs:
+            if job.status == "processing" and job.remote_job_id is None:
+                await self._requeue_remote_job(db, job)
+            job.is_cluster_replica = False  # type: ignore[assignment]
+        return jobs
+
+    def _serialize_job(self, job: Job) -> dict:
+        return {
+            "cluster_job_id": job.cluster_job_id,
+            "cluster_origin_node_id": job.cluster_origin_node_id or self.node_id,
+            "cluster_origin_job_id": job.cluster_origin_job_id or job.id,
+            "source_file": job.source_file,
+            "output_file": job.output_file,
+            "preset_id": job.preset_id,
+            "preset_name_snapshot": job.preset_name_snapshot,
+            "settings": job.settings or "{}",
+            "notes": job.notes,
+            "queue_position": job.queue_position,
+            "status": job.status,
+            "assigned_worker_id": job.assigned_worker_id,
+            "assigned_worker_name": job.assigned_worker_name,
+            "assigned_worker_url": job.assigned_worker_url,
+            "remote_job_id": job.remote_job_id,
+            "progress_percent": job.progress_percent or 0.0,
+            "eta_seconds": job.eta_seconds,
+            "current_fps": job.current_fps,
+            "created_at": _format_datetime(job.created_at),
+            "started_at": _format_datetime(job.started_at),
+            "completed_at": _format_datetime(job.completed_at),
+            "error_message": job.error_message,
+            "log": job.log or "",
+            "source_size_bytes": job.source_size_bytes,
+            "output_size_bytes": job.output_size_bytes,
+        }
+
+    def _apply_replica(self, job: Job, replica) -> None:
+        for field in (
+            "cluster_job_id",
+            "cluster_origin_node_id",
+            "cluster_origin_job_id",
+            "source_file",
+            "output_file",
+            "preset_id",
+            "preset_name_snapshot",
+            "settings",
+            "notes",
+            "queue_position",
+            "status",
+            "assigned_worker_id",
+            "assigned_worker_name",
+            "assigned_worker_url",
+            "remote_job_id",
+            "progress_percent",
+            "eta_seconds",
+            "current_fps",
+            "error_message",
+            "log",
+            "source_size_bytes",
+            "output_size_bytes",
+        ):
+            setattr(job, field, getattr(replica, field))
+        job.created_at = replica.created_at or datetime.now(timezone.utc)  # type: ignore[assignment]
+        job.started_at = replica.started_at  # type: ignore[assignment]
+        job.completed_at = replica.completed_at  # type: ignore[assignment]
+        job.is_cluster_replica = True  # type: ignore[assignment]
+
     async def _requeue_remote_job(self, db, job: Job) -> None:
         result = await db.execute(
-            select(func.max(Job.queue_position)).where(Job.status == "pending")
+            select(func.max(Job.queue_position)).where(
+                Job.status == "pending",
+                Job.is_cluster_replica.is_(False),
+            )
         )
         max_pos = result.scalar() or 0
         logger.warning(
@@ -287,6 +490,7 @@ class DistributedService:
         job.assigned_worker_name = None  # type: ignore[assignment]
         job.assigned_worker_url = None  # type: ignore[assignment]
         job.remote_job_id = None  # type: ignore[assignment]
+        job.is_cluster_replica = False  # type: ignore[assignment]
         job.started_at = None  # type: ignore[assignment]
         job.queue_position = max_pos + 1  # type: ignore[assignment]
         job.progress_percent = 0.0  # type: ignore[assignment]
@@ -305,7 +509,11 @@ class DistributedService:
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Job)
-                .where(Job.status == "pending", Job.assigned_worker_id.is_(None))
+                .where(
+                    Job.status == "pending",
+                    Job.assigned_worker_id.is_(None),
+                    Job.is_cluster_replica.is_(False),
+                )
                 .order_by(Job.queue_position.asc().nullslast(), Job.created_at.asc())
                 .limit(len(available_peers))
             )
@@ -647,6 +855,12 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _format_datetime(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.isoformat()
 
 
 distributed_service = DistributedService()

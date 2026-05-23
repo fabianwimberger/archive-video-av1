@@ -187,6 +187,7 @@ class JobQueue:
                             select(Job)
                             .where(
                                 Job.status == "pending",
+                                Job.is_cluster_replica.is_(False),
                                 or_(
                                     Job.assigned_worker_id.is_(None),
                                     Job.assigned_worker_id
@@ -260,12 +261,16 @@ class JobQueue:
                     distributed_service.is_leader
                     and (self._paused_event is None or self._paused_event.is_set())
                 ):
+                    await distributed_service.promote_replicated_jobs(
+                        self.websocket_manager
+                    )
                     async with self._dispatch_lock:
                         delegated = await distributed_service.delegate_pending_jobs(
                             self.websocket_manager
                         )
                     if delegated and self._wake_event:
                         self._wake_event.set()
+                    await distributed_service.replicate_queue()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -471,7 +476,12 @@ class JobQueue:
 
             result = await db.execute(
                 select(func.count()).select_from(
-                    select(Job).where(Job.status == "pending").subquery()
+                    select(Job)
+                    .where(
+                        Job.status == "pending",
+                        Job.is_cluster_replica.is_(False),
+                    )
+                    .subquery()
                 )
             )
             pending_count = result.scalar() or 0

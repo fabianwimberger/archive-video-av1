@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Index,
     BigInteger,
+    Boolean,
     ForeignKey,
 )
 from app.database import Base
@@ -44,6 +45,10 @@ class Job(Base):
     assigned_worker_name = Column(String, nullable=True)
     assigned_worker_url = Column(String, nullable=True)
     remote_job_id = Column(Integer, nullable=True)
+    cluster_job_id = Column(String, nullable=True)
+    cluster_origin_node_id = Column(String, nullable=True)
+    cluster_origin_job_id = Column(Integer, nullable=True)
+    is_cluster_replica = Column(Boolean, nullable=False, default=False)
     progress_percent = Column(Float, default=0.0)
     eta_seconds = Column(Integer, nullable=True)
     current_fps = Column(Float, nullable=True)
@@ -67,4 +72,6 @@ class Job(Base):
         Index("idx_jobs_source_file", "source_file"),
         Index("idx_jobs_status_queue_position", "status", "queue_position"),
         Index("idx_jobs_remote_job_id", "remote_job_id"),
+        Index("idx_jobs_cluster_job_id", "cluster_job_id", unique=True),
+        Index("idx_jobs_cluster_replica_origin", "is_cluster_replica", "cluster_origin_node_id"),
     )
