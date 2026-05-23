@@ -20,6 +20,7 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
 - **Responsive web UI** with file browsing, queue controls, history filters, and real-time progress via WebSocket
 - **AV1 encoding** using SVT-AV1 with PGO-optimized FFmpeg
 - **Batch processing** with sequential job queue
+- **Distributed processing** with opt-in LAN peer discovery and remote job delegation
 - **Persistent** — conversion history, custom presets, and queue state survive restarts
 - **Conversion presets:**
   - **Default** — CRF 26, film grain preservation (`film-grain=8`)
@@ -131,7 +132,7 @@ Open `http://localhost:8000` after starting the container.
 - **Convert** — browse mounted `.mkv` files, search within the current folder, select unconverted files for encoding, or select converted originals for cleanup.
 - **Settings** — choose a preset, adjust CRF, encoder speed, SVT-AV1 parameters, audio bitrate, crop detection, and maximum resolution.
 - **Auto Speed / Auto Grain** — analyze the selected file and apply a suggested preset or grain settings.
-- **Active Queue** — watch running jobs, pause or resume processing, cancel jobs, clear queued work, and inspect logs for active encodes.
+- **Active Queue** — watch running jobs, cluster status, pause or resume processing, cancel jobs, clear queued work, and inspect logs for active encodes.
 - **History** — filter completed, failed, or cancelled jobs; inspect settings and logs; retry jobs; save settings as a preset; export the current page to CSV.
 
 ## How It Works
@@ -174,7 +175,52 @@ Presets are stored in the SQLite database and survive restarts.
 | `PREFERRED_SUBTITLE_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `SUBTITLE_TRACK_MODE=preferred` |
 | `JOB_HISTORY_RETENTION_DAYS` | `0` | Delete finished jobs older than N days (`0` = keep forever) |
 | `JOB_HISTORY_MAX_ROWS` | `0` | Maximum number of finished jobs to keep (`0` = unlimited) |
+| `DISTRIBUTED_ENABLED` | `false` | Enable LAN peer discovery and remote job delegation |
+| `DISTRIBUTED_NODE_ID` | container hostname | Stable node identifier advertised to peers |
+| `DISTRIBUTED_NODE_NAME` | `DISTRIBUTED_NODE_ID` | Display name for this worker node |
+| `DISTRIBUTED_PUBLIC_URL` | `http://<hostname>:8000` | URL other nodes use to reach this service |
+| `DISTRIBUTED_LEADER_URL` | empty | Optional leader URL; when set, queue writes and active queue reads are coordinated through this node |
+| `DISTRIBUTED_PEERS` | empty | Comma-separated peer URLs used when multicast discovery is unavailable |
+| `DISTRIBUTED_DISCOVERY_GROUP` | `239.255.42.99` | Multicast group for peer discovery |
+| `DISTRIBUTED_DISCOVERY_PORT` | `9988` | UDP port for peer discovery |
+| `DISTRIBUTED_HEARTBEAT_SECONDS` | `5` | Peer heartbeat and coordination interval |
+| `DISTRIBUTED_PEER_TTL_SECONDS` | `20` | Seconds before a silent peer is removed |
 | `TZ` | `UTC` | Container timezone |
+
+## Distributed Processing
+
+Distributed mode lets several trusted LAN devices run the container and share AV1 jobs. Set `DISTRIBUTED_LEADER_URL` to the same node URL on every participant to use one selected leader. Queue jobs from any node; non-leader nodes forward queue changes to the leader, the leader delegates pending work to discovered idle peers, and every node shows the same cluster-wide active queue with worker assignments.
+
+Cluster state is shown in the Active Queue panel and is also available at `/api/cluster/status`. Active job listings include peer jobs by default; pass `cluster=false` to `/api/jobs` when a node-local view is needed.
+
+Requirements:
+
+- All participating nodes must mount the same media library at the same in-container `SOURCE_MOUNT` path.
+- Every node must be reachable from every other node through `DISTRIBUTED_PUBLIC_URL`.
+- For a single shared queue, every node must use the same `DISTRIBUTED_LEADER_URL`; on the leader, set it to the leader's own public URL.
+- The network must allow UDP multicast on `DISTRIBUTED_DISCOVERY_PORT`, or `DISTRIBUTED_PEERS` must list peer URLs explicitly.
+- Docker host networking is the most reliable option for multicast discovery; otherwise use `DISTRIBUTED_PEERS`.
+- For three or more nodes, set each node's `DISTRIBUTED_PEERS` to the comma-separated URLs of the other nodes.
+- The service has no built-in authentication, so only enable distributed mode on a trusted network.
+
+Example with explicit peers:
+
+```bash
+docker run -d \
+  --name convert-service-node-a \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v /mnt/media:/videos \
+  -v archive-video-av1-node-a:/app/data \
+  -e SOURCE_MOUNT=/videos \
+  -e DISTRIBUTED_ENABLED=true \
+  -e DISTRIBUTED_NODE_ID=notebook \
+  -e DISTRIBUTED_NODE_NAME=notebook \
+  -e DISTRIBUTED_PUBLIC_URL=http://192.168.1.10:8000 \
+  -e DISTRIBUTED_LEADER_URL=http://192.168.1.10:8000 \
+  -e DISTRIBUTED_PEERS=http://192.168.1.11:8000,http://192.168.1.12:8000 \
+  ghcr.io/fabianwimberger/archive-video-av1:latest
+```
 
 ## Security
 

@@ -85,6 +85,7 @@ class JobCreate(BaseModel):
     preset_id: Optional[int] = None
     settings: Optional[ConversionSettings] = None
     notes: Optional[str] = None
+    local_only: bool = False
 
     @model_validator(mode="after")
     def check_preset_or_settings(self):
@@ -100,6 +101,7 @@ class JobBatchCreate(BaseModel):
     preset_id: Optional[int] = None
     settings: Optional[ConversionSettings] = None
     notes: Optional[str] = None
+    local_only: bool = False
 
     @model_validator(mode="after")
     def check_preset_or_settings(self):
@@ -120,6 +122,13 @@ class JobResponse(BaseModel):
     notes: Optional[str] = None
     queue_position: Optional[int] = None
     status: str
+    assigned_worker_id: Optional[str] = None
+    assigned_worker_name: Optional[str] = None
+    assigned_worker_url: Optional[str] = None
+    remote_job_id: Optional[int] = None
+    cluster_node_id: Optional[str] = None
+    cluster_node_name: Optional[str] = None
+    cluster_node_url: Optional[str] = None
     progress_percent: float
     eta_seconds: Optional[int] = None
     current_fps: Optional[float] = None
@@ -146,6 +155,13 @@ class JobResponse(BaseModel):
             "notes": getattr(obj, "notes", None),
             "queue_position": getattr(obj, "queue_position", None),
             "status": getattr(obj, "status", None),
+            "assigned_worker_id": getattr(obj, "assigned_worker_id", None),
+            "assigned_worker_name": getattr(obj, "assigned_worker_name", None),
+            "assigned_worker_url": getattr(obj, "assigned_worker_url", None),
+            "remote_job_id": getattr(obj, "remote_job_id", None),
+            "cluster_node_id": getattr(obj, "cluster_node_id", None),
+            "cluster_node_name": getattr(obj, "cluster_node_name", None),
+            "cluster_node_url": getattr(obj, "cluster_node_url", None),
             "progress_percent": getattr(obj, "progress_percent", None),
             "eta_seconds": getattr(obj, "eta_seconds", None),
             "current_fps": getattr(obj, "current_fps", None),
@@ -198,6 +214,29 @@ class QueueStatusResponse(BaseModel):
     paused: bool
     active_job_id: Optional[int] = None
     pending_count: int
+
+
+class ClusterPeerResponse(BaseModel):
+    """Schema for discovered cluster peers."""
+
+    node_id: str
+    node_name: str
+    base_url: str
+    last_seen_seconds: float
+
+
+class ClusterStatusResponse(BaseModel):
+    """Schema for cluster status."""
+
+    enabled: bool
+    node_id: str
+    node_name: str
+    public_url: str
+    leader_url: Optional[str] = None
+    is_leader: bool
+    pending_count: int
+    active_job_id: Optional[int] = None
+    peers: list[ClusterPeerResponse]
 
 
 class PresetExportDocument(BaseModel):

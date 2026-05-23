@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy import select, delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.config import settings as app_settings
 from app.models.job import Job
 from app.models.preset import Preset
 from app.models.schemas import (
@@ -92,6 +93,76 @@ async def _assign_queue_position(db: AsyncSession) -> int:
     return max_pos + 1
 
 
+async def _leader_request(
+    method: str,
+    path: str,
+    *,
+    params: Optional[dict[str, object]] = None,
+    json_body: Optional[dict] = None,
+) -> dict:
+    from app.services.distributed import LeaderRequestError, distributed_service
+
+    try:
+        return await distributed_service.request_leader(
+            method, path, params=params, json_body=json_body
+        )
+    except LeaderRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+def _should_forward_to_leader(cluster: bool = True) -> bool:
+    if not cluster:
+        return False
+    from app.services.distributed import distributed_service
+
+    return distributed_service.should_use_leader()
+
+
+def _is_active_status_filter(status: Optional[str]) -> bool:
+    if not status:
+        return False
+    statuses = {s.strip() for s in status.split(",") if s.strip()}
+    return bool(statuses) and statuses.issubset({"pending", "processing"})
+
+
+def _cluster_job_key(job: dict) -> tuple[str, str, str, str]:
+    return (
+        str(job.get("source_file") or ""),
+        str(job.get("output_file") or ""),
+        str(job.get("assigned_worker_id") or ""),
+        str(job.get("status") or ""),
+    )
+
+
+def _cluster_job_rank(job: dict) -> tuple[int, int]:
+    return (
+        1 if job.get("remote_job_id") is not None else 0,
+        1 if job.get("cluster_node_url") == app_settings.DISTRIBUTED_PUBLIC_URL else 0,
+    )
+
+
+def _dedupe_cluster_jobs(jobs: list[dict]) -> list[dict]:
+    by_key: dict[tuple[str, str, str, str], dict] = {}
+    for job in jobs:
+        key = _cluster_job_key(job)
+        existing = by_key.get(key)
+        if existing is None or _cluster_job_rank(job) > _cluster_job_rank(existing):
+            by_key[key] = job
+    return list(by_key.values())
+
+
+def _sort_job_dicts(jobs: list[dict], sort: str, order: str) -> list[dict]:
+    reverse = order.lower() == "desc"
+
+    def sort_value(job: dict):
+        value = job.get(sort)
+        if value is None:
+            return ""
+        return value
+
+    return sorted(jobs, key=sort_value, reverse=reverse)
+
+
 @router.post("", response_model=JobCreateResponse)
 async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
     """Create a single conversion job."""
@@ -102,6 +173,19 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
         preset_id, preset_name_snapshot, settings = await _resolve_job_settings(
             db, job_data.preset_id, settings_override, job_data.source_file
         )
+
+        if _should_forward_to_leader() and not job_data.local_only:
+            return JobCreateResponse(
+                **await _leader_request(
+                    "POST",
+                    "/api/jobs",
+                    json_body={
+                        "source_file": job_data.source_file,
+                        "settings": settings,
+                        "notes": job_data.notes,
+                    },
+                )
+            )
 
         output_file = conversion_service.get_output_path(job_data.source_file)
         queue_position = await _assign_queue_position(db)
@@ -115,6 +199,12 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
             notes=job_data.notes,
             queue_position=queue_position,
             status="pending",
+            assigned_worker_id=(
+                app_settings.DISTRIBUTED_NODE_ID if job_data.local_only else None
+            ),
+            assigned_worker_name=(
+                app_settings.DISTRIBUTED_NODE_NAME if job_data.local_only else None
+            ),
         )
 
         db.add(job)
@@ -145,6 +235,30 @@ async def create_batch_jobs(
         sorted_files = sorted(batch_data.files)
         job_ids = []
 
+        if _should_forward_to_leader() and not batch_data.local_only:
+            files_payload = []
+            for source_file in sorted_files:
+                _preset_id, _preset_name_snapshot, settings = (
+                    await _resolve_job_settings(
+                        db, batch_data.preset_id, settings_override, source_file
+                    )
+                )
+                files_payload.append((source_file, settings))
+
+            leader_job_ids = []
+            for source_file, settings in files_payload:
+                data = await _leader_request(
+                    "POST",
+                    "/api/jobs",
+                    json_body={
+                        "source_file": source_file,
+                        "settings": settings,
+                        "notes": batch_data.notes,
+                    },
+                )
+                leader_job_ids.extend(data.get("job_ids", []))
+            return JobCreateResponse(job_ids=leader_job_ids)
+
         for source_file in sorted_files:
             preset_id, preset_name_snapshot, settings = await _resolve_job_settings(
                 db, batch_data.preset_id, settings_override, source_file
@@ -161,6 +275,12 @@ async def create_batch_jobs(
                 notes=batch_data.notes,
                 queue_position=queue_position,
                 status="pending",
+                assigned_worker_id=(
+                    app_settings.DISTRIBUTED_NODE_ID if batch_data.local_only else None
+                ),
+                assigned_worker_name=(
+                    app_settings.DISTRIBUTED_NODE_NAME if batch_data.local_only else None
+                ),
             )
             db.add(job)
             await db.flush()
@@ -204,10 +324,33 @@ async def list_jobs(
     order: str = Query("desc", description="Sort order (asc, desc)"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    cluster: bool = Query(True, description="Include peer active jobs"),
     db: AsyncSession = Depends(get_db),
 ):
     """List jobs with optional filtering."""
     try:
+        if _should_forward_to_leader(cluster):
+            params: dict[str, object] = {
+                "sort": sort,
+                "order": order,
+                "limit": limit,
+                "offset": offset,
+                "cluster": "true",
+            }
+            if status:
+                params["status"] = status
+            if q:
+                params["q"] = q
+            if preset_id is not None:
+                params["preset_id"] = preset_id
+            if date_from:
+                params["date_from"] = date_from
+            if date_to:
+                params["date_to"] = date_to
+            return JobListResponse(
+                **await _leader_request("GET", "/api/jobs", params=params)
+            )
+
         query = select(Job)
 
         if status:
@@ -237,6 +380,55 @@ async def list_jobs(
         else:
             query = query.order_by(sort_col.asc())
 
+        aggregate_cluster = (
+            cluster
+            and app_settings.DISTRIBUTED_ENABLED
+            and _is_active_status_filter(status)
+        )
+
+        if aggregate_cluster:
+            from app.services.distributed import distributed_service
+
+            result = await db.execute(query)
+            local_jobs = []
+            for job in result.scalars().all():
+                response = JobResponse.model_validate(job)
+                response.cluster_node_id = app_settings.DISTRIBUTED_NODE_ID
+                response.cluster_node_name = app_settings.DISTRIBUTED_NODE_NAME
+                response.cluster_node_url = distributed_service.public_url
+                local_jobs.append(response.model_dump(mode="json"))
+
+            peer_params = {
+                "status": status,
+                "sort": sort,
+                "order": order,
+                "limit": 1000,
+                "offset": 0,
+                "cluster": "false",
+            }
+            if q:
+                peer_params["q"] = q
+            if preset_id is not None:
+                peer_params["preset_id"] = preset_id
+            if date_from:
+                peer_params["date_from"] = date_from
+            if date_to:
+                peer_params["date_to"] = date_to
+
+            cluster_jobs = local_jobs + await distributed_service.list_peer_jobs(
+                peer_params
+            )
+            merged_jobs = _sort_job_dicts(
+                _dedupe_cluster_jobs(cluster_jobs), sort, order
+            )
+            total = len(merged_jobs)
+            sliced_jobs = merged_jobs[offset : offset + limit]
+
+            return JobListResponse(
+                jobs=[JobResponse(**job) for job in sliced_jobs],
+                total=total,
+            )
+
         # Count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
@@ -245,6 +437,18 @@ async def list_jobs(
         query = query.limit(limit).offset(offset)
         result = await db.execute(query)
         jobs = result.scalars().all()
+
+        if not cluster:
+            from app.services.distributed import distributed_service
+
+            responses = []
+            for job in jobs:
+                response = JobResponse.model_validate(job)
+                response.cluster_node_id = app_settings.DISTRIBUTED_NODE_ID
+                response.cluster_node_name = app_settings.DISTRIBUTED_NODE_NAME
+                response.cluster_node_url = distributed_service.public_url
+                responses.append(response)
+            return JobListResponse(jobs=responses, total=total)  # type: ignore
 
         return JobListResponse(
             jobs=[JobResponse.model_validate(job) for job in jobs],
@@ -257,9 +461,18 @@ async def list_jobs(
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
+async def get_job(
+    job_id: int,
+    cluster: bool = Query(True, description="Read from the selected leader"),
+    db: AsyncSession = Depends(get_db),
+):
     """Get job details by ID."""
     try:
+        if _should_forward_to_leader(cluster):
+            return JobResponse(
+                **await _leader_request("GET", f"/api/jobs/{job_id}")
+            )
+
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
 
@@ -281,6 +494,11 @@ async def patch_job(
 ):
     """Update user-editable job fields."""
     try:
+        if _should_forward_to_leader():
+            return await _leader_request(
+                "PATCH", f"/api/jobs/{job_id}", json_body=data.model_dump()
+            )
+
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
 
@@ -306,6 +524,11 @@ async def patch_job_position(
 ):
     """Reorder a pending job."""
     try:
+        if _should_forward_to_leader():
+            return await _leader_request(
+                "PATCH", f"/api/jobs/{job_id}/position", json_body=data.model_dump()
+            )
+
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
 
@@ -354,6 +577,11 @@ async def patch_job_position(
 async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
     """Retry a finished job with the same settings."""
     try:
+        if _should_forward_to_leader():
+            return JobCreateResponse(
+                **await _leader_request("POST", f"/api/jobs/{job_id}/retry")
+            )
+
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
 
@@ -406,6 +634,14 @@ async def save_job_as_preset(
 ):
     """Save a job's settings as a new preset."""
     try:
+        if _should_forward_to_leader():
+            params: dict[str, object] = {"name": name}
+            if description is not None:
+                params["description"] = description
+            return await _leader_request(
+                "POST", f"/api/jobs/{job_id}/save-as-preset", params=params
+            )
+
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
 
@@ -448,6 +684,9 @@ async def save_job_as_preset(
 async def clear_queued_jobs(db: AsyncSession = Depends(get_db)):
     """Clear all pending jobs."""
     try:
+        if _should_forward_to_leader():
+            return await _leader_request("DELETE", "/api/jobs/queued")
+
         result = await db.execute(delete(Job).where(Job.status == "pending"))
         deleted_count = result.rowcount  # type: ignore
         await db.commit()
@@ -467,6 +706,9 @@ async def clear_queued_jobs(db: AsyncSession = Depends(get_db)):
 async def clear_completed_jobs(db: AsyncSession = Depends(get_db)):
     """Clear all completed, failed, and cancelled jobs."""
     try:
+        if _should_forward_to_leader():
+            return await _leader_request("DELETE", "/api/jobs/completed")
+
         result = await db.execute(
             delete(Job).where(Job.status.in_(["completed", "failed", "cancelled"]))
         )
@@ -485,6 +727,9 @@ async def clear_completed_jobs(db: AsyncSession = Depends(get_db)):
 async def clear_all_jobs(db: AsyncSession = Depends(get_db)):
     """Clear ALL jobs (including pending and processing)."""
     try:
+        if _should_forward_to_leader():
+            return await _leader_request("DELETE", "/api/jobs/all")
+
         # Cancel any currently processing job first
         if job_queue.current_job_id:
             await job_queue.cancel_current_job()
@@ -512,6 +757,11 @@ async def delete_history_older_than(
 ):
     """Delete finished jobs older than a given timestamp."""
     try:
+        if _should_forward_to_leader():
+            return await _leader_request(
+                "DELETE", "/api/jobs/history", params={"older_than": older_than}
+            )
+
         result = await db.execute(
             delete(Job).where(
                 Job.status.in_(["completed", "failed", "cancelled"]),
@@ -530,9 +780,16 @@ async def delete_history_older_than(
 
 
 @router.delete("/{job_id}")
-async def delete_or_cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_or_cancel_job(
+    job_id: int,
+    cluster: bool = Query(True, description="Cancel/delete through the leader"),
+    db: AsyncSession = Depends(get_db),
+):
     """Cancel a pending/processing job, or delete a finished job from history."""
     try:
+        if _should_forward_to_leader(cluster):
+            return await _leader_request("DELETE", f"/api/jobs/{job_id}")
+
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
 
@@ -548,6 +805,18 @@ async def delete_or_cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
                             status_code=500,
                             detail="Failed to send cancel signal to running process",
                         )
+                elif job.remote_job_id:
+                    from app.services.distributed import distributed_service
+
+                    cancelled = await distributed_service.cancel_remote_job(job)
+                    if not cancelled:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Failed to cancel remote job",
+                        )
+                    job.status = "cancelled"  # type: ignore[assignment]
+                    job.error_message = "Cancelled by user"  # type: ignore[assignment]
+                    await db.commit()
                 # Worker will handle the status update
             else:  # pending
                 await db.delete(job)

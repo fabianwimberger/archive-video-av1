@@ -172,6 +172,21 @@ body {
     min-height: 0;
 }
 
+.cluster-status {
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--app-surface) 96%, var(--app-bg));
+}
+
+.cluster-peers {
+    min-width: 0;
+}
+
+.cluster-peer {
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 #file-browser,
 #settings-panel,
 #job-queue {

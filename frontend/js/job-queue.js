@@ -5,14 +5,18 @@ class JobQueue {
     constructor() {
         this.jobs = new Map();
         this.refreshInterval = null;
+        this.clusterInterval = null;
         this.openLogJobId = null;
         this.dragJobId = null;
+        this.clusterStatus = null;
     }
 
     async init() {
         this.setupEventListeners();
         await this.loadJobs();
         await this.loadQueueState();
+        await this.loadClusterStatus();
+        this.startClusterRefresh();
 
         // Listen to WebSocket events
         wsClient.on('job_progress', (message) => {
@@ -127,6 +131,54 @@ class JobQueue {
         }
     }
 
+    async loadClusterStatus() {
+        const container = document.getElementById('cluster-status');
+        if (!container) return;
+
+        try {
+            this.clusterStatus = await api.getClusterStatus();
+            this.renderClusterStatus();
+        } catch (error) {
+            console.error('Error loading cluster status:', error);
+            container.innerHTML = '<div class="text-muted small">Cluster status unavailable</div>';
+        }
+    }
+
+    renderClusterStatus() {
+        const container = document.getElementById('cluster-status');
+        if (!container || !this.clusterStatus) return;
+
+        const status = this.clusterStatus;
+        const peerCount = status.peers ? status.peers.length : 0;
+        const enabledBadge = status.enabled
+            ? '<span class="badge bg-success">enabled</span>'
+            : '<span class="badge bg-secondary">disabled</span>';
+        const peerSummary = peerCount === 1
+            ? '1 connected peer'
+            : `${peerCount} connected peers`;
+        const leaderSummary = status.leader_url
+            ? (status.is_leader ? 'leader' : 'leader remote')
+            : 'self-led';
+        const peers = status.enabled && peerCount > 0
+            ? status.peers.map(peer => `
+                <span class="cluster-peer badge text-bg-light border">
+                    <i class="bi bi-hdd-network me-1"></i>${utils.escapeHtml(peer.node_name)}
+                </span>
+            `).join('')
+            : '<span class="text-muted">No peers discovered</span>';
+
+        container.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="small fw-bold"><i class="bi bi-diagram-3 me-1"></i>Cluster</span>
+                    ${enabledBadge}
+                    <span class="small text-muted">${utils.escapeHtml(status.node_name)} · ${leaderSummary} · ${peerSummary}</span>
+                </div>
+                <div class="cluster-peers d-flex align-items-center gap-1 flex-wrap small">${peers}</div>
+            </div>
+        `;
+    }
+
     async loadJobs() {
         try {
             const data = await api.listJobs({ status: 'pending,processing', limit: 100, offset: 0, order: 'asc' });
@@ -204,6 +256,10 @@ class JobQueue {
 
         const isPending = job.status === 'pending';
         const dragHandle = isPending ? '<i class="bi bi-grip-vertical me-2 text-muted"></i>' : '';
+        const workerName = job.assigned_worker_name || job.assigned_worker_id;
+        const workerBadge = workerName
+            ? `<span class="badge text-bg-light border"><i class="bi bi-cpu me-1"></i>${utils.escapeHtml(workerName)}</span>`
+            : '';
 
         element.innerHTML = `
             <div class="d-flex justify-content-between align-items-center mb-2 job-item-header">
@@ -211,6 +267,7 @@ class JobQueue {
                     ${dragHandle}<i class="bi bi-film me-2 text-muted"></i>${utils.escapeHtml(fileName)}
                 </div>
                 <div class="d-flex align-items-center gap-2 job-item-actions">
+                    ${workerBadge}
                     ${presetBadge}
                     <span class="badge ${badgeClass}">${job.status}</span>
                     <button class="btn btn-outline-danger btn-sm cancel-btn" data-job-id="${job.id}" title="Cancel job"><i class="bi bi-x-lg"></i></button>
@@ -442,6 +499,15 @@ class JobQueue {
             clearInterval(this.refreshInterval);
             this.refreshInterval = null;
             console.log('Stopped fallback polling (WebSocket connected)');
+        }
+    }
+
+    startClusterRefresh() {
+        if (!this.clusterInterval) {
+            this.clusterInterval = setInterval(() => {
+                this.loadClusterStatus();
+                this.loadJobs();
+            }, 5000);
         }
     }
 }

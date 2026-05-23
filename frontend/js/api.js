@@ -251,6 +251,10 @@ class ApiClient {
         return this.request('/queue/resume', { method: 'POST' });
     }
 
+    async getClusterStatus() {
+        return this.request('/cluster/status');
+    }
+
     // System endpoints
     async getHealth() {
         return this.request('/health');

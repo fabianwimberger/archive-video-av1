@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from sqlalchemy import select, update
+from sqlalchemy import or_
 from app.database import AsyncSessionLocal
 from app.models.job import Job
+from app.config import settings
 from app.services.conversion_service import conversion_service
 from app.services.lifecycle import prune_history
 
@@ -25,10 +27,12 @@ class JobQueue:
         self.current_process: Optional[asyncio.subprocess.Process] = None
         self.running = False
         self.worker_task: Optional[asyncio.Task] = None
+        self.distributed_task: Optional[asyncio.Task] = None
         self.websocket_manager = None
         self.cancelled_job_ids: set[int] = set()
         self._wake_event: Optional[asyncio.Event] = None
         self._paused_event: Optional[asyncio.Event] = None
+        self._dispatch_lock = asyncio.Lock()
 
     def set_websocket_manager(self, ws_manager) -> None:
         """Set WebSocket manager for broadcasting updates."""
@@ -130,6 +134,11 @@ class JobQueue:
 
         self.running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
+        if settings.DISTRIBUTED_ENABLED:
+            from app.services.distributed import distributed_service
+
+            await distributed_service.start()
+            self.distributed_task = asyncio.create_task(self._distributed_loop())
         logger.info("Job queue worker started")
 
     async def stop_worker(self) -> None:
@@ -146,6 +155,17 @@ class JobQueue:
                 await self.worker_task
             except asyncio.CancelledError:
                 pass
+        if self.distributed_task:
+            self.distributed_task.cancel()
+            try:
+                await self.distributed_task
+            except asyncio.CancelledError:
+                pass
+            self.distributed_task = None
+        if settings.DISTRIBUTED_ENABLED:
+            from app.services.distributed import distributed_service
+
+            await distributed_service.stop()
         logger.info("Job queue worker stopped")
 
     async def _worker_loop(self):
@@ -161,17 +181,35 @@ class JobQueue:
                     except asyncio.TimeoutError:
                         continue
 
-                async with AsyncSessionLocal() as db:
-                    # Load next pending job by queue_position
-                    result = await db.execute(
-                        select(Job)
-                        .where(Job.status == "pending")
-                        .order_by(
-                            Job.queue_position.asc().nullslast(), Job.created_at.asc()
+                async with self._dispatch_lock:
+                    async with AsyncSessionLocal() as db:
+                        result = await db.execute(
+                            select(Job)
+                            .where(
+                                Job.status == "pending",
+                                or_(
+                                    Job.assigned_worker_id.is_(None),
+                                    Job.assigned_worker_id
+                                    == settings.DISTRIBUTED_NODE_ID,
+                                ),
+                            )
+                            .order_by(
+                                Job.queue_position.asc().nullslast(),
+                                Job.created_at.asc(),
+                            )
+                            .limit(1)
                         )
-                        .limit(1)
-                    )
-                    job = result.scalar_one_or_none()
+                        job = result.scalar_one_or_none()
+
+                        if job:
+                            job.status = "processing"  # type: ignore[assignment]
+                            job.assigned_worker_id = (  # type: ignore[assignment]
+                                settings.DISTRIBUTED_NODE_ID
+                            )
+                            job.assigned_worker_name = (  # type: ignore[assignment]
+                                settings.DISTRIBUTED_NODE_NAME
+                            )
+                            await db.commit()
 
                 if job is None:
                     # No pending jobs; wait for wake signal
@@ -195,7 +233,7 @@ class JobQueue:
 
                 # Broadcast queue update
                 if self.websocket_manager:
-                    status = self.get_queue_status()
+                    status = await self.get_queue_status_async()
                     await self.websocket_manager.broadcast(
                         {
                             "type": "queue_update",
@@ -210,6 +248,30 @@ class JobQueue:
             except Exception as e:
                 logger.error(f"Error in worker loop: {e}", exc_info=True)
                 self.current_job_id = None
+
+    async def _distributed_loop(self) -> None:
+        """Coordinate remote jobs while the local worker is busy."""
+        from app.services.distributed import distributed_service
+
+        while self.running:
+            try:
+                await distributed_service.sync_remote_jobs(self.websocket_manager)
+                if (
+                    distributed_service.is_leader
+                    and (self._paused_event is None or self._paused_event.is_set())
+                ):
+                    async with self._dispatch_lock:
+                        delegated = await distributed_service.delegate_pending_jobs(
+                            self.websocket_manager
+                        )
+                    if delegated and self._wake_event:
+                        self._wake_event.set()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Error in distributed loop: %s", e, exc_info=True)
+
+            await asyncio.sleep(settings.DISTRIBUTED_HEARTBEAT_SECONDS)
 
     async def _process_job(self, job_id: int):
         """

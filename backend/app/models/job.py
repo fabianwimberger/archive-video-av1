@@ -40,6 +40,10 @@ class Job(Base):
     status = Column(
         String, nullable=False, default="pending"
     )  # pending, processing, completed, failed, cancelled
+    assigned_worker_id = Column(String, nullable=True)
+    assigned_worker_name = Column(String, nullable=True)
+    assigned_worker_url = Column(String, nullable=True)
+    remote_job_id = Column(Integer, nullable=True)
     progress_percent = Column(Float, default=0.0)
     eta_seconds = Column(Integer, nullable=True)
     current_fps = Column(Float, nullable=True)
@@ -62,4 +66,5 @@ class Job(Base):
         Index("idx_jobs_status_completed_at", "status", "completed_at"),
         Index("idx_jobs_source_file", "source_file"),
         Index("idx_jobs_status_queue_position", "status", "queue_position"),
+        Index("idx_jobs_remote_job_id", "remote_job_id"),
     )

@@ -77,7 +77,7 @@ async def recover_interrupted_jobs():
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             update(Job)
-            .where(Job.status == "processing")
+            .where(Job.status == "processing", Job.remote_job_id.is_(None))
             .values(
                 status="failed",
                 error_message="Interrupted by service restart",

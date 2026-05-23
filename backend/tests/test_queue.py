@@ -33,6 +33,17 @@ class TestQueueStatus:
         assert status.json()["paused"] is False
 
 
+class TestClusterStatus:
+    def test_cluster_status_defaults_to_disabled(self, seeded_client):
+        response = seeded_client.get("/api/cluster/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled"] is False
+        assert data["node_id"]
+        assert data["is_leader"] is True
+        assert data["peers"] == []
+
+
 class TestQueuePauseRehydration:
     @pytest.mark.asyncio
     async def test_start_worker_rehydrates_paused_state(
