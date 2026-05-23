@@ -1,9 +1,11 @@
-.PHONY: all build up down clean lint
+.PHONY: all build up down clean lint format cluster-build cluster-up cluster-down cluster-recreate node-build node-up node-down node-recreate
 
 # Enable PGO, LTO, and native arch optimization for local builds by default
 ENABLE_PGO ?= true
 ENABLE_LTO ?= true
 ARCH_FLAGS ?= -march=native
+CLUSTER_COMPOSE_FILES := -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.build.yml -f docker-compose.cluster.yml
+SERVICE ?= convert-service
 
 all: build
 
@@ -18,6 +20,30 @@ up:
 down:
 	@echo "Stopping services..."
 	@docker compose down
+
+cluster-build:
+	@echo "Building cluster service with override, build, and cluster compose files..."
+	@docker compose $(CLUSTER_COMPOSE_FILES) build --build-arg ENABLE_PGO=$(ENABLE_PGO) --build-arg ENABLE_LTO=$(ENABLE_LTO) --build-arg ARCH_FLAGS=$(ARCH_FLAGS) $(SERVICE)
+
+cluster-up:
+	@echo "Starting cluster service with override, build, and cluster compose files..."
+	@docker compose $(CLUSTER_COMPOSE_FILES) up -d $(SERVICE)
+
+cluster-down:
+	@echo "Stopping cluster stack with override, build, and cluster compose files..."
+	@docker compose $(CLUSTER_COMPOSE_FILES) down
+
+cluster-recreate:
+	@echo "Recreating cluster service with override, build, and cluster compose files..."
+	@docker compose $(CLUSTER_COMPOSE_FILES) up -d --force-recreate $(SERVICE)
+
+node-build: cluster-build
+
+node-up: cluster-up
+
+node-down: cluster-down
+
+node-recreate: cluster-recreate
 
 clean:
 	@echo "Cleaning up..."

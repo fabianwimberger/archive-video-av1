@@ -203,6 +203,24 @@ Requirements:
 - For three or more nodes, set each node's `DISTRIBUTED_PEERS` to the comma-separated URLs of the other nodes.
 - The service has no built-in authentication, so only enable distributed mode on a trusted network.
 
+Compose node commands:
+
+```bash
+# Build the local node image with the distributed compose stack
+make node-build
+
+# Start the node with docker-compose.override.yml and docker-compose.cluster.yml
+make node-up
+
+# Recreate the node after code or image changes
+make node-recreate
+
+# Stop the node stack without deleting volumes
+make node-down
+```
+
+`docker compose up -d` auto-loads `docker-compose.override.yml` only for the default compose stack. Distributed nodes must include `docker-compose.cluster.yml`, so use the node targets above or pass all compose files explicitly.
+
 Example with explicit peers:
 
 ```bash
