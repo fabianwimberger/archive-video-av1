@@ -7,6 +7,7 @@
     --app-accent-soft: #e8f0ff;
     --app-radius: 8px;
     --app-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    --queue-row-height: clamp(210px, 28vh, 420px);
 }
 
 [data-bs-theme="dark"] {
@@ -101,7 +102,7 @@ body {
 #view-convert.main-content {
     display: grid;
     grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
-    grid-template-rows: minmax(0, 1fr) minmax(210px, 0.48fr);
+    grid-template-rows: minmax(0, 1fr) minmax(210px, var(--queue-row-height));
     grid-template-areas:
         "files settings"
         "queue queue";
@@ -129,6 +130,42 @@ body {
 
 .section-queue {
     grid-area: queue;
+}
+
+.section-files,
+.section-settings,
+.section-queue {
+    min-height: 0;
+}
+
+.queue-resize-handle {
+    flex: 0 0 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid var(--app-border);
+    background: color-mix(in srgb, var(--app-surface) 95%, var(--app-bg));
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+.queue-resize-handle span {
+    width: 3.5rem;
+    height: 0.18rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--app-muted) 65%, transparent);
+}
+
+.queue-resize-handle:hover,
+.queue-resize-handle:focus {
+    background: var(--app-accent-soft);
+    outline: 0;
+}
+
+.queue-resizing,
+.queue-resizing * {
+    cursor: ns-resize !important;
+    user-select: none;
 }
 
 .card {
@@ -328,6 +365,10 @@ body {
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
+    }
+
+    .queue-resize-handle {
+        display: none;
     }
 
     .card,
