@@ -72,16 +72,6 @@ class DistributedService:
         self._running = True
         self._client = httpx.AsyncClient(timeout=5.0)
 
-        for base_url in settings.DISTRIBUTED_PEERS:
-            self._remember_peer(
-                PeerNode(
-                    node_id=base_url,
-                    node_name=base_url,
-                    base_url=base_url,
-                    last_seen=time.monotonic(),
-                )
-            )
-
         try:
             self._socket = self._build_socket()
         except OSError as exc:
@@ -116,12 +106,8 @@ class DistributedService:
         now = time.monotonic()
         fresh_peers = []
         stale_ids = []
-        configured_peers = set(settings.DISTRIBUTED_PEERS)
         for node_id, peer in self._peers.items():
-            if (
-                peer.base_url in configured_peers
-                or now - peer.last_seen <= settings.DISTRIBUTED_PEER_TTL_SECONDS
-            ):
+            if now - peer.last_seen <= settings.DISTRIBUTED_PEER_TTL_SECONDS:
                 fresh_peers.append(peer)
             else:
                 stale_ids.append(node_id)
@@ -130,6 +116,23 @@ class DistributedService:
             self._peers.pop(node_id, None)
 
         return sorted(fresh_peers, key=lambda peer: peer.node_name)
+
+    def _peer_candidates(self) -> list[PeerNode]:
+        candidates = {peer.base_url: peer for peer in self.peers()}
+        for base_url in settings.DISTRIBUTED_PEERS:
+            if base_url == self.public_url:
+                continue
+            candidates.setdefault(
+                base_url,
+                PeerNode(
+                    node_id=base_url,
+                    node_name=base_url,
+                    base_url=base_url,
+                    last_seen=0,
+                ),
+            )
+
+        return sorted(candidates.values(), key=lambda peer: peer.node_name)
 
     async def sync_remote_jobs(self, websocket_manager) -> None:
         if not settings.DISTRIBUTED_ENABLED:
@@ -278,7 +281,7 @@ class DistributedService:
 
     async def _available_peers(self) -> list[PeerNode]:
         available = []
-        for peer in self.peers():
+        for peer in self._peer_candidates():
             status = await self._get_peer_status(peer)
             if not status:
                 continue
@@ -303,10 +306,10 @@ class DistributedService:
         node_id = data.get("node_id")
         if node_id == self.node_id:
             return None
-        if node_id and node_id != peer.node_id:
-            peer.node_id = node_id
+        peer.node_id = str(node_id or peer.node_id)
         peer.node_name = data.get("node_name") or peer.node_name
         peer.last_seen = time.monotonic()
+        self._remember_peer(peer)
         return data
 
     async def list_peer_jobs(self, params: dict[str, object]) -> list[dict]:
@@ -467,13 +470,21 @@ class DistributedService:
     def _remember_peer(self, peer: PeerNode) -> None:
         if peer.node_id == self.node_id:
             return
-        existing = self._peers.get(peer.node_id)
-        if existing:
-            existing.node_name = peer.node_name
-            existing.base_url = peer.base_url
-            existing.last_seen = peer.last_seen
-        else:
-            self._peers[peer.node_id] = peer
+        existing_key = peer.node_id
+        if existing_key not in self._peers:
+            existing_key = next(
+                (
+                    node_id
+                    for node_id, existing in self._peers.items()
+                    if existing.base_url == peer.base_url
+                ),
+                peer.node_id,
+            )
+
+        if existing_key != peer.node_id:
+            self._peers.pop(existing_key, None)
+
+        self._peers[peer.node_id] = peer
 
     def _build_socket(self) -> socket.socket:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)

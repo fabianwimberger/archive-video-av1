@@ -1,8 +1,12 @@
 """Tests for queue API endpoints."""
 
+import time
+
 import pytest
+from app.config import settings
 from app.services.job_queue import JobQueue
 from app.models.app_state import AppState
+from app.services.distributed import PeerNode, distributed_service
 
 
 class TestQueueStatus:
@@ -42,6 +46,43 @@ class TestClusterStatus:
         assert data["node_id"]
         assert data["is_leader"] is True
         assert data["peers"] == []
+
+    def test_configured_peer_expires_from_status(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEERS", ["http://peer:8000"])
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEER_TTL_SECONDS", 20)
+
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="peer",
+                node_name="peer",
+                base_url="http://peer:8000",
+                last_seen=time.monotonic() - 21,
+            )
+        )
+
+        assert distributed_service.peers() == []
+        assert [peer.base_url for peer in distributed_service._peer_candidates()] == [
+            "http://peer:8000"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_configured_peer_is_probed_after_expiry(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEERS", ["http://peer:8000"])
+
+        async def fake_status(peer):
+            peer.node_id = "peer"
+            peer.node_name = "peer"
+            peer.last_seen = time.monotonic()
+            distributed_service._remember_peer(peer)
+            return {"enabled": True, "active_job_id": None, "pending_count": 0}
+
+        monkeypatch.setattr(distributed_service, "_get_peer_status", fake_status)
+
+        available = await distributed_service._available_peers()
+
+        assert [peer.node_id for peer in available] == ["peer"]
 
 
 class TestQueuePauseRehydration:
