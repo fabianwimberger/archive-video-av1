@@ -168,6 +168,51 @@ class JobQueue:
             await distributed_service.stop()
         logger.info("Job queue worker stopped")
 
+    async def _claim_next_job(self, db) -> Optional[Job]:
+        result = await db.execute(
+            select(Job.id)
+            .where(
+                Job.status == "pending",
+                Job.is_cluster_replica.is_(False),
+                or_(
+                    Job.assigned_worker_id.is_(None),
+                    Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID,
+                ),
+            )
+            .order_by(
+                Job.queue_position.asc().nullslast(),
+                Job.created_at.asc(),
+            )
+            .limit(1)
+        )
+        job_id = result.scalar_one_or_none()
+        if job_id is None:
+            return None
+
+        claimed = await db.execute(
+            update(Job)
+            .where(
+                Job.id == job_id,
+                Job.status == "pending",
+                Job.is_cluster_replica.is_(False),
+                or_(
+                    Job.assigned_worker_id.is_(None),
+                    Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID,
+                ),
+            )
+            .values(
+                status="processing",
+                assigned_worker_id=settings.DISTRIBUTED_NODE_ID,
+                assigned_worker_name=settings.DISTRIBUTED_NODE_NAME,
+            )
+        )
+        await db.commit()
+        if claimed.rowcount != 1:
+            return None
+
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        return result.scalar_one_or_none()
+
     async def _worker_loop(self):
         """Background worker that processes jobs sequentially from DB."""
         logger.info("Worker loop started")
@@ -183,34 +228,7 @@ class JobQueue:
 
                 async with self._dispatch_lock:
                     async with AsyncSessionLocal() as db:
-                        result = await db.execute(
-                            select(Job)
-                            .where(
-                                Job.status == "pending",
-                                Job.is_cluster_replica.is_(False),
-                                or_(
-                                    Job.assigned_worker_id.is_(None),
-                                    Job.assigned_worker_id
-                                    == settings.DISTRIBUTED_NODE_ID,
-                                ),
-                            )
-                            .order_by(
-                                Job.queue_position.asc().nullslast(),
-                                Job.created_at.asc(),
-                            )
-                            .limit(1)
-                        )
-                        job = result.scalar_one_or_none()
-
-                        if job:
-                            job.status = "processing"  # type: ignore[assignment]
-                            job.assigned_worker_id = (  # type: ignore[assignment]
-                                settings.DISTRIBUTED_NODE_ID
-                            )
-                            job.assigned_worker_name = (  # type: ignore[assignment]
-                                settings.DISTRIBUTED_NODE_NAME
-                            )
-                            await db.commit()
+                        job = await self._claim_next_job(db)
 
                 if job is None:
                     # No pending jobs; wait for wake signal

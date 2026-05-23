@@ -366,7 +366,7 @@ async def list_jobs(
                 **await _leader_request("GET", "/api/jobs", params=params)
             )
 
-        query = select(Job)
+        query = select(Job).where(Job.is_cluster_replica.is_(False))
 
         if status:
             statuses = [s.strip() for s in status.split(",") if s.strip()]
@@ -488,7 +488,12 @@ async def get_job(
                 **await _leader_request("GET", f"/api/jobs/{job_id}")
             )
 
-        result = await db.execute(select(Job).where(Job.id == job_id))
+        result = await db.execute(
+            select(Job).where(
+                Job.id == job_id,
+                Job.is_cluster_replica.is_(False),
+            )
+        )
         job = result.scalar_one_or_none()
 
         if not job:

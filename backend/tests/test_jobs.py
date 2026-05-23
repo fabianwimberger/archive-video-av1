@@ -158,6 +158,60 @@ class TestListJobs:
         assert captured["path"] == "/api/jobs"
         assert captured["params"]["cluster"] == "true"
 
+    def test_node_local_list_excludes_replicas(self, seeded_client):
+        async def add_replica():
+            async with AsyncSessionLocal() as db:
+                db.add(
+                    Job(
+                        source_file="/videos/replica.mkv",
+                        output_file="/videos/replica_conv.mkv",
+                        settings="{}",
+                        status="pending",
+                        queue_position=1,
+                        cluster_job_id="leader:1",
+                        cluster_origin_node_id="leader",
+                        cluster_origin_job_id=1,
+                        is_cluster_replica=True,
+                    )
+                )
+                await db.commit()
+
+        asyncio.run(add_replica())
+
+        response = seeded_client.get(
+            "/api/jobs?status=pending&cluster=false&limit=100&offset=0"
+        )
+
+        assert response.status_code == 200
+        assert all(
+            job["source_file"] != "/videos/replica.mkv"
+            for job in response.json()["jobs"]
+        )
+
+    def test_node_local_get_replica_returns_404(self, seeded_client):
+        async def add_replica():
+            async with AsyncSessionLocal() as db:
+                replica = Job(
+                    source_file="/videos/replica.mkv",
+                    output_file="/videos/replica_conv.mkv",
+                    settings="{}",
+                    status="pending",
+                    cluster_job_id="leader:1",
+                    cluster_origin_node_id="leader",
+                    cluster_origin_job_id=1,
+                    is_cluster_replica=True,
+                )
+                db.add(replica)
+                await db.commit()
+                await db.refresh(replica)
+                return replica.id
+
+        job_id = asyncio.run(add_replica())
+
+        response = seeded_client.get(f"/api/jobs/{job_id}?cluster=false")
+
+        assert response.status_code == 404
+
 
 class TestBatchJobs:
     def test_create_batch_jobs(self, seeded_client):

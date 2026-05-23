@@ -375,10 +375,7 @@ class DistributedService:
             self._apply_replica(job, replica)
             applied += 1
 
-        stale_query = delete(Job).where(
-            Job.is_cluster_replica.is_(True),
-            Job.cluster_origin_node_id == leader_node_id,
-        )
+        stale_query = delete(Job).where(Job.is_cluster_replica.is_(True))
         if incoming_ids:
             stale_query = stale_query.where(~Job.cluster_job_id.in_(incoming_ids))
         await db.execute(stale_query)
@@ -619,6 +616,10 @@ class DistributedService:
 
         jobs = []
         for peer in self.peers():
+            status = await self._get_peer_status(peer)
+            if not status or not status.get("enabled"):
+                continue
+
             try:
                 response = await self._client.get(
                     f"{peer.base_url}/api/jobs", params=params
