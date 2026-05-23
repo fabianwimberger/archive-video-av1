@@ -371,15 +371,29 @@ class JobQueue {
         return '';
     }
 
+    resolveDisplayedJobId(jobId) {
+        const numericJobId = Number(jobId);
+        if (this.jobs.has(numericJobId)) return numericJobId;
+
+        for (const job of this.jobs.values()) {
+            if (Number(job.remote_job_id) === numericJobId) {
+                return job.id;
+            }
+        }
+
+        return numericJobId;
+    }
+
     updateJobProgress(jobId, progressData) {
-        const job = this.jobs.get(jobId);
+        const displayedJobId = this.resolveDisplayedJobId(jobId);
+        const job = this.jobs.get(displayedJobId);
         if (!job) return;
 
         job.progress_percent = progressData.percent;
         job.current_fps = progressData.fps;
         job.eta_seconds = progressData.eta_seconds;
 
-        const element = document.querySelector(`[data-job-id="${jobId}"]`);
+        const element = document.querySelector(`[data-job-id="${displayedJobId}"]`);
         if (element) {
             const progressContainer = element.querySelector('.job-progress');
             if (progressContainer) {
@@ -387,7 +401,7 @@ class JobQueue {
             }
         }
 
-        if (this.openLogJobId === jobId && progressData.current_log) {
+        if (this.openLogJobId === displayedJobId && progressData.current_log) {
             const logContent = document.getElementById('log-content');
             if (logContent) {
                 const scrollContainer = logContent.parentElement;
@@ -401,7 +415,8 @@ class JobQueue {
     }
 
     updateJobStatus(jobId, status, error, message = {}) {
-        const job = this.jobs.get(jobId);
+        const displayedJobId = this.resolveDisplayedJobId(jobId);
+        const job = this.jobs.get(displayedJobId);
         if (!job) {
             this.loadJobs();
             return;
@@ -415,22 +430,22 @@ class JobQueue {
             if (message.source_size_bytes != null) job.source_size_bytes = message.source_size_bytes;
             if (message.output_size_bytes != null) job.output_size_bytes = message.output_size_bytes;
             // Show toast and remove from active queue
-            this.jobs.delete(jobId);
+            this.jobs.delete(displayedJobId);
             this.render();
             this.updateStats();
-            window.app.showNotification(`Job ${jobId} completed. <a href="#/history" class="alert-link" onclick="app.switchView('history')">View in History</a>`, 'success');
+            window.app.showNotification(`Job ${displayedJobId} completed. <a href="#/history" class="alert-link" onclick="app.switchView('history')">View in History</a>`, 'success');
             return;
         }
 
         if (status === 'failed' || status === 'cancelled') {
-            this.jobs.delete(jobId);
+            this.jobs.delete(displayedJobId);
             this.render();
             this.updateStats();
             return;
         }
 
         this.updateStats();
-        const element = document.querySelector(`[data-job-id="${jobId}"]`);
+        const element = document.querySelector(`[data-job-id="${displayedJobId}"]`);
         if (element) {
             element.replaceWith(this.createJobElement(job));
         }
