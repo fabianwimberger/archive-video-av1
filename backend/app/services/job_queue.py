@@ -181,6 +181,14 @@ class JobQueue:
             >= settings.DISTRIBUTED_PEER_TTL_SECONDS
         )
 
+    def _can_process_assigned_jobs_while_paused(self) -> bool:
+        if not settings.DISTRIBUTED_ENABLED:
+            return False
+
+        from app.services.distributed import distributed_service
+
+        return not distributed_service.is_leader
+
     async def _claim_next_job(self, db) -> Optional[Job]:
         worker_filter = Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID
         if self._can_claim_unassigned_jobs():
@@ -231,7 +239,11 @@ class JobQueue:
         while self.running:
             try:
                 # Check pause state
-                if self._paused_event and not self._paused_event.is_set():
+                if (
+                    self._paused_event
+                    and not self._paused_event.is_set()
+                    and not self._can_process_assigned_jobs_while_paused()
+                ):
                     try:
                         await asyncio.wait_for(self._paused_event.wait(), timeout=1.0)
                     except asyncio.TimeoutError:
