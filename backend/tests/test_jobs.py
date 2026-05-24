@@ -2,6 +2,7 @@
 
 import asyncio
 from sqlalchemy import select
+from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.job import Job
 
@@ -268,6 +269,46 @@ class TestClearJobs:
         response = seeded_client.delete("/api/jobs/queued")
         assert response.status_code == 200
         assert response.json()["deleted_count"] >= 1
+
+    def test_clear_queued_cluster_false_stays_node_local(
+        self, seeded_client, monkeypatch
+    ):
+        from app.services.distributed import distributed_service
+
+        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        seeded_client.post("/api/jobs", json=payload)
+
+        async def fail_request(*_args, **_kwargs):
+            raise AssertionError("node-local clear should not forward")
+
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: True)
+        monkeypatch.setattr(distributed_service, "request_leader", fail_request)
+
+        response = seeded_client.delete("/api/jobs/queued?cluster=false")
+
+        assert response.status_code == 200
+        assert response.json()["deleted_count"] >= 1
+
+    def test_clear_queued_includes_peer_queues(self, seeded_client, monkeypatch):
+        from app.services.distributed import distributed_service
+
+        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        seeded_client.post("/api/jobs", json=payload)
+
+        async def fake_clear_peer_jobs(path):
+            assert path == "/api/jobs/queued"
+            return 2
+
+        monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: False)
+        monkeypatch.setattr(
+            distributed_service, "clear_peer_jobs", fake_clear_peer_jobs
+        )
+
+        response = seeded_client.delete("/api/jobs/queued")
+
+        assert response.status_code == 200
+        assert response.json()["deleted_count"] >= 3
 
     def test_clear_completed(self, seeded_client):
         response = seeded_client.delete("/api/jobs/completed")

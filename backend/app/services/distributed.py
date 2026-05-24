@@ -676,6 +676,31 @@ class DistributedService:
         except (httpx.HTTPError, ValueError) as exc:
             raise LeaderRequestError(502, f"Leader request failed: {exc}") from exc
 
+    async def clear_peer_jobs(self, path: str) -> int:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=5.0)
+
+        deleted = 0
+        for peer in self.peers():
+            status = await self._get_peer_status(peer)
+            if not status or not status.get("enabled"):
+                continue
+
+            try:
+                response = await self._client.delete(
+                    f"{peer.base_url}{path}",
+                    params={"cluster": "false"},
+                )
+                response.raise_for_status()
+                data = response.json() if response.content else {}
+            except (httpx.HTTPError, ValueError) as exc:
+                logger.debug("Peer clear failed for %s: %s", peer.base_url, exc)
+                continue
+
+            deleted += int(data.get("deleted_count") or 0)
+
+        return deleted
+
     async def _get_remote_job(self, base_url: str, remote_job_id: int) -> Optional[dict]:
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=5.0)

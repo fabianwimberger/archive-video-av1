@@ -703,15 +703,25 @@ async def save_job_as_preset(
 
 
 @router.delete("/queued")
-async def clear_queued_jobs(db: AsyncSession = Depends(get_db)):
+async def clear_queued_jobs(
+    cluster: bool = Query(True, description="Clear queued jobs across the cluster"),
+    db: AsyncSession = Depends(get_db),
+):
     """Clear all pending jobs."""
     try:
-        if _should_forward_to_leader():
+        if _should_forward_to_leader(cluster):
             return await _leader_request("DELETE", "/api/jobs/queued")
 
         result = await db.execute(delete(Job).where(Job.status == "pending"))
-        deleted_count = result.rowcount  # type: ignore
+        deleted_count = result.rowcount or 0  # type: ignore
         await db.commit()
+
+        if cluster and app_settings.DISTRIBUTED_ENABLED:
+            from app.services.distributed import distributed_service
+
+            deleted_count += await distributed_service.clear_peer_jobs(
+                "/api/jobs/queued"
+            )
 
         # Wake worker so it re-evaluates
         job_queue.wake()
@@ -746,11 +756,20 @@ async def clear_completed_jobs(db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/all")
-async def clear_all_jobs(db: AsyncSession = Depends(get_db)):
+async def clear_all_jobs(
+    cluster: bool = Query(True, description="Clear active jobs across the cluster"),
+    db: AsyncSession = Depends(get_db),
+):
     """Clear ALL jobs (including pending and processing)."""
     try:
-        if _should_forward_to_leader():
+        if _should_forward_to_leader(cluster):
             return await _leader_request("DELETE", "/api/jobs/all")
+
+        peer_deleted = 0
+        if cluster and app_settings.DISTRIBUTED_ENABLED:
+            from app.services.distributed import distributed_service
+
+            peer_deleted = await distributed_service.clear_peer_jobs("/api/jobs/all")
 
         # Cancel any currently processing job first
         if job_queue.current_job_id:
@@ -758,7 +777,7 @@ async def clear_all_jobs(db: AsyncSession = Depends(get_db)):
 
         # Delete all jobs from database
         result = await db.execute(delete(Job))
-        deleted_count = result.rowcount  # type: ignore
+        deleted_count = (result.rowcount or 0) + peer_deleted  # type: ignore
         await db.commit()
 
         # Wake worker
