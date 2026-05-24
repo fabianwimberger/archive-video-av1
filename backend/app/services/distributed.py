@@ -852,6 +852,9 @@ class DistributedService:
 
         if not leader_id or leader_id == self._leader_id:
             return
+        if payload.get("node_id") == self._leader_id and not payload.get("is_leader"):
+            self._set_leader(leader_id)
+            return
         if not self._current_leader_is_fresh():
             self._set_leader(leader_id)
             return

@@ -200,6 +200,44 @@ class TestClusterStatus:
         assert distributed_service.leader_url == "http://node-b:8000"
         assert distributed_service.is_leader is False
 
+    def test_current_leader_can_report_successor(self, monkeypatch):
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(distributed_service, "_leader_id", "node-b")
+        monkeypatch.setattr(distributed_service, "_leader_since", time.monotonic() - 60)
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "node-c")
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_NAME", "node-c")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PUBLIC_URL", "http://node-c:8000")
+        monkeypatch.setattr(settings, "DISTRIBUTED_LEADER_URL", "")
+        monkeypatch.setattr(settings, "DISTRIBUTED_PEER_TTL_SECONDS", 20)
+
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="node-a",
+                node_name="node-a",
+                base_url="http://node-a:8000",
+                last_seen=time.monotonic(),
+            )
+        )
+        distributed_service._remember_peer(
+            PeerNode(
+                node_id="node-b",
+                node_name="node-b",
+                base_url="http://node-b:8000",
+                last_seen=time.monotonic(),
+            )
+        )
+
+        distributed_service._remember_reported_leader(
+            {
+                "node_id": "node-b",
+                "leader_url": "http://node-a:8000",
+                "is_leader": False,
+                "leader_age_seconds": 60,
+            }
+        )
+
+        assert distributed_service.leader_url == "http://node-a:8000"
+
     def test_simultaneous_leaders_resolve_by_election_key(self, monkeypatch):
         monkeypatch.setattr(distributed_service, "_peers", {})
         node_ids = ["node-a", "node-b"]
