@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.app_state import AppState
 from app.models.schemas import QueueStatusResponse
+from app.services.distributed import LeaderRequestError, distributed_service
 from app.services.job_queue import job_queue
 
 logger = logging.getLogger(__name__)
@@ -29,9 +30,21 @@ async def _set_queue_paused(db: AsyncSession, paused: bool) -> None:
     await db.commit()
 
 
+async def _leader_request(method: str, path: str) -> dict:
+    try:
+        return await distributed_service.request_leader(method, path)
+    except LeaderRequestError as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.get("", response_model=QueueStatusResponse)
 async def get_queue_status(db: AsyncSession = Depends(get_db)):
     """Get queue status."""
+    if distributed_service.should_use_leader():
+        return await _leader_request("GET", "/api/queue")
+
     paused = await _get_queue_paused(db)
     status = await job_queue.get_queue_status_async()
     return {
@@ -44,6 +57,9 @@ async def get_queue_status(db: AsyncSession = Depends(get_db)):
 @router.post("/pause")
 async def pause_queue(db: AsyncSession = Depends(get_db)):
     """Pause the queue."""
+    if distributed_service.should_use_leader():
+        return await _leader_request("POST", "/api/queue/pause")
+
     await _set_queue_paused(db, True)
     job_queue.pause()
     return {"success": True, "paused": True}
@@ -52,6 +68,9 @@ async def pause_queue(db: AsyncSession = Depends(get_db)):
 @router.post("/resume")
 async def resume_queue(db: AsyncSession = Depends(get_db)):
     """Resume the queue."""
+    if distributed_service.should_use_leader():
+        return await _leader_request("POST", "/api/queue/resume")
+
     await _set_queue_paused(db, False)
     job_queue.resume()
     return {"success": True, "paused": False}

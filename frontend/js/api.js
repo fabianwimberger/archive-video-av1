@@ -251,6 +251,10 @@ class ApiClient {
         return this.request('/queue/resume', { method: 'POST' });
     }
 
+    async getClusterStatus() {
+        return this.request('/cluster/status');
+    }
+
     // System endpoints
     async getHealth() {
         return this.request('/health');
@@ -297,5 +301,86 @@ const utils = {
         if (saved <= 0) return ' <span class="text-muted">(no savings)</span>';
         const savedStr = this.formatBytes(saved);
         return ` <span class="text-success" title="Saved ${savedStr} (${percent}%)">(-${percent}%)</span>`;
+    }
+};
+
+const svtParamsForm = {
+    fields: {
+        tune: 'tune',
+        filmGrain: 'film-grain',
+        denoise: 'film-grain-denoise',
+    },
+
+    normalizeExtra(value) {
+        return (value || '').trim().replace(/^:+|:+$/g, '');
+    },
+
+    read({ tuneId, grainId, denoiseId, extraId }) {
+        const params = [];
+        const tune = document.getElementById(tuneId).value;
+        const grain = document.getElementById(grainId).value.trim();
+        const denoise = document.getElementById(denoiseId).value;
+        const extra = this.normalizeExtra(document.getElementById(extraId).value);
+
+        if (tune !== '') params.push(`${this.fields.tune}=${tune}`);
+        if (grain !== '' && grain !== '0') params.push(`${this.fields.filmGrain}=${grain}`);
+        if (denoise !== '') params.push(`${this.fields.denoise}=${denoise}`);
+        if (extra) params.push(extra);
+
+        return params.join(':');
+    },
+
+    write(ids, params) {
+        const normalized = this.normalizeExtra(params);
+        const selectValues = {
+            tune: new Set(['', '0', '1', '2']),
+            denoise: new Set(['', '0', '1']),
+        };
+        const values = {
+            tune: '0',
+            grain: '',
+            denoise: '',
+            extra: [],
+        };
+
+        if (!normalized) values.tune = '';
+
+        normalized.split(':').filter(Boolean).forEach(part => {
+            const [key, ...rest] = part.split('=');
+            const value = rest.join('=');
+
+            if (key === this.fields.tune && selectValues.tune.has(value)) {
+                values.tune = value;
+            } else if (key === this.fields.filmGrain) {
+                values.grain = value === '0' ? '' : value;
+            } else if (key === this.fields.denoise && selectValues.denoise.has(value)) {
+                values.denoise = value;
+            } else {
+                values.extra.push(part);
+            }
+        });
+
+        document.getElementById(ids.tuneId).value = values.tune;
+        document.getElementById(ids.grainId).value = values.grain;
+        document.getElementById(ids.denoiseId).value = values.denoise;
+        document.getElementById(ids.extraId).value = values.extra.join(':');
+    },
+
+    mainIds() {
+        return {
+            tuneId: 'svt-tune',
+            grainId: 'svt-film-grain',
+            denoiseId: 'svt-denoise',
+            extraId: 'svt-extra-params',
+        };
+    },
+
+    presetIds() {
+        return {
+            tuneId: 'preset-edit-svt_tune',
+            grainId: 'preset-edit-svt_film_grain',
+            denoiseId: 'preset-edit-svt_denoise',
+            extraId: 'preset-edit-svt_extra_params',
+        };
     }
 };

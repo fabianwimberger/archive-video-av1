@@ -113,12 +113,13 @@ app.add_middleware(
 )
 
 # Include routers
-from app.routes import files, jobs, websocket, presets, queue  # noqa: E402
+from app.routes import cluster, files, jobs, websocket, presets, queue  # noqa: E402
 
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(presets.router, prefix="/api/presets", tags=["presets"])
 app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
+app.include_router(cluster.router, prefix="/api/cluster", tags=["cluster"])
 app.include_router(websocket.router, tags=["websocket"])
 
 
@@ -138,6 +139,8 @@ async def health_check():
         "status": "healthy",
         "pending_count": queue_status["pending_count"],
         "active_job": queue_status["active_job_id"],
+        "distributed_enabled": settings.DISTRIBUTED_ENABLED,
+        "node_id": settings.DISTRIBUTED_NODE_ID,
     }
 
 

@@ -1,7 +1,12 @@
 """Configuration management for the conversion service."""
 
 import os
+import socket
 from pathlib import Path
+
+
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class Settings:
@@ -26,6 +31,33 @@ class Settings:
     # History retention
     JOB_HISTORY_RETENTION_DAYS: int = int(os.getenv("JOB_HISTORY_RETENTION_DAYS", "0"))
     JOB_HISTORY_MAX_ROWS: int = int(os.getenv("JOB_HISTORY_MAX_ROWS", "0"))
+
+    # Distributed processing
+    DISTRIBUTED_ENABLED: bool = _env_bool("DISTRIBUTED_ENABLED")
+    DISTRIBUTED_NODE_ID: str = os.getenv("DISTRIBUTED_NODE_ID", socket.gethostname())
+    DISTRIBUTED_NODE_NAME: str = os.getenv("DISTRIBUTED_NODE_NAME", DISTRIBUTED_NODE_ID)
+    DISTRIBUTED_PUBLIC_URL: str = os.getenv("DISTRIBUTED_PUBLIC_URL", "")
+    DISTRIBUTED_LEADER_URL: str = os.getenv("DISTRIBUTED_LEADER_URL", "")
+    DISTRIBUTED_PEERS: list[str] = [
+        peer.strip().rstrip("/")
+        for peer in os.getenv("DISTRIBUTED_PEERS", "").split(",")
+        if peer.strip()
+    ]
+    DISTRIBUTED_DISCOVERY_GROUP: str = os.getenv(
+        "DISTRIBUTED_DISCOVERY_GROUP", "239.255.42.99"
+    )
+    DISTRIBUTED_DISCOVERY_PORT: int = int(
+        os.getenv("DISTRIBUTED_DISCOVERY_PORT", "9988")
+    )
+    DISTRIBUTED_HEARTBEAT_SECONDS: float = float(
+        os.getenv("DISTRIBUTED_HEARTBEAT_SECONDS", "5")
+    )
+    DISTRIBUTED_PROGRESS_SECONDS: float = float(
+        os.getenv("DISTRIBUTED_PROGRESS_SECONDS", "1")
+    )
+    DISTRIBUTED_PEER_TTL_SECONDS: float = float(
+        os.getenv("DISTRIBUTED_PEER_TTL_SECONDS", "20")
+    )
 
     # CORS
     CORS_ORIGINS: list = os.getenv(

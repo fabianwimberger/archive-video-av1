@@ -102,7 +102,7 @@
                 </div>
 
                 <div class="mb-2">
-                    <label for="svt-params" class="form-label small mb-1 d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                    <label for="svt-tune" class="form-label small mb-1 d-flex justify-content-between align-items-center gap-2 flex-wrap">
                         <span>SVT-AV1 Params</span>
                         <div class="d-flex gap-1 flex-wrap">
                             <button id="btn-auto-preset" class="btn btn-outline-info btn-xs" type="button" title="Auto-suggest encoding speed (0-10) for the selected file" disabled>
@@ -113,7 +113,32 @@
                             </button>
                         </div>
                     </label>
-                    <input type="text" id="svt-params" class="form-control form-control-sm" value="tune=0:film-grain=8">
+                    <div class="row g-1">
+                        <div class="col-4">
+                            <select id="svt-tune" class="form-select form-select-sm" aria-label="SVT tune">
+                                <option value="0">Tune 0</option>
+                                <option value="1">Tune 1</option>
+                                <option value="2">Tune 2</option>
+                                <option value="">No tune</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <input type="number" id="svt-film-grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="Grain">
+                            <datalist id="svt-film-grain-options">
+                                <option value="0"></option>
+                                <option value="8"></option>
+                                <option value="16"></option>
+                            </datalist>
+                        </div>
+                        <div class="col-4">
+                            <select id="svt-denoise" class="form-select form-select-sm" aria-label="Film grain denoise">
+                                <option value="">Denoise default</option>
+                                <option value="1">Denoise on</option>
+                                <option value="0">Denoise off</option>
+                            </select>
+                        </div>
+                    </div>
+                    <input type="text" id="svt-extra-params" class="form-control form-control-sm mt-1" placeholder="Additional SVT params">
                     <div id="estimate-info" class="form-text small text-muted mt-1" style="min-height: 1.2em;"></div>
                 </div>
 
@@ -148,6 +173,9 @@
         </div>
 
         <div class="card shadow-sm section-queue job-queue-card">
+            <div id="queue-resize-handle" class="queue-resize-handle" role="separator" aria-label="Resize Active Queue" aria-orientation="horizontal" tabindex="0" title="Resize Active Queue">
+                <span></span>
+            </div>
             <div class="card-header py-3 d-flex justify-content-between align-items-center flex-wrap">
                 <div>
                     <h5 class="card-title mb-0"><i class="bi bi-activity me-2"></i>Active Queue</h5>
@@ -165,6 +193,9 @@
                     <button id="btn-clear-queued" class="btn btn-outline-warning btn-sm">Clear Queued</button>
                     <button id="btn-toggle-queue" class="btn btn-sm btn-link text-decoration-none text-muted">Collapse</button>
                 </div>
+            </div>
+            <div id="cluster-status" class="cluster-status border-bottom px-3 py-2">
+                <div class="text-muted small">Cluster status unavailable</div>
             </div>
             <div id="job-queue" class="card-body p-0 overflow-auto custom-scrollbar">
                     <div class="text-center p-5 text-muted">No jobs yet</div>
@@ -319,7 +350,27 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">SVT Params</label>
-                                <input type="text" id="preset-edit-svt_params" class="form-control form-control-sm">
+                                <div class="row g-1">
+                                    <div class="col-4">
+                                        <select id="preset-edit-svt_tune" class="form-select form-select-sm" aria-label="SVT tune">
+                                            <option value="0">Tune 0</option>
+                                            <option value="1">Tune 1</option>
+                                            <option value="2">Tune 2</option>
+                                            <option value="">No tune</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-4">
+                                        <input type="number" id="preset-edit-svt_film_grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="Grain">
+                                    </div>
+                                    <div class="col-4">
+                                        <select id="preset-edit-svt_denoise" class="form-select form-select-sm" aria-label="Film grain denoise">
+                                            <option value="">Denoise default</option>
+                                            <option value="1">Denoise on</option>
+                                            <option value="0">Denoise off</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <input type="text" id="preset-edit-svt_extra_params" class="form-control form-control-sm mt-1" placeholder="Additional SVT params">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">Audio Bitrate</label>
