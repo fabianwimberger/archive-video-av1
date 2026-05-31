@@ -79,8 +79,11 @@ class SettingsPanel {
         });
 
         // Other inputs
-        ['svt-params', 'audio-bitrate'].forEach(id => {
+        ['svt-film-grain', 'svt-extra-params', 'audio-bitrate'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => this.checkModified());
+        });
+        ['svt-tune', 'svt-denoise'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => this.checkModified());
         });
         document.getElementById('skip-crop').addEventListener('change', () => this.checkModified());
         document.querySelectorAll('input[name="resolution"]').forEach(el => {
@@ -101,7 +104,7 @@ class SettingsPanel {
         document.getElementById('crf-value').textContent = preset.crf;
         document.getElementById('preset-slider').value = preset.encoder_preset;
         document.getElementById('preset-value').textContent = preset.encoder_preset;
-        document.getElementById('svt-params').value = preset.svt_params || '';
+        svtParamsForm.write(svtParamsForm.mainIds(), preset.svt_params || '');
         document.getElementById('audio-bitrate').value = preset.audio_bitrate;
         document.getElementById('skip-crop').checked = preset.skip_crop_detect;
 
@@ -156,7 +159,7 @@ class SettingsPanel {
         try {
             const result = await api.analyzeFile(selected[0]);
 
-            const currentParams = document.getElementById('svt-params').value;
+            const currentParams = svtParamsForm.read(svtParamsForm.mainIds());
             let params = currentParams;
 
             params = params.replace(/:?\bfilm-grain=[^:]*/g, '');
@@ -175,7 +178,7 @@ class SettingsPanel {
                 params = params ? `${params}:${grainParts.join(':')}` : grainParts.join(':');
             }
 
-            document.getElementById('svt-params').value = params;
+            svtParamsForm.write(svtParamsForm.mainIds(), params);
             this.checkModified();
 
             const info = document.getElementById('estimate-info');
@@ -227,7 +230,7 @@ class SettingsPanel {
         return {
             crf: parseInt(document.getElementById('crf-slider').value),
             encoder_preset: parseInt(document.getElementById('preset-slider').value),
-            svt_params: document.getElementById('svt-params').value,
+            svt_params: svtParamsForm.read(svtParamsForm.mainIds()),
             audio_bitrate: document.getElementById('audio-bitrate').value,
             skip_crop_detect: document.getElementById('skip-crop').checked,
             max_resolution: parseInt(document.querySelector('input[name="resolution"]:checked').value),

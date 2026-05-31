@@ -5,12 +5,15 @@ import json
 import logging
 import os
 import signal
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from sqlalchemy import select, update
+from sqlalchemy import or_
 from app.database import AsyncSessionLocal
 from app.models.job import Job
+from app.config import settings
 from app.services.conversion_service import conversion_service
 from app.services.lifecycle import prune_history
 
@@ -25,10 +28,12 @@ class JobQueue:
         self.current_process: Optional[asyncio.subprocess.Process] = None
         self.running = False
         self.worker_task: Optional[asyncio.Task] = None
+        self.distributed_task: Optional[asyncio.Task] = None
         self.websocket_manager = None
         self.cancelled_job_ids: set[int] = set()
         self._wake_event: Optional[asyncio.Event] = None
         self._paused_event: Optional[asyncio.Event] = None
+        self._dispatch_lock = asyncio.Lock()
 
     def set_websocket_manager(self, ws_manager) -> None:
         """Set WebSocket manager for broadcasting updates."""
@@ -130,6 +135,11 @@ class JobQueue:
 
         self.running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
+        if settings.DISTRIBUTED_ENABLED:
+            from app.services.distributed import distributed_service
+
+            await distributed_service.start()
+            self.distributed_task = asyncio.create_task(self._distributed_loop())
         logger.info("Job queue worker started")
 
     async def stop_worker(self) -> None:
@@ -146,7 +156,81 @@ class JobQueue:
                 await self.worker_task
             except asyncio.CancelledError:
                 pass
+        if self.distributed_task:
+            self.distributed_task.cancel()
+            try:
+                await self.distributed_task
+            except asyncio.CancelledError:
+                pass
+            self.distributed_task = None
+        if settings.DISTRIBUTED_ENABLED:
+            from app.services.distributed import distributed_service
+
+            await distributed_service.stop()
         logger.info("Job queue worker stopped")
+
+    def _can_claim_unassigned_jobs(self) -> bool:
+        if not settings.DISTRIBUTED_ENABLED:
+            return True
+
+        from app.services.distributed import distributed_service
+
+        return (
+            distributed_service.is_leader
+            and distributed_service.leader_age_seconds()
+            >= settings.DISTRIBUTED_PEER_TTL_SECONDS
+        )
+
+    def _can_process_assigned_jobs_while_paused(self) -> bool:
+        if not settings.DISTRIBUTED_ENABLED:
+            return False
+
+        from app.services.distributed import distributed_service
+
+        return not distributed_service.is_leader
+
+    async def _claim_next_job(self, db) -> Optional[Job]:
+        worker_filter = Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID
+        if self._can_claim_unassigned_jobs():
+            worker_filter = or_(Job.assigned_worker_id.is_(None), worker_filter)
+
+        result = await db.execute(
+            select(Job.id)
+            .where(
+                Job.status == "pending",
+                Job.is_cluster_replica.is_(False),
+                worker_filter,
+            )
+            .order_by(
+                Job.queue_position.asc().nullslast(),
+                Job.created_at.asc(),
+            )
+            .limit(1)
+        )
+        job_id = result.scalar_one_or_none()
+        if job_id is None:
+            return None
+
+        claimed = await db.execute(
+            update(Job)
+            .where(
+                Job.id == job_id,
+                Job.status == "pending",
+                Job.is_cluster_replica.is_(False),
+                worker_filter,
+            )
+            .values(
+                status="processing",
+                assigned_worker_id=settings.DISTRIBUTED_NODE_ID,
+                assigned_worker_name=settings.DISTRIBUTED_NODE_NAME,
+            )
+        )
+        await db.commit()
+        if claimed.rowcount != 1:
+            return None
+
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        return result.scalar_one_or_none()
 
     async def _worker_loop(self):
         """Background worker that processes jobs sequentially from DB."""
@@ -155,23 +239,19 @@ class JobQueue:
         while self.running:
             try:
                 # Check pause state
-                if self._paused_event and not self._paused_event.is_set():
+                if (
+                    self._paused_event
+                    and not self._paused_event.is_set()
+                    and not self._can_process_assigned_jobs_while_paused()
+                ):
                     try:
                         await asyncio.wait_for(self._paused_event.wait(), timeout=1.0)
                     except asyncio.TimeoutError:
                         continue
 
-                async with AsyncSessionLocal() as db:
-                    # Load next pending job by queue_position
-                    result = await db.execute(
-                        select(Job)
-                        .where(Job.status == "pending")
-                        .order_by(
-                            Job.queue_position.asc().nullslast(), Job.created_at.asc()
-                        )
-                        .limit(1)
-                    )
-                    job = result.scalar_one_or_none()
+                async with self._dispatch_lock:
+                    async with AsyncSessionLocal() as db:
+                        job = await self._claim_next_job(db)
 
                 if job is None:
                     # No pending jobs; wait for wake signal
@@ -195,7 +275,7 @@ class JobQueue:
 
                 # Broadcast queue update
                 if self.websocket_manager:
-                    status = self.get_queue_status()
+                    status = await self.get_queue_status_async()
                     await self.websocket_manager.broadcast(
                         {
                             "type": "queue_update",
@@ -210,6 +290,54 @@ class JobQueue:
             except Exception as e:
                 logger.error(f"Error in worker loop: {e}", exc_info=True)
                 self.current_job_id = None
+
+    async def _distributed_loop(self) -> None:
+        """Coordinate remote jobs while the local worker is busy."""
+        from app.services.distributed import distributed_service
+
+        last_progress_sync = 0.0
+        last_coordination = 0.0
+
+        while self.running:
+            try:
+                now = time.monotonic()
+                progress_interval = max(0.5, settings.DISTRIBUTED_PROGRESS_SECONDS)
+                coordination_interval = max(1.0, settings.DISTRIBUTED_HEARTBEAT_SECONDS)
+
+                if now - last_progress_sync >= progress_interval:
+                    await distributed_service.sync_remote_jobs(self.websocket_manager)
+                    last_progress_sync = now
+
+                if (
+                    distributed_service.is_leader
+                    and now - last_coordination >= coordination_interval
+                ):
+                    if distributed_service.leader_is_stable():
+                        await distributed_service.promote_replicated_jobs(
+                            self.websocket_manager
+                        )
+                        if self._paused_event is None or self._paused_event.is_set():
+                            async with self._dispatch_lock:
+                                delegated = (
+                                    await distributed_service.delegate_pending_jobs(
+                                        self.websocket_manager
+                                    )
+                                )
+                            if delegated and self._wake_event:
+                                self._wake_event.set()
+                        await distributed_service.replicate_queue()
+                    last_coordination = now
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Error in distributed loop: %s", e, exc_info=True)
+
+            await asyncio.sleep(
+                min(
+                    max(0.5, settings.DISTRIBUTED_PROGRESS_SECONDS),
+                    max(1.0, settings.DISTRIBUTED_HEARTBEAT_SECONDS),
+                )
+            )
 
     async def _process_job(self, job_id: int):
         """
@@ -409,7 +537,12 @@ class JobQueue:
 
             result = await db.execute(
                 select(func.count()).select_from(
-                    select(Job).where(Job.status == "pending").subquery()
+                    select(Job)
+                    .where(
+                        Job.status == "pending",
+                        Job.is_cluster_replica.is_(False),
+                    )
+                    .subquery()
                 )
             )
             pending_count = result.scalar() or 0

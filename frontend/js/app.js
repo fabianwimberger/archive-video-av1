@@ -18,6 +18,7 @@ class ConversionApp {
         window.historyView = historyView;
 
         this.setupViewSwitching();
+        this.setupQueueResizer();
 
         // Connect WebSocket
         wsClient.connect();
@@ -60,6 +61,78 @@ class ConversionApp {
         document.getElementById('tab-convert').addEventListener('click', () => this.switchView('convert'));
         document.getElementById('tab-history').addEventListener('click', () => this.switchView('history'));
         window.addEventListener('hashchange', () => this.handleHash());
+    }
+
+    setupQueueResizer() {
+        const handle = document.getElementById('queue-resize-handle');
+        const convertView = document.getElementById('view-convert');
+        if (!handle || !convertView) return;
+
+        const storageKey = 'activeQueueHeight';
+        const minQueueHeight = 210;
+        const minTopHeight = 220;
+
+        const clampHeight = (height) => {
+            const viewHeight = convertView.getBoundingClientRect().height;
+            const maxQueueHeight = Math.max(minQueueHeight, viewHeight - minTopHeight);
+            return Math.min(Math.max(height, minQueueHeight), maxQueueHeight);
+        };
+
+        const setQueueHeight = (height, persist = true) => {
+            const nextHeight = clampHeight(height);
+            document.documentElement.style.setProperty('--queue-row-height', `${nextHeight}px`);
+            handle.setAttribute('aria-valuemin', String(minQueueHeight));
+            const maxQueueHeight = Math.max(
+                minQueueHeight,
+                convertView.getBoundingClientRect().height - minTopHeight,
+            );
+            handle.setAttribute('aria-valuemax', String(Math.round(maxQueueHeight)));
+            handle.setAttribute('aria-valuenow', String(Math.round(nextHeight)));
+            if (persist) localStorage.setItem(storageKey, String(Math.round(nextHeight)));
+        };
+
+        const savedHeight = Number(localStorage.getItem(storageKey));
+        if (Number.isFinite(savedHeight) && savedHeight > 0) {
+            requestAnimationFrame(() => setQueueHeight(savedHeight, false));
+        }
+
+        handle.addEventListener('pointerdown', (event) => {
+            if (window.matchMedia('(max-width: 992px)').matches) return;
+            event.preventDefault();
+            handle.setPointerCapture(event.pointerId);
+            document.body.classList.add('queue-resizing');
+
+            const viewRect = convertView.getBoundingClientRect();
+            const updateFromPointer = (pointerEvent) => {
+                setQueueHeight(viewRect.bottom - pointerEvent.clientY);
+            };
+
+            const stopResize = () => {
+                document.body.classList.remove('queue-resizing');
+                handle.removeEventListener('pointermove', updateFromPointer);
+                handle.removeEventListener('pointerup', stopResize);
+                handle.removeEventListener('pointercancel', stopResize);
+            };
+
+            handle.addEventListener('pointermove', updateFromPointer);
+            handle.addEventListener('pointerup', stopResize);
+            handle.addEventListener('pointercancel', stopResize);
+        });
+
+        handle.addEventListener('keydown', (event) => {
+            if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+            event.preventDefault();
+            const currentHeight = Number(localStorage.getItem(storageKey))
+                || convertView.getBoundingClientRect().height * 0.28;
+            setQueueHeight(currentHeight + (event.key === 'ArrowUp' ? 24 : -24));
+        });
+
+        window.addEventListener('resize', () => {
+            const currentHeight = Number(localStorage.getItem(storageKey));
+            if (Number.isFinite(currentHeight) && currentHeight > 0) {
+                setQueueHeight(currentHeight);
+            }
+        });
     }
 
     switchView(view) {

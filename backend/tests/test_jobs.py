@@ -2,6 +2,7 @@
 
 import asyncio
 from sqlalchemy import select
+from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.job import Job
 
@@ -34,6 +35,22 @@ class TestCreateJob:
         data = response.json()
         assert len(data["job_ids"]) == 1
 
+    def test_create_local_only_job_assigns_current_node(self, seeded_client):
+        payload = {
+            "source_file": "/videos/test.mkv",
+            "preset_id": 1,
+            "local_only": True,
+        }
+        response = seeded_client.post("/api/jobs", json=payload)
+        assert response.status_code == 200
+        job_id = response.json()["job_ids"][0]
+
+        get_resp = seeded_client.get(f"/api/jobs/{job_id}")
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data["assigned_worker_id"]
+        assert data["remote_job_id"] is None
+
     def test_create_job_without_preset_or_settings(self, seeded_client):
         payload = {
             "source_file": "/videos/test.mkv",
@@ -63,6 +80,34 @@ class TestCreateJob:
         assert get_resp.status_code == 200
         assert "modified" in get_resp.json()["preset_name_snapshot"]
 
+    def test_create_job_forwards_to_leader_with_resolved_settings(
+        self, seeded_client, monkeypatch
+    ):
+        from app.services.distributed import distributed_service
+
+        captured = {}
+
+        async def fake_request(method, path, *, params=None, json_body=None):
+            captured["method"] = method
+            captured["path"] = path
+            captured["json_body"] = json_body
+            return {"job_ids": [42]}
+
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: True)
+        monkeypatch.setattr(distributed_service, "request_leader", fake_request)
+
+        response = seeded_client.post(
+            "/api/jobs",
+            json={"source_file": "/videos/test.mkv", "preset_id": 1},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["job_ids"] == [42]
+        assert captured["method"] == "POST"
+        assert captured["path"] == "/api/jobs"
+        assert captured["json_body"]["settings"]["crf"] == 26
+        assert "preset_id" not in captured["json_body"]
+
 
 class TestGetJob:
     def test_get_job_returns_settings_as_dict(self, seeded_client):
@@ -91,6 +136,82 @@ class TestListJobs:
         data = response.json()
         assert data["total"] >= 1
         assert all(j["status"] == "pending" for j in data["jobs"])
+
+    def test_list_jobs_forwards_to_leader(self, seeded_client, monkeypatch):
+        from app.services.distributed import distributed_service
+
+        captured = {}
+
+        async def fake_request(method, path, *, params=None, json_body=None):
+            captured["method"] = method
+            captured["path"] = path
+            captured["params"] = params
+            return {"jobs": [], "total": 0}
+
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: True)
+        monkeypatch.setattr(distributed_service, "request_leader", fake_request)
+
+        response = seeded_client.get("/api/jobs?status=pending&limit=10&offset=0")
+
+        assert response.status_code == 200
+        assert response.json() == {"jobs": [], "total": 0}
+        assert captured["method"] == "GET"
+        assert captured["path"] == "/api/jobs"
+        assert captured["params"]["cluster"] == "true"
+
+    def test_node_local_list_excludes_replicas(self, seeded_client):
+        async def add_replica():
+            async with AsyncSessionLocal() as db:
+                db.add(
+                    Job(
+                        source_file="/videos/replica.mkv",
+                        output_file="/videos/replica_conv.mkv",
+                        settings="{}",
+                        status="pending",
+                        queue_position=1,
+                        cluster_job_id="leader:1",
+                        cluster_origin_node_id="leader",
+                        cluster_origin_job_id=1,
+                        is_cluster_replica=True,
+                    )
+                )
+                await db.commit()
+
+        asyncio.run(add_replica())
+
+        response = seeded_client.get(
+            "/api/jobs?status=pending&cluster=false&limit=100&offset=0"
+        )
+
+        assert response.status_code == 200
+        assert all(
+            job["source_file"] != "/videos/replica.mkv"
+            for job in response.json()["jobs"]
+        )
+
+    def test_node_local_get_replica_returns_404(self, seeded_client):
+        async def add_replica():
+            async with AsyncSessionLocal() as db:
+                replica = Job(
+                    source_file="/videos/replica.mkv",
+                    output_file="/videos/replica_conv.mkv",
+                    settings="{}",
+                    status="pending",
+                    cluster_job_id="leader:1",
+                    cluster_origin_node_id="leader",
+                    cluster_origin_job_id=1,
+                    is_cluster_replica=True,
+                )
+                db.add(replica)
+                await db.commit()
+                await db.refresh(replica)
+                return replica.id
+
+        job_id = asyncio.run(add_replica())
+
+        response = seeded_client.get(f"/api/jobs/{job_id}?cluster=false")
+
+        assert response.status_code == 404
 
 
 class TestBatchJobs:
@@ -148,6 +269,46 @@ class TestClearJobs:
         response = seeded_client.delete("/api/jobs/queued")
         assert response.status_code == 200
         assert response.json()["deleted_count"] >= 1
+
+    def test_clear_queued_cluster_false_stays_node_local(
+        self, seeded_client, monkeypatch
+    ):
+        from app.services.distributed import distributed_service
+
+        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        seeded_client.post("/api/jobs", json=payload)
+
+        async def fail_request(*_args, **_kwargs):
+            raise AssertionError("node-local clear should not forward")
+
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: True)
+        monkeypatch.setattr(distributed_service, "request_leader", fail_request)
+
+        response = seeded_client.delete("/api/jobs/queued?cluster=false")
+
+        assert response.status_code == 200
+        assert response.json()["deleted_count"] >= 1
+
+    def test_clear_queued_includes_peer_queues(self, seeded_client, monkeypatch):
+        from app.services.distributed import distributed_service
+
+        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        seeded_client.post("/api/jobs", json=payload)
+
+        async def fake_clear_peer_jobs(path):
+            assert path == "/api/jobs/queued"
+            return 2
+
+        monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: False)
+        monkeypatch.setattr(
+            distributed_service, "clear_peer_jobs", fake_clear_peer_jobs
+        )
+
+        response = seeded_client.delete("/api/jobs/queued")
+
+        assert response.status_code == 200
+        assert response.json()["deleted_count"] >= 3
 
     def test_clear_completed(self, seeded_client):
         response = seeded_client.delete("/api/jobs/completed")
