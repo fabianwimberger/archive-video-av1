@@ -487,6 +487,7 @@ class TestClusterStatus:
             queue_position=1,
             is_cluster_replica=True,
         )
+
         class FakeScalars:
             def all(self):
                 return [replica]

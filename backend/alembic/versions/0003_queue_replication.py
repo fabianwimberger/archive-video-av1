@@ -19,8 +19,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.add_column("jobs", sa.Column("cluster_job_id", sa.String(), nullable=True))
-    op.add_column("jobs", sa.Column("cluster_origin_node_id", sa.String(), nullable=True))
-    op.add_column("jobs", sa.Column("cluster_origin_job_id", sa.Integer(), nullable=True))
+    op.add_column(
+        "jobs", sa.Column("cluster_origin_node_id", sa.String(), nullable=True)
+    )
+    op.add_column(
+        "jobs", sa.Column("cluster_origin_job_id", sa.Integer(), nullable=True)
+    )
     op.add_column(
         "jobs",
         sa.Column(

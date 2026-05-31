@@ -73,5 +73,9 @@ class Job(Base):
         Index("idx_jobs_status_queue_position", "status", "queue_position"),
         Index("idx_jobs_remote_job_id", "remote_job_id"),
         Index("idx_jobs_cluster_job_id", "cluster_job_id", unique=True),
-        Index("idx_jobs_cluster_replica_origin", "is_cluster_replica", "cluster_origin_node_id"),
+        Index(
+            "idx_jobs_cluster_replica_origin",
+            "is_cluster_replica",
+            "cluster_origin_node_id",
+        ),
     )

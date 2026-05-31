@@ -35,9 +35,7 @@ class Settings:
     # Distributed processing
     DISTRIBUTED_ENABLED: bool = _env_bool("DISTRIBUTED_ENABLED")
     DISTRIBUTED_NODE_ID: str = os.getenv("DISTRIBUTED_NODE_ID", socket.gethostname())
-    DISTRIBUTED_NODE_NAME: str = os.getenv(
-        "DISTRIBUTED_NODE_NAME", DISTRIBUTED_NODE_ID
-    )
+    DISTRIBUTED_NODE_NAME: str = os.getenv("DISTRIBUTED_NODE_NAME", DISTRIBUTED_NODE_ID)
     DISTRIBUTED_PUBLIC_URL: str = os.getenv("DISTRIBUTED_PUBLIC_URL", "")
     DISTRIBUTED_LEADER_URL: str = os.getenv("DISTRIBUTED_LEADER_URL", "")
     DISTRIBUTED_PEERS: list[str] = [

@@ -252,10 +252,12 @@ async def create_batch_jobs(
         if _should_forward_to_leader() and not batch_data.local_only:
             files_payload = []
             for source_file in sorted_files:
-                _preset_id, _preset_name_snapshot, settings = (
-                    await _resolve_job_settings(
-                        db, batch_data.preset_id, settings_override, source_file
-                    )
+                (
+                    _preset_id,
+                    _preset_name_snapshot,
+                    settings,
+                ) = await _resolve_job_settings(
+                    db, batch_data.preset_id, settings_override, source_file
                 )
                 files_payload.append((source_file, settings))
 
@@ -293,7 +295,9 @@ async def create_batch_jobs(
                     app_settings.DISTRIBUTED_NODE_ID if batch_data.local_only else None
                 ),
                 assigned_worker_name=(
-                    app_settings.DISTRIBUTED_NODE_NAME if batch_data.local_only else None
+                    app_settings.DISTRIBUTED_NODE_NAME
+                    if batch_data.local_only
+                    else None
                 ),
             )
             db.add(job)
@@ -413,7 +417,7 @@ async def list_jobs(
                 response.cluster_node_url = distributed_service.public_url
                 local_jobs.append(response.model_dump(mode="json"))
 
-            peer_params = {
+            peer_params: dict[str, object] = {
                 "status": status,
                 "sort": sort,
                 "order": order,
@@ -447,7 +451,7 @@ async def list_jobs(
         # Count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
-        total = total_result.scalar()
+        total = total_result.scalar() or 0
 
         query = query.limit(limit).offset(offset)
         result = await db.execute(query)
@@ -484,9 +488,7 @@ async def get_job(
     """Get job details by ID."""
     try:
         if _should_forward_to_leader(cluster):
-            return JobResponse(
-                **await _leader_request("GET", f"/api/jobs/{job_id}")
-            )
+            return JobResponse(**await _leader_request("GET", f"/api/jobs/{job_id}"))
 
         result = await db.execute(
             select(Job).where(

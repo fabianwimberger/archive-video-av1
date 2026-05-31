@@ -9,9 +9,10 @@ import struct
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, cast
 
 import httpx
+from httpx._types import QueryParamTypes
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -229,11 +230,13 @@ class DistributedService:
                 if not job.assigned_worker_url or not job.remote_job_id:
                     continue
 
+                assigned_worker_url = cast(str, job.assigned_worker_url)
+                remote_job_id = cast(int, job.remote_job_id)
                 remote_job = await self._get_remote_job(
-                    job.assigned_worker_url, job.remote_job_id
+                    assigned_worker_url, remote_job_id
                 )
                 if remote_job is None:
-                    if self._peer_is_fresh(job.assigned_worker_url):
+                    if self._peer_is_fresh(assigned_worker_url):
                         continue
                     await self._requeue_remote_job(db, job)
                     if websocket_manager:
@@ -257,7 +260,9 @@ class DistributedService:
                 remote_status = remote_job.get("status")
                 if remote_status in {"completed", "failed", "cancelled"}:
                     job.status = remote_status  # type: ignore[assignment]
-                    job.completed_at = _parse_datetime(remote_job.get("completed_at"))
+                    job.completed_at = _parse_datetime(  # type: ignore[assignment]
+                        remote_job.get("completed_at")
+                    )
                     job.error_message = remote_job.get("error_message")  # type: ignore[assignment]
                     job.source_size_bytes = remote_job.get(  # type: ignore[assignment]
                         "source_size_bytes"
@@ -436,9 +441,11 @@ class DistributedService:
             "progress_percent": job.progress_percent or 0.0,
             "eta_seconds": job.eta_seconds,
             "current_fps": job.current_fps,
-            "created_at": _format_datetime(job.created_at),
-            "started_at": _format_datetime(job.started_at),
-            "completed_at": _format_datetime(job.completed_at),
+            "created_at": _format_datetime(cast(Optional[datetime], job.created_at)),
+            "started_at": _format_datetime(cast(Optional[datetime], job.started_at)),
+            "completed_at": _format_datetime(
+                cast(Optional[datetime], job.completed_at)
+            ),
             "error_message": job.error_message,
             "log": job.log or "",
             "source_size_bytes": job.source_size_bytes,
@@ -570,9 +577,9 @@ class DistributedService:
 
         for _ in range(3):
             await asyncio.sleep(1.0)
-            remote_job = await self._get_remote_job(
-                job.assigned_worker_url, job.remote_job_id
-            )
+            assigned_worker_url = cast(str, job.assigned_worker_url)
+            remote_job_id = cast(int, job.remote_job_id)
+            remote_job = await self._get_remote_job(assigned_worker_url, remote_job_id)
             if remote_job is None:
                 return True
             if remote_job.get("status") in {"completed", "failed", "cancelled"}:
@@ -629,7 +636,8 @@ class DistributedService:
 
             try:
                 response = await self._client.get(
-                    f"{peer.base_url}/api/jobs", params=params
+                    f"{peer.base_url}/api/jobs",
+                    params=cast(QueryParamTypes, params),
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -663,7 +671,7 @@ class DistributedService:
             response = await self._client.request(
                 method,
                 f"{leader_url}{path}",
-                params=params,
+                params=cast(QueryParamTypes, params),
                 json=json_body,
             )
             response.raise_for_status()
@@ -701,7 +709,9 @@ class DistributedService:
 
         return deleted
 
-    async def _get_remote_job(self, base_url: str, remote_job_id: int) -> Optional[dict]:
+    async def _get_remote_job(
+        self, base_url: str, remote_job_id: int
+    ) -> Optional[dict]:
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=5.0)
 
@@ -727,13 +737,15 @@ class DistributedService:
 
         payload = {
             "source_file": job.source_file,
-            "settings": json.loads(job.settings) if job.settings else {},
+            "settings": json.loads(cast(str, job.settings)) if job.settings else {},
             "notes": job.notes,
             "local_only": True,
         }
 
         try:
-            response = await self._client.post(f"{peer.base_url}/api/jobs", json=payload)
+            response = await self._client.post(
+                f"{peer.base_url}/api/jobs", json=payload
+            )
             response.raise_for_status()
             job_ids = response.json().get("job_ids", [])
         except (httpx.HTTPError, ValueError) as exc:
@@ -865,8 +877,7 @@ class DistributedService:
             if reported_age > current_age + 1 or (
                 abs(reported_age - current_age) <= 1
                 and self._leader_id is not None
-                and self._election_key(leader_id)
-                > self._election_key(self._leader_id)
+                and self._election_key(leader_id) > self._election_key(self._leader_id)
             ):
                 self._set_leader(leader_id)
 

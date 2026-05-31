@@ -16,12 +16,14 @@ router = APIRouter()
 
 @router.get("/status", response_model=ClusterStatusResponse)
 async def get_cluster_status(
-    cluster: bool = Query(True, description="Read selected leader state")
+    cluster: bool = Query(True, description="Read selected leader state"),
 ):
     """Get distributed processing status."""
     if cluster and distributed_service.should_use_leader():
         try:
-            return await distributed_service.request_leader("GET", "/api/cluster/status")
+            return await distributed_service.request_leader(
+                "GET", "/api/cluster/status"
+            )
         except LeaderRequestError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
