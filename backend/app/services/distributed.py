@@ -788,38 +788,49 @@ class DistributedService:
 
     async def _listen_loop(self) -> None:
         assert self._socket is not None
-        while self._running:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _on_readable() -> None:
             try:
-                data, _addr = await asyncio.to_thread(self._socket.recvfrom, 65535)
-            except OSError as exc:
-                logger.debug("Cluster discovery receive failed: %s", exc)
-                await asyncio.sleep(settings.DISTRIBUTED_HEARTBEAT_SECONDS)
-                continue
+                data, _addr = self._socket.recvfrom(65535)
+            except OSError:
+                return
+            queue.put_nowait(data)
 
-            try:
-                payload = json.loads(data.decode("utf-8"))
-            except ValueError:
-                continue
+        loop.add_reader(self._socket.fileno(), _on_readable)
+        try:
+            while self._running:
+                data = await queue.get()
+                self._handle_discovery_packet(data)
+        finally:
+            loop.remove_reader(self._socket.fileno())
 
-            if payload.get("service") != "archive-video-av1":
-                continue
-            if payload.get("node_id") == self.node_id:
-                continue
+    def _handle_discovery_packet(self, data: bytes) -> None:
+        try:
+            payload = json.loads(data.decode("utf-8"))
+        except ValueError:
+            return
 
-            base_url = str(payload.get("base_url", "")).rstrip("/")
-            node_id = str(payload.get("node_id", ""))
-            if not base_url or not node_id:
-                continue
+        if payload.get("service") != "archive-video-av1":
+            return
+        if payload.get("node_id") == self.node_id:
+            return
 
-            self._remember_peer(
-                PeerNode(
-                    node_id=node_id,
-                    node_name=str(payload.get("node_name") or node_id),
-                    base_url=base_url,
-                    last_seen=time.monotonic(),
-                )
+        base_url = str(payload.get("base_url", "")).rstrip("/")
+        node_id = str(payload.get("node_id", ""))
+        if not base_url or not node_id:
+            return
+
+        self._remember_peer(
+            PeerNode(
+                node_id=node_id,
+                node_name=str(payload.get("node_name") or node_id),
+                base_url=base_url,
+                last_seen=time.monotonic(),
             )
-            self._remember_reported_leader(payload)
+        )
+        self._remember_reported_leader(payload)
 
     def _remember_peer(self, peer: PeerNode) -> None:
         if peer.node_id == self.node_id:
@@ -888,7 +899,7 @@ class DistributedService:
         mreq = group + struct.pack("=I", socket.INADDR_ANY)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
-        sock.setblocking(True)
+        sock.setblocking(False)
         return sock
 
 
