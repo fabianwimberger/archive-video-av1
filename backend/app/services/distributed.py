@@ -769,8 +769,7 @@ class DistributedService:
                 "leader_age_seconds": self.leader_age_seconds(),
             }
             try:
-                await asyncio.get_running_loop().sock_sendto(
-                    self._socket,
+                self._socket.sendto(
                     json.dumps(payload).encode("utf-8"),
                     (
                         settings.DISTRIBUTED_DISCOVERY_GROUP,
@@ -791,9 +790,7 @@ class DistributedService:
         assert self._socket is not None
         while self._running:
             try:
-                data, _addr = await asyncio.get_running_loop().sock_recvfrom(
-                    self._socket, 65535
-                )
+                data, _addr = await asyncio.to_thread(self._socket.recvfrom, 65535)
             except OSError as exc:
                 logger.debug("Cluster discovery receive failed: %s", exc)
                 await asyncio.sleep(settings.DISTRIBUTED_HEARTBEAT_SECONDS)
@@ -891,7 +888,7 @@ class DistributedService:
         mreq = group + struct.pack("=I", socket.INADDR_ANY)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
-        sock.setblocking(False)
+        sock.setblocking(True)
         return sock
 
 
