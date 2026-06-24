@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     cfg = Config("/app/alembic.ini")
     cfg.set_main_option("script_location", "/app/alembic")
     await asyncio.to_thread(command.upgrade, cfg, "head")
+    logging.getLogger().setLevel(getattr(logging, settings.LOG_LEVEL))
     logger.info("Database migrated to head")
 
     await init_db()
