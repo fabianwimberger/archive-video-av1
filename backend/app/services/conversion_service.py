@@ -249,6 +249,8 @@ class ConversionService:
         """
         Calculate output file path based on source file.
 
+        Output is always Matroska (.mkv), regardless of source container.
+
         Args:
             source_file: Path to source file
 
@@ -258,9 +260,8 @@ class ConversionService:
         source_path = Path(source_file)
         stem = source_path.stem
         parent = source_path.parent
-        ext = source_path.suffix
 
-        return str(parent / f"{stem}_conv{ext}")
+        return str(parent / f"{stem}_conv.mkv")
 
 
 # Global conversion service instance
