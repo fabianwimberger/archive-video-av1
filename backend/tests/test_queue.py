@@ -607,9 +607,7 @@ class TestClusterMulticast:
     async def test_broadcast_loop_sends_on_real_socket(self, monkeypatch):
         import socket as socket_module
 
-        receiver = socket_module.socket(
-            socket_module.AF_INET, socket_module.SOCK_DGRAM
-        )
+        receiver = socket_module.socket(socket_module.AF_INET, socket_module.SOCK_DGRAM)
         receiver.bind(("127.0.0.1", 0))
         receiver.settimeout(2)
         port = receiver.getsockname()[1]
@@ -642,9 +640,7 @@ class TestClusterMulticast:
     async def test_listen_loop_remembers_peer_from_real_socket(self, monkeypatch):
         import socket as socket_module
 
-        listener = socket_module.socket(
-            socket_module.AF_INET, socket_module.SOCK_DGRAM
-        )
+        listener = socket_module.socket(socket_module.AF_INET, socket_module.SOCK_DGRAM)
         listener.bind(("127.0.0.1", 0))
         listener.setblocking(False)
         port = listener.getsockname()[1]
