@@ -788,23 +788,24 @@ class DistributedService:
 
     async def _listen_loop(self) -> None:
         assert self._socket is not None
+        sock = self._socket
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
 
         def _on_readable() -> None:
             try:
-                data, _addr = self._socket.recvfrom(65535)
+                data, _addr = sock.recvfrom(65535)
             except OSError:
                 return
             queue.put_nowait(data)
 
-        loop.add_reader(self._socket.fileno(), _on_readable)
+        loop.add_reader(sock.fileno(), _on_readable)
         try:
             while self._running:
                 data = await queue.get()
                 self._handle_discovery_packet(data)
         finally:
-            loop.remove_reader(self._socket.fileno())
+            loop.remove_reader(sock.fileno())
 
     def _handle_discovery_packet(self, data: bytes) -> None:
         try:
