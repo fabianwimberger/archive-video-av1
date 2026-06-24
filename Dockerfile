@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:26.04 AS builder
 
-ARG FFMPEG_VERSION="8.1.1"
+ARG FFMPEG_VERSION="8.1.2"
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.1.0"
 ARG ENABLE_PGO="false"
