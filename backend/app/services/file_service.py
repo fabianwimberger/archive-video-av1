@@ -14,16 +14,18 @@ logger = logging.getLogger(__name__)
 
 def _directory_has_videos(directory: Path) -> bool:
     """
-    Check if directory contains any .mkv files (recursively).
+    Check if directory contains any video files (recursively).
 
     Args:
         directory: Directory path to check
 
     Returns:
-        True if any .mkv files found, False otherwise
+        True if any video files found, False otherwise
     """
     try:
-        return any(directory.rglob("*.mkv"))
+        return any(
+            any(directory.rglob(f"*{ext}")) for ext in FileService.VIDEO_EXTENSIONS
+        )
     except (OSError, PermissionError):
         return False
 
@@ -31,7 +33,7 @@ def _directory_has_videos(directory: Path) -> bool:
 class FileService:
     """Service for file system operations."""
 
-    VIDEO_EXTENSIONS = {".mkv"}
+    VIDEO_EXTENSIONS = {".mkv", ".mp4"}
 
     def __init__(self):
         self.source_mount = Path(settings.SOURCE_MOUNT)
@@ -126,7 +128,7 @@ class FileService:
             # Scan directory
             for item in sorted(target_path.iterdir()):
                 if item.is_dir():
-                    # Only show directories that contain .mkv files
+                    # Only show directories that contain video files
                     if _directory_has_videos(item):
                         directories.append(
                             {

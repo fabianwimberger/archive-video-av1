@@ -113,6 +113,8 @@ async def has_converted_file(source_file: str) -> tuple[bool, Optional[str]]:
     """
     Check if a converted version of the file exists.
 
+    Output is always Matroska (.mkv), regardless of source container.
+
     Args:
         source_file: Path to source file
 
@@ -124,9 +126,8 @@ async def has_converted_file(source_file: str) -> tuple[bool, Optional[str]]:
     source_path = Path(source_file)
     stem = source_path.stem
     parent = source_path.parent
-    ext = source_path.suffix
 
-    converted_path = parent / f"{stem}_conv{ext}"
+    converted_path = parent / f"{stem}_conv.mkv"
 
     if not converted_path.exists():
         return False, None

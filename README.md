@@ -129,7 +129,7 @@ docker restart convert-service
 
 Open `http://localhost:8000` after starting the container.
 
-- **Convert** — browse mounted `.mkv` files, search within the current folder, select unconverted files for encoding, or select converted originals for cleanup.
+- **Convert** — browse mounted `.mkv`/`.mp4` files, search within the current folder, select unconverted files for encoding, or select converted originals for cleanup.
 - **Settings** — choose a preset, adjust CRF, encoder speed, SVT-AV1 parameters, audio bitrate, crop detection, and maximum resolution.
 - **Auto Speed / Auto Grain** — analyze the selected file and apply a suggested preset or grain settings.
 - **Active Queue** — watch running jobs, cluster status, pause or resume processing, cancel jobs, clear queued work, and inspect logs for active encodes.
@@ -137,7 +137,7 @@ Open `http://localhost:8000` after starting the container.
 
 ## How It Works
 
-1. **File browser** shows `.mkv` files from the mounted volume
+1. **File browser** shows `.mkv` and `.mp4` files from the mounted volume
 2. **Select files** and choose conversion settings
 3. **Jobs are queued** and processed sequentially in the background
 4. **FFmpeg pipeline per file:**
@@ -148,7 +148,7 @@ Open `http://localhost:8000` after starting the container.
    - SVT-AV1 encoding with progress output
    - `mkvmerge` finalization with metadata
 5. **Real-time updates** are pushed to the browser via WebSocket
-6. **Output** is saved alongside the source with `_conv` suffix
+6. **Output** is saved alongside the source as Matroska (`_conv.mkv`), regardless of source container
 
 ## Presets
 
