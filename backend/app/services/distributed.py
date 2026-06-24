@@ -56,7 +56,7 @@ class DistributedService:
         configured_url = settings.DISTRIBUTED_PUBLIC_URL.strip().rstrip("/")
         if configured_url:
             return configured_url
-        return f"http://{socket.gethostname()}:8000"
+        return f"http://{_detect_local_ip()}:8000"
 
     @property
     def leader_url(self) -> str:
@@ -893,6 +893,17 @@ class DistributedService:
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
         sock.setblocking(False)
         return sock
+
+
+def _detect_local_ip() -> str:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return socket.gethostname()
+    finally:
+        sock.close()
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
