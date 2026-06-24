@@ -769,8 +769,7 @@ class DistributedService:
                 "leader_age_seconds": self.leader_age_seconds(),
             }
             try:
-                await asyncio.get_running_loop().sock_sendto(
-                    self._socket,
+                self._socket.sendto(
                     json.dumps(payload).encode("utf-8"),
                     (
                         settings.DISTRIBUTED_DISCOVERY_GROUP,
@@ -789,40 +788,50 @@ class DistributedService:
 
     async def _listen_loop(self) -> None:
         assert self._socket is not None
-        while self._running:
+        sock = self._socket
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _on_readable() -> None:
             try:
-                data, _addr = await asyncio.get_running_loop().sock_recvfrom(
-                    self._socket, 65535
-                )
-            except OSError as exc:
-                logger.debug("Cluster discovery receive failed: %s", exc)
-                await asyncio.sleep(settings.DISTRIBUTED_HEARTBEAT_SECONDS)
-                continue
+                data, _addr = sock.recvfrom(65535)
+            except OSError:
+                return
+            queue.put_nowait(data)
 
-            try:
-                payload = json.loads(data.decode("utf-8"))
-            except ValueError:
-                continue
+        loop.add_reader(sock.fileno(), _on_readable)
+        try:
+            while self._running:
+                data = await queue.get()
+                self._handle_discovery_packet(data)
+        finally:
+            loop.remove_reader(sock.fileno())
 
-            if payload.get("service") != "archive-video-av1":
-                continue
-            if payload.get("node_id") == self.node_id:
-                continue
+    def _handle_discovery_packet(self, data: bytes) -> None:
+        try:
+            payload = json.loads(data.decode("utf-8"))
+        except ValueError:
+            return
 
-            base_url = str(payload.get("base_url", "")).rstrip("/")
-            node_id = str(payload.get("node_id", ""))
-            if not base_url or not node_id:
-                continue
+        if payload.get("service") != "archive-video-av1":
+            return
+        if payload.get("node_id") == self.node_id:
+            return
 
-            self._remember_peer(
-                PeerNode(
-                    node_id=node_id,
-                    node_name=str(payload.get("node_name") or node_id),
-                    base_url=base_url,
-                    last_seen=time.monotonic(),
-                )
+        base_url = str(payload.get("base_url", "")).rstrip("/")
+        node_id = str(payload.get("node_id", ""))
+        if not base_url or not node_id:
+            return
+
+        self._remember_peer(
+            PeerNode(
+                node_id=node_id,
+                node_name=str(payload.get("node_name") or node_id),
+                base_url=base_url,
+                last_seen=time.monotonic(),
             )
-            self._remember_reported_leader(payload)
+        )
+        self._remember_reported_leader(payload)
 
     def _remember_peer(self, peer: PeerNode) -> None:
         if peer.node_id == self.node_id:

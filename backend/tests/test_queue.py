@@ -1,5 +1,7 @@
 """Tests for queue API endpoints."""
 
+import asyncio
+import json
 import time
 
 import pytest
@@ -595,3 +597,88 @@ class TestDistributedStartupClaims:
         assert claimed is not None
         assert claimed.id == job.id
         assert claimed.status == "processing"
+
+
+class TestClusterMulticast:
+    """Multicast send/receive must use real socket calls, not uvloop's
+    unimplemented loop.sock_sendto()/sock_recvfrom()."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_loop_sends_on_real_socket(self, monkeypatch):
+        import socket as socket_module
+
+        receiver = socket_module.socket(socket_module.AF_INET, socket_module.SOCK_DGRAM)
+        receiver.bind(("127.0.0.1", 0))
+        receiver.settimeout(2)
+        port = receiver.getsockname()[1]
+
+        sender = socket_module.socket(socket_module.AF_INET, socket_module.SOCK_DGRAM)
+        monkeypatch.setattr(distributed_service, "_socket", sender)
+        monkeypatch.setattr(distributed_service, "_running", True)
+        monkeypatch.setattr(settings, "DISTRIBUTED_DISCOVERY_GROUP", "127.0.0.1")
+        monkeypatch.setattr(settings, "DISTRIBUTED_DISCOVERY_PORT", port)
+        monkeypatch.setattr(settings, "DISTRIBUTED_HEARTBEAT_SECONDS", 100)
+
+        task = asyncio.create_task(distributed_service._broadcast_loop())
+        try:
+            data, _addr = await asyncio.get_event_loop().run_in_executor(
+                None, receiver.recvfrom, 65535
+            )
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            sender.close()
+            receiver.close()
+
+        payload = json.loads(data.decode("utf-8"))
+        assert payload["service"] == "archive-video-av1"
+
+    @pytest.mark.asyncio
+    async def test_listen_loop_remembers_peer_from_real_socket(self, monkeypatch):
+        import socket as socket_module
+
+        listener = socket_module.socket(socket_module.AF_INET, socket_module.SOCK_DGRAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.setblocking(False)
+        port = listener.getsockname()[1]
+
+        monkeypatch.setattr(distributed_service, "_socket", listener)
+        monkeypatch.setattr(distributed_service, "_running", True)
+        monkeypatch.setattr(distributed_service, "_peers", {})
+        monkeypatch.setattr(settings, "DISTRIBUTED_NODE_ID", "pc")
+
+        task = asyncio.create_task(distributed_service._listen_loop())
+        try:
+            sender = socket_module.socket(
+                socket_module.AF_INET, socket_module.SOCK_DGRAM
+            )
+            sender.sendto(
+                json.dumps(
+                    {
+                        "service": "archive-video-av1",
+                        "node_id": "server",
+                        "node_name": "server",
+                        "base_url": "http://server:8000",
+                        "is_leader": True,
+                    }
+                ).encode("utf-8"),
+                ("127.0.0.1", port),
+            )
+            sender.close()
+
+            for _ in range(50):
+                if distributed_service.peers():
+                    break
+                await asyncio.sleep(0.1)
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            listener.close()
+
+        assert [peer.node_id for peer in distributed_service.peers()] == ["server"]
