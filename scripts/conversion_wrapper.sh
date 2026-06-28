@@ -355,6 +355,7 @@ fi
 
 subtitle_info=$(ffprobe -v error -select_streams s -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
 sub_map=""
+sub_codec="-c:s copy"
 case "$SUBTITLE_TRACK_MODE" in
     preferred)
         preferred_sub=$(find_preferred_stream "$subtitle_info" "$PREFERRED_SUBTITLE_LANGUAGES")
@@ -375,6 +376,15 @@ case "$SUBTITLE_TRACK_MODE" in
         exit 1
         ;;
 esac
+
+# mov_text (MP4 text subtitles) cannot be copied into MKV; convert to srt
+if [[ -n "$sub_map" || "$SUBTITLE_TRACK_MODE" == "all" ]]; then
+    sub_codec_name=$(ffprobe -v error -select_streams s:0 -show_entries stream=codec_name -of csv=p=0 "$INPUT_FILE" 2>/dev/null)
+    if [[ "$sub_codec_name" == "mov_text" ]]; then
+        sub_codec="-c:s srt"
+        echo "STATUS:Subtitle codec mov_text incompatible with MKV, converting to srt"
+    fi
+fi
 
 # Determine video encoding parameters
 # Only copy if input is AV1 AND no crop/scale needed
@@ -429,7 +439,7 @@ echo "STAGE:encoding"
 echo "STATUS:Encoding video..."
 
 # Build the full ffmpeg command (stored in MKV metadata for reproducibility)
-FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 $audio_map $sub_map $vf $af_filter $video_params $color_flags $audio_params -c:s copy -f matroska -y \"$OUTPUT_FILE\""
+FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 $audio_map $sub_map $vf $af_filter $video_params $color_flags $audio_params $sub_codec -f matroska -y \"$OUTPUT_FILE\""
 echo "CMD:$FFMPEG_CMD"
 
 nice -n 10 ffmpeg -v quiet -progress - -nostats \
@@ -440,7 +450,7 @@ nice -n 10 ffmpeg -v quiet -progress - -nostats \
     $video_params \
     $color_flags \
     $audio_params \
-    -c:s copy \
+    $sub_codec \
     -f matroska -y "$temp_file" 2>&1
 
 ffmpeg_status=$?
