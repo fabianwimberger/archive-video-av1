@@ -230,13 +230,13 @@ train_pgo() {
 case "$BUILD_TYPE" in
     "pgo-generate")
         build_opus
-        build_all "-fprofile-generate=$PGO_DIR -fprofile-update=atomic"
+        build_all "-fprofile-generate=$PGO_DIR -fprofile-update=prefer-atomic"
         ;;
     "pgo-train")
         train_pgo
         ;;
     "pgo-use")
-        build_all "-fprofile-use=$PGO_DIR -fprofile-correction -Wno-missing-profile"
+        build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training"
         ;;
     "standard")
         build_opus
