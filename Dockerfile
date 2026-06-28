@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM ubuntu:26.04 AS builder
+FROM ubuntu:26.10 AS builder
 
 ARG FFMPEG_VERSION="8.1.2"
 ARG OPUS_VERSION="1.6.1"
@@ -88,7 +88,7 @@ RUN echo "=== Verifying optimizations ==="; \
     strip /usr/local/bin/ffmpeg /usr/local/bin/ffprobe || { echo "ERROR: Failed to strip binaries"; exit 1; }
 
 # Runtime stage
-FROM ubuntu:26.04
+FROM ubuntu:26.10
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/venv/bin:$PATH" \
     LC_ALL=C.UTF-8 \
