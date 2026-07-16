@@ -3,7 +3,7 @@
 set -e
 
 OPUS_VERSION="${OPUS_VERSION:-1.6.1}"
-SVT_AV1_VERSION="${SVT_AV1_VERSION:-4.1.0}"
+SVT_AV1_VERSION="${SVT_AV1_VERSION:-4.2.0}"
 BUILD_TYPE="${1:-}"  # "pgo-generate", "pgo-train", or "pgo-use"
 PREFERRED_AUDIO_LANGUAGES="${PREFERRED_AUDIO_LANGUAGES:-ger,deu,de,eng,en}"
 
