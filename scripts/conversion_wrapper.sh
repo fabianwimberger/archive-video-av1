@@ -586,23 +586,12 @@ rm -f "$AUDIO_CMD_FILE" "$audio_log"
 echo "STAGE:finalizing"
 echo "STATUS:Finalizing output file with correct metadata..."
 
-# A/V sync: ffmpeg normalizes each split output to start at timestamp 0, so
-# any source-level offset between the audio and video streams (which the
-# single combined filtergraph used to absorb) has to be reintroduced here.
-video_start=$(probe_field "$video_ord" start_time)
-sync_args=()
-out_track=0
-for idx in "${audio_indices[@]}"; do
-    audio_start=$(probe_field "$idx" start_time)
-    if [[ -n "$video_start" && -n "$audio_start" ]]; then
-        delta_ms=$(awk -v a="$audio_start" -v v="$video_start" 'BEGIN { printf "%.0f", (a - v) * 1000 }')
-        if [[ "$delta_ms" != "0" ]]; then
-            sync_args+=(--sync "${out_track}:${delta_ms}")
-            echo "STATUS:Audio track $idx start offset ${delta_ms}ms relative to video, applying --sync"
-        fi
-    fi
-    out_track=$((out_track + 1))
-done
+# A/V sync: neither branch seeks (no -ss), so ffmpeg preserves each stream's
+# original container-relative start time in its own output file rather than
+# resetting to zero - verified empirically (a source with an 11ms audio/video
+# start_time delta reproduced the same delta in the separately-demuxed audio
+# branch, matching the single-filtergraph baseline exactly). No manual
+# realignment needed; mkvmerge joins the branches using their own timestamps.
 
 # Build MKV global tags XML with both ffmpeg commands (stored for reproducibility)
 TAGS_XML=$(mktemp)
@@ -611,7 +600,7 @@ FFMPEG_CMD_XML_A=$(printf '%s' "$FFMPEG_CMD_A" | sed 's/&/\&amp;/g; s/</\&lt;/g;
 printf '<?xml version="1.0" encoding="UTF-8"?>\n<Tags>\n  <Tag>\n    <Simple>\n      <Name>ENCODER_SETTINGS</Name>\n      <String>%s\n%s</String>\n    </Simple>\n  </Tag>\n</Tags>\n' "$FFMPEG_CMD_XML_V" "$FFMPEG_CMD_XML_A" > "$TAGS_XML"
 
 # Use mkvmerge to join the two branches, calculate BPS tags, and embed encoding metadata
-mkvmerge -o "$OUTPUT_FILE" --global-tags "$TAGS_XML" "$tmp_video" "${sync_args[@]}" "$tmp_audio" >/dev/null 2>&1
+mkvmerge -o "$OUTPUT_FILE" --global-tags "$TAGS_XML" "$tmp_video" "$tmp_audio" >/dev/null 2>&1
 mkvmerge_status=$?
 rm -f "$TAGS_XML" "$tmp_video" "$tmp_audio"
 
