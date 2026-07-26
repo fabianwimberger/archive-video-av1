@@ -306,13 +306,13 @@ fi
 case "$AUDIO_TRACK_MODE" in
     preferred)
         audio_map="-map 0:$audio_idx"
-        encode_audio=1
+        audio_indices=("$audio_idx")
         echo "STATUS:Audio track mode: preferred (stream $audio_idx)"
         ;;
     all)
         audio_map="-map 0:a"
-        encode_audio=0
-        echo "STATUS:Audio track mode: all"
+        mapfile -t audio_indices <<< "$(awk -F',' 'NF && $1 != "" { print $1 }' <<< "$audio_streams")"
+        echo "STATUS:Audio track mode: all (${#audio_indices[@]} track(s))"
         ;;
     *)
         echo "ERROR:Invalid AUDIO_TRACK_MODE '$AUDIO_TRACK_MODE' (expected preferred or all)"
@@ -321,21 +321,24 @@ case "$AUDIO_TRACK_MODE" in
 esac
 
 # --- AUDIO FILTER CHAIN ---
+# Every mapped track is normalized (two-pass loudnorm) and encoded to Opus.
+# Each track gets its own measurement pass since loudness varies per track.
 TARGET_I="-20"
 TARGET_TP="-2"
 TARGET_LRA="13"
 af_filter=""
-audio_params="-c:a copy"
+audio_params="-c:a libopus -b:a $AUDIO_BITRATE"
 
-if [[ $encode_audio -eq 1 ]]; then
-    echo "STAGE:audio_measure"
-    echo "STATUS:Measuring audio for two-pass normalization..."
+echo "STAGE:audio_measure"
+echo "STATUS:Measuring audio for two-pass normalization (${#audio_indices[@]} track(s))..."
 
+filter_idx=0
+for idx in "${audio_indices[@]}"; do
     # Create temp file for measurement JSON
     LOUDNORM_JSON=$(mktemp)
 
     # Run pass 1: measurement
-    ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$audio_idx \
+    ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
         -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
         -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
 
@@ -350,19 +353,18 @@ if [[ $encode_audio -eq 1 ]]; then
 
     # Validate we got measurements
     if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
-        echo "ERROR:Failed to parse loudnorm measurements"
+        echo "ERROR:Failed to parse loudnorm measurements for stream $idx"
         exit 1
     fi
 
-    echo "STATUS:Audio measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
+    echo "STATUS:Audio stream $idx measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
 
-    # Build pass 2 filter with measured values
-    af_filter="-af aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
-    audio_params="-c:a libopus -b:a $AUDIO_BITRATE"
-    echo "STATUS:Audio: two-pass normalization (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
-else
-    echo "STATUS:Audio: copying all tracks without loudness normalization"
-fi
+    # Build pass 2 filter with measured values, targeted at this track's output position
+    af_filter="${af_filter} -filter:a:${filter_idx} aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
+    filter_idx=$((filter_idx + 1))
+done
+
+echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
 
 subtitle_info=$(ffprobe -v error -select_streams s -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
 sub_map=""
