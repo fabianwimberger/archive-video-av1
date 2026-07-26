@@ -99,11 +99,16 @@ build_all() {
     cd /build/FFmpeg
     make clean 2>/dev/null || true
     export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
+    # Only pin to compile-time CPU flags when targeting a specific arch (-march set).
+    # Generic builds (no ARCH_FLAGS) need runtime cpudetect so decode/swscale can
+    # still pick AVX2 etc. on capable hosts instead of being stuck on the baseline.
+    cpudetect_flag="--enable-runtime-cpudetect"
+    [[ -n "$ARCH_FLAGS" ]] && cpudetect_flag="--disable-runtime-cpudetect"
     ./configure \
         --prefix=/usr/local --pkg-config-flags="--static" --extra-libs="-lpthread -lm" \
         --cc="${CC:-gcc}" --cxx="${CXX:-g++}" \
         --enable-lto --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
-        --disable-runtime-cpudetect --disable-autodetect --disable-programs \
+        "$cpudetect_flag" --disable-autodetect --disable-programs \
         --enable-ffmpeg --enable-ffprobe \
         --enable-avcodec --enable-avformat --enable-avfilter \
         --enable-swresample --enable-protocol=file,pipe \
