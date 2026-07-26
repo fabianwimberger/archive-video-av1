@@ -89,9 +89,16 @@ first_stream() {
 
 # --- MAIN CONVERSION LOGIC ---
 
-# Use same directory as output file for temp file
+# Encode to TEMP_DIR when available so the (long-running) encode pass writes
+# to fast local storage instead of the output share; mkvmerge remuxes the
+# result into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
 output_dir="$(dirname "$OUTPUT_FILE")"
-temp_file="${output_dir}/.$(basename "$OUTPUT_FILE").tmp"
+if [[ -d "$TEMP_DIR" && -w "$TEMP_DIR" ]]; then
+    temp_dir="$TEMP_DIR"
+else
+    temp_dir="$output_dir"
+fi
+temp_file="${temp_dir}/.$(basename "$OUTPUT_FILE").tmp"
 
 # Get total frames for progress calculation
 TOTAL_FRAMES=$(get_total_frames "$INPUT_FILE")
