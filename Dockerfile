@@ -81,12 +81,15 @@ RUN echo "=== Verifying optimizations ==="; \
     \
     if [ "$ENABLE_PGO" = "true" ]; then \
         profile_count=$(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l); \
-        if [ "$profile_count" -lt 10 ]; then \
+        if [ "$profile_count" -eq 0 ]; then \
+            echo "WARNING: PGO was enabled but no profile data was generated (no sample videos found); built without PGO optimization"; \
+        elif [ "$profile_count" -lt 10 ]; then \
             echo "ERROR: PGO was enabled but only $profile_count profile files were generated (expected at least 10)"; \
             echo "This indicates PGO training failed or samples were insufficient"; \
             exit 1; \
+        else \
+            echo "✓ PGO profiles: $profile_count .gcda files found"; \
         fi; \
-        echo "✓ PGO profiles: $profile_count .gcda files found"; \
     fi; \
     \
     if ! strings /usr/local/bin/ffmpeg 2>/dev/null | grep -q "GCC"; then \

@@ -129,9 +129,9 @@ train_pgo() {
     mkdir -p "$PGO_DIR"
 
     if ! ls /build/samples/*.mkv 2>/dev/null | head -1 > /dev/null; then
-        echo "ERROR: PGO enabled but no sample videos found in /build/samples/"
-        echo "Please provide sample videos for PGO training or set ENABLE_PGO=false"
-        exit 1
+        echo "WARNING: PGO enabled but no sample videos found in /build/samples/"
+        echo "Skipping PGO training; the build will fall back to a standard (non-PGO) build"
+        return
     fi
 
     for f in /build/samples/*.mkv; do
@@ -241,7 +241,12 @@ case "$BUILD_TYPE" in
         train_pgo
         ;;
     "pgo-use")
-        build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training"
+        if ls "$PGO_DIR"/*.gcda >/dev/null 2>&1; then
+            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training"
+        else
+            echo "WARNING: No PGO profile data found in $PGO_DIR, falling back to standard build"
+            build_all ""
+        fi
         ;;
     "standard")
         build_opus
