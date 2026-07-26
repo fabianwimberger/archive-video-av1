@@ -23,9 +23,10 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
 - **Distributed processing** with opt-in LAN peer discovery and remote job delegation
 - **Persistent** — conversion history, custom presets, and queue state survive restarts
 - **Conversion presets:**
-  - **Default** — CRF 26, film grain preservation (`film-grain=8`)
-  - **Animated** — CRF 35, tune=0 (visual quality) — optimized for animated content
-  - **Grainy** — CRF 26, heavy grain preservation (`film-grain=16:film-grain-denoise=1`)
+  - **Default** — CRF 26, general purpose
+  - **Animated** — CRF 35 — optimized for animated content
+  - **Grainy** — CRF 26, grain preservation (`film-grain=12:film-grain-denoise=1`)
+  - **Very Grainy** — CRF 26, heavy grain preservation (`film-grain=18:film-grain-denoise=1`)
   - **Custom presets** — create, edit, duplicate, import/export your own presets
 - **Automatic crop detection** (consensus-based, 8-point sampling)
 - **Two-pass audio normalization** (loudnorm, Opus stereo output)

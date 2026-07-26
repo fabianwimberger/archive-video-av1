@@ -14,7 +14,7 @@ class ConversionSettings(BaseModel):
         default=4, ge=0, le=13, description="Encoding preset (0=slowest, 13=fastest)"
     )
     svt_params: Optional[str] = Field(
-        default="tune=0",
+        default="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1",
         description="SVT-AV1 parameters (optional, empty for no extra params)",
     )
     audio_bitrate: str = Field(default="96k", description="Audio bitrate")

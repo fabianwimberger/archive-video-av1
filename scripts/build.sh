@@ -144,22 +144,23 @@ train_pgo() {
 
         # Map sample filename prefix to preset params (kept in sync with
         # BUILTIN_PRESETS in backend/app/services/lifecycle.py)
+        base_svt="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1"
         preset_crf=26
-        svt_base="tune=0"
+        svt_base="$base_svt"
         case "$basename_f" in
             animated_*)
                 preset_crf=35
-                svt_base="tune=0"
+                svt_base="$base_svt"
                 echo "    Preset: animated (CRF $preset_crf, $svt_base)"
                 ;;
             grainy_*)
                 preset_crf=26
-                svt_base="tune=0:film-grain=12:film-grain-denoise=1"
+                svt_base="${base_svt}:film-grain=12:film-grain-denoise=1"
                 echo "    Preset: grainy (CRF $preset_crf, $svt_base)"
                 ;;
             verygrainy_*)
                 preset_crf=26
-                svt_base="tune=0:film-grain=18:film-grain-denoise=1"
+                svt_base="${base_svt}:film-grain=18:film-grain-denoise=1"
                 echo "    Preset: verygrainy (CRF $preset_crf, $svt_base)"
                 ;;
             *)
