@@ -43,16 +43,54 @@ echo "STAGE:initializing"
 
 # --- HELPER FUNCTIONS (from original script) ---
 
+# Single-probe helpers: $PROBE holds one `ffprobe -of flat` dump of the whole
+# container. Every field lookup below reads from it instead of re-opening the
+# file, since each ffprobe invocation re-indexes the container from scratch.
+
+# probe_get <escaped-key>: value for a flat "key=value" line (quotes stripped).
+# Keys are matched as sed BRE patterns, so callers must escape literal dots.
+probe_get() {
+    local val
+    val=$(sed -n "s/^$1=//p" <<< "$PROBE" | head -1)
+    val="${val%\"}"
+    val="${val#\"}"
+    echo "$val"
+}
+
+# probe_ordinals <codec_type>: stream ordinals (== absolute stream index for
+# well-formed containers) matching a codec_type, one per line.
+probe_ordinals() {
+    sed -n "s/^streams\.stream\.\([0-9]\{1,\}\)\.codec_type=\"$1\"\$/\1/p" <<< "$PROBE"
+}
+
+# probe_field <ordinal> <field>: a single stream field.
+probe_field() {
+    probe_get "streams\.stream\.$1\.$2"
+}
+
+# probe_stream_list <codec_type>: "index,language" per line, matching the
+# shape of the old `-of csv=p=0` output so find_preferred_stream/first_stream
+# keep working unchanged. No language tag produces a trailing comma.
+probe_stream_list() {
+    local ord lang
+    for ord in $(probe_ordinals "$1"); do
+        lang=$(probe_get "streams\.stream\.${ord}\.tags\.language")
+        echo "${ord},${lang}"
+    done
+}
+
 get_total_frames() {
-    local video="$1"
-    local frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "$video")
+    local ord="$1"
+    local frames duration fps
+
+    frames=$(probe_field "$ord" nb_frames)
 
     if [[ ! "$frames" =~ ^[0-9]+$ ]]; then
-        local duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$video")
-        local fps=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "$video")
+        duration=$(probe_get 'format\.duration')
+        fps=$(probe_field "$ord" r_frame_rate)
 
         if [[ -n "$duration" && -n "$fps" && "$duration" != "N/A" ]]; then
-            frames=$(awk -v d="$duration" -v f="$fps" 'BEGIN { split(f,a,"/"); rate=a[1]/a[2]; printf "%.0f", d*rate }')
+            frames=$(awk -v d="$duration" -v f="$fps" 'BEGIN { split(f,a,"/"); rate=(a[2]>0)?a[1]/a[2]:0; printf "%.0f", d*rate }')
         fi
     fi
     echo "${frames:-0}"
@@ -100,23 +138,37 @@ else
 fi
 temp_file="${temp_dir}/.$(basename "$OUTPUT_FILE").tmp"
 
+# Single source probe: one ffprobe call for everything below, instead of
+# opening (and fully re-indexing) the container once per field.
+PROBE=$(ffprobe -v error \
+    -show_entries "format=duration,start_time:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate,start_time,color_transfer,color_primaries,color_space:stream_tags=language" \
+    -of flat "$INPUT_FILE" 2>/dev/null)
+
+if [[ -z "$PROBE" ]]; then
+    echo "ERROR:Failed to probe input file"
+    exit 1
+fi
+
+video_ord=$(probe_ordinals video | head -1)
+if [[ -z "$video_ord" ]]; then
+    echo "ERROR:No video stream found"
+    exit 1
+fi
+
 # Get total frames for progress calculation
-TOTAL_FRAMES=$(get_total_frames "$INPUT_FILE")
+TOTAL_FRAMES=$(get_total_frames "$video_ord")
 echo "total_frames=$TOTAL_FRAMES"
 
 # Detect video codec
-video_codec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$INPUT_FILE")
+video_codec=$(probe_field "$video_ord" codec_name)
 is_av1=0
 [[ "$video_codec" == "av1" ]] && is_av1=1
 echo "STATUS:Detected video codec: $video_codec"
 
 # --- HDR DETECTION ---
-color_transfer=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=color_transfer -of csv=p=0 "$INPUT_FILE")
-color_primaries=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=color_primaries -of csv=p=0 "$INPUT_FILE")
-color_space=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=color_space -of csv=p=0 "$INPUT_FILE")
+color_transfer=$(probe_field "$video_ord" color_transfer)
+color_primaries=$(probe_field "$video_ord" color_primaries)
+color_space=$(probe_field "$video_ord" color_space)
 
 is_hdr=0
 hdr_type=""
@@ -204,7 +256,7 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
     echo "STATUS:Detecting crop parameters..."
 
     # Get video duration for percentage-based sampling
-    duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE")
+    duration=$(probe_get 'format\.duration')
 
     if [[ -n "$duration" && "$duration" != "N/A" ]]; then
         # Collect all crop values by sampling at 8 points
@@ -230,9 +282,8 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
 
         if [[ -n "$crop" ]]; then
             # Get original resolution
-            orig_res=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$INPUT_FILE")
-            orig_width=$(echo "$orig_res" | cut -d',' -f1)
-            orig_height=$(echo "$orig_res" | cut -d',' -f2)
+            orig_width=$(probe_field "$video_ord" width)
+            orig_height=$(probe_field "$video_ord" height)
             crop_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
             crop_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
 
@@ -268,10 +319,8 @@ if [[ $is_av1 -eq 0 ]]; then
         source_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
         source_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
     else
-        source_res=$(ffprobe -v error -select_streams v:0 \
-            -show_entries stream=width,height -of csv=p=0 "$INPUT_FILE")
-        source_width=$(echo "$source_res" | cut -d',' -f1)
-        source_height=$(echo "$source_res" | cut -d',' -f2)
+        source_width=$(probe_field "$video_ord" width)
+        source_height=$(probe_field "$video_ord" height)
     fi
 
     if [[ -n "$source_width" && -n "$source_height" ]] && \
@@ -293,7 +342,7 @@ vf=""
 [[ -n "$vf_parts" ]] && vf="-vf $vf_parts"
 
 # Detect audio/subs
-audio_streams=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
+audio_streams=$(probe_stream_list audio)
 preferred_audio=$(find_preferred_stream "$audio_streams" "$PREFERRED_AUDIO_LANGUAGES")
 first_audio=$(first_stream "$audio_streams")
 audio_idx="${preferred_audio:-$first_audio}"
@@ -366,7 +415,7 @@ done
 
 echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
 
-subtitle_info=$(ffprobe -v error -select_streams s -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
+subtitle_info=$(probe_stream_list subtitle)
 sub_map=""
 sub_codec="-c:s copy"
 case "$SUBTITLE_TRACK_MODE" in
@@ -390,9 +439,29 @@ case "$SUBTITLE_TRACK_MODE" in
         ;;
 esac
 
-# mov_text (MP4 text subtitles) cannot be copied into MKV; convert to srt
-if [[ -n "$sub_map" || "$SUBTITLE_TRACK_MODE" == "all" ]]; then
-    sub_codec_name=$(ffprobe -v error -select_streams s:0 -show_entries stream=codec_name -of csv=p=0 "$INPUT_FILE" 2>/dev/null)
+# mov_text (MP4 text subtitles) cannot be copied into MKV; convert to srt.
+# Checks the codec of the stream(s) actually selected above, not stream s:0 -
+# language preference may have picked a different subtitle stream than s:0.
+if [[ "$SUBTITLE_TRACK_MODE" == "all" ]]; then
+    if [[ -n "$sub_map" ]]; then
+        has_mov_text=0
+        has_other=0
+        for sub_ord in $(probe_ordinals subtitle); do
+            if [[ "$(probe_field "$sub_ord" codec_name)" == "mov_text" ]]; then
+                has_mov_text=1
+            else
+                has_other=1
+            fi
+        done
+        if [[ $has_mov_text -eq 1 && $has_other -eq 1 ]]; then
+            echo "STATUS:Mixed subtitle codecs (mov_text and other) in 'all' mode; some subtitle tracks may fail to remux"
+        elif [[ $has_mov_text -eq 1 ]]; then
+            sub_codec="-c:s srt"
+            echo "STATUS:Subtitle codec mov_text incompatible with MKV, converting to srt"
+        fi
+    fi
+elif [[ -n "$subtitle_idx" ]]; then
+    sub_codec_name=$(probe_field "$subtitle_idx" codec_name)
     if [[ "$sub_codec_name" == "mov_text" ]]; then
         sub_codec="-c:s srt"
         echo "STATUS:Subtitle codec mov_text incompatible with MKV, converting to srt"
