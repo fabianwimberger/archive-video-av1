@@ -281,12 +281,16 @@ if [[ $is_av1 -eq 0 ]]; then
     fi
 fi
 
-# Build video filter string
+# Build video filter string (skip entirely when copying the video stream,
+# since -vf is incompatible with -c:v copy)
 vf_parts=""
 [[ -n "$crop" ]] && vf_parts="$crop"
 [[ -n "$scale_filter" ]] && { [[ -n "$vf_parts" ]] && vf_parts="${vf_parts},${scale_filter}" || vf_parts="$scale_filter"; }
-[[ -n "$vf_parts" ]] && vf_parts="${vf_parts},format=yuv420p10le" || vf_parts="format=yuv420p10le"
-vf="-vf $vf_parts"
+if [[ $is_av1 -eq 0 ]]; then
+    [[ -n "$vf_parts" ]] && vf_parts="${vf_parts},format=yuv420p10le" || vf_parts="format=yuv420p10le"
+fi
+vf=""
+[[ -n "$vf_parts" ]] && vf="-vf $vf_parts"
 
 # Detect audio/subs
 audio_streams=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
