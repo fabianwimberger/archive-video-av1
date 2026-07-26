@@ -99,18 +99,26 @@ build_all() {
     cd /build/FFmpeg
     make clean 2>/dev/null || true
     export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
+    # Only pin to compile-time CPU flags when targeting a specific arch (-march set).
+    # Generic builds (no ARCH_FLAGS) need runtime cpudetect so decode/swscale can
+    # still pick AVX2 etc. on capable hosts instead of being stuck on the baseline.
+    cpudetect_flag="--enable-runtime-cpudetect"
+    [[ -n "$ARCH_FLAGS" ]] && cpudetect_flag="--disable-runtime-cpudetect"
     ./configure \
         --prefix=/usr/local --pkg-config-flags="--static" --extra-libs="-lpthread -lm" \
         --cc="${CC:-gcc}" --cxx="${CXX:-g++}" \
         --enable-lto --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
-        --disable-runtime-cpudetect --disable-autodetect --disable-programs \
+        "$cpudetect_flag" --disable-autodetect --disable-programs \
+        --disable-everything \
         --enable-ffmpeg --enable-ffprobe \
         --enable-avcodec --enable-avformat --enable-avfilter \
         --enable-swresample --enable-protocol=file,pipe \
-        --enable-demuxer=matroska,mov,mpegts --enable-muxer=matroska,null \
-        --enable-decoder=h264,hevc,av1,aac,ac3,eac3,dca,truehd,mlp,pgssub \
-        --enable-encoder=libsvtav1,libopus,pcm_s16le,wrapped_avframe \
-        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm \
+        --enable-demuxer=matroska,mov --enable-muxer=matroska,null \
+        --enable-decoder=h264,hevc,av1,aac,ac3,eac3,dca,truehd,mlp,pgssub,movtext \
+        --enable-encoder=libsvtav1,libopus,pcm_s16le,wrapped_avframe,srt \
+        --enable-parser=h264,hevc,av1,aac,ac3,dca,mlp \
+        --enable-bsf=extract_extradata,av1_metadata,h264_mp4toannexb,hevc_mp4toannexb \
+        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm,showinfo \
         --enable-libsvtav1 --enable-libopus --enable-zlib \
         --extra-cflags="$CFLAGS -I/usr/local/include" \
         --extra-ldflags="$LDFLAGS -L/usr/local/lib"
@@ -124,9 +132,9 @@ train_pgo() {
     mkdir -p "$PGO_DIR"
 
     if ! ls /build/samples/*.mkv 2>/dev/null | head -1 > /dev/null; then
-        echo "ERROR: PGO enabled but no sample videos found in /build/samples/"
-        echo "Please provide sample videos for PGO training or set ENABLE_PGO=false"
-        exit 1
+        echo "WARNING: PGO enabled but no sample videos found in /build/samples/"
+        echo "Skipping PGO training; the build will fall back to a standard (non-PGO) build"
+        return
     fi
 
     for f in /build/samples/*.mkv; do
@@ -236,7 +244,12 @@ case "$BUILD_TYPE" in
         train_pgo
         ;;
     "pgo-use")
-        build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training"
+        if ls "$PGO_DIR"/*.gcda >/dev/null 2>&1; then
+            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training"
+        else
+            echo "WARNING: No PGO profile data found in $PGO_DIR, falling back to standard build"
+            build_all ""
+        fi
         ;;
     "standard")
         build_opus

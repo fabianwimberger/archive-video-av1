@@ -29,8 +29,10 @@ jobs:
         include:
           - platform: linux/amd64
             runner: ubuntu-latest
+            suffix: linux-amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
+            suffix: linux-arm64
     permissions:
       contents: read
       packages: write
@@ -57,12 +59,14 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=-${{ matrix.suffix }},onlatest=true
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix=,suffix=,format=short
+            type=sha,prefix=,format=short
 
       - name: Build and push platform image
         id: push
@@ -123,7 +127,7 @@ jobs:
             docker buildx imagetools create \
               --tag $tag \
               $tag-linux-amd64 \
-              $tag-linux-arm64 || true
+              $tag-linux-arm64
           done
 
       - name: Output manifest info

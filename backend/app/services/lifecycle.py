@@ -17,7 +17,7 @@ BUILTIN_PRESETS = [
         "is_builtin": True,
         "crf": 26,
         "encoder_preset": 4,
-        "svt_params": "tune=0:film-grain=8",
+        "svt_params": "tune=0:film-grain=8:film-grain-denoise=1",
         "audio_bitrate": "96k",
         "skip_crop_detect": False,
         "max_resolution": 1080,
