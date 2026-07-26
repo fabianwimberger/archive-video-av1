@@ -73,12 +73,6 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
 # Verification and stripping (always runs after successful build)
 RUN echo "=== Verifying optimizations ==="; \
     \
-    if ! nm /usr/local/bin/ffmpeg 2>/dev/null | grep -q "__gnu_lto"; then \
-        echo "WARNING: No LTO symbols found in ffmpeg binary"; \
-    else \
-        echo "✓ LTO detected in ffmpeg"; \
-    fi; \
-    \
     if [ "$ENABLE_PGO" = "true" ]; then \
         profile_count=$(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l); \
         if [ "$profile_count" -eq 0 ]; then \
