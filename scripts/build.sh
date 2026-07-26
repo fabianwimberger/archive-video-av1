@@ -118,7 +118,7 @@ build_all() {
         --enable-encoder=libsvtav1,libopus,pcm_s16le,wrapped_avframe,srt \
         --enable-parser=h264,hevc,av1,aac,ac3,dca,mlp \
         --enable-bsf=extract_extradata,av1_metadata,h264_mp4toannexb,hevc_mp4toannexb \
-        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm,showinfo \
+        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm,showinfo,null,anull \
         --enable-libsvtav1 --enable-libopus --enable-zlib \
         --extra-cflags="$CFLAGS -I/usr/local/include" \
         --extra-ldflags="$LDFLAGS -L/usr/local/lib"
