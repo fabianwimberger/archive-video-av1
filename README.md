@@ -143,10 +143,10 @@ Open `http://localhost:8000` after starting the container.
 4. **FFmpeg pipeline per file:**
    - Detect video codec (skip re-encode if AV1)
    - Crop detection via 8-point consensus sampling
-   - Two-pass loudnorm audio measurement and normalization
    - Configurable audio and subtitle stream selection
-   - SVT-AV1 encoding with progress output
-   - `mkvmerge` finalization with metadata
+   - SVT-AV1 video (+ subtitle) encoding and two-pass loudnorm audio
+     normalization run as concurrent branches with live progress output
+   - `mkvmerge` joins the two branches and finalizes metadata
 5. **Real-time updates** are pushed to the browser via WebSocket
 6. **Output** is saved alongside the source as Matroska (`_conv.mkv`), regardless of source container
 
@@ -154,7 +154,7 @@ Open `http://localhost:8000` after starting the container.
 
 Presets are stored in the SQLite database and survive restarts.
 
-- **Built-in presets** (`Default`, `Animated`, `Grainy`) are seeded automatically and synced on startup. They cannot be edited or deleted, but you can duplicate them to create user presets.
+- **Built-in presets** (`Default`, `Animated`, `Grainy`, `Very Grainy`) are seeded automatically and synced on startup. They cannot be edited or deleted, but you can duplicate them to create user presets.
 - **User presets** can be created from the settings panel, or saved from any past job's settings snapshot.
 - **Import / Export** — share presets as JSON documents via the Manage Presets modal.
 - **Default preset** — one preset can be marked as default; it is pre-selected in the UI on load.
