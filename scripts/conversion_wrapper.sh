@@ -19,21 +19,26 @@ PREFERRED_SUBTITLE_LANGUAGES="${PREFERRED_SUBTITLE_LANGUAGES:-ger,deu,de,eng,en}
 
 # --- TRAP SIGNALS ---
 
+# Kill every process in this script's process group. Branch A's ffmpeg calls
+# run inside a backgrounded subshell (see measure_and_encode_audio), so they
+# are grandchildren, not direct children - pkill -P $$ would miss them.
+kill_all() {
+    pkill -g $$ 2>/dev/null
+}
+
 cleanup() {
+    # Ignore further SIGTERM/SIGINT first: kill_all's pkill -g $$ also matches
+    # this script's own PID (unlike the old pkill -P $$), so without this the
+    # self-delivered signal re-enters this handler recursively and it never
+    # reaches exit.
+    trap '' SIGTERM SIGINT
     echo "STATUS:Stopping conversion..."
-    # Kill all child processes in the current process group
-    pkill -P $$
+    kill_all
 
     # Clean up temp files
-    if [[ -n "$temp_file" && -f "$temp_file" ]]; then
-        rm -f "$temp_file"
-    fi
-    if [[ -n "$LOUDNORM_JSON" && -f "$LOUDNORM_JSON" ]]; then
-        rm -f "$LOUDNORM_JSON"
-    fi
-    if [[ -n "$TAGS_XML" && -f "$TAGS_XML" ]]; then
-        rm -f "$TAGS_XML"
-    fi
+    for f in "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE" "$LOUDNORM_JSON" "$TAGS_XML"; do
+        [[ -n "$f" && -f "$f" ]] && rm -f "$f"
+    done
 
     exit 1
 }
@@ -136,7 +141,10 @@ if [[ -d "$TEMP_DIR" && -w "$TEMP_DIR" ]]; then
 else
     temp_dir="$output_dir"
 fi
-temp_file="${temp_dir}/.$(basename "$OUTPUT_FILE").tmp"
+tmp_video="${temp_dir}/.$(basename "$OUTPUT_FILE").video.tmp"
+tmp_audio="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.tmp"
+audio_log="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.log"
+AUDIO_CMD_FILE="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.cmd"
 
 # Single source probe: one ffprobe call for everything below, instead of
 # opening (and fully re-indexing) the container once per field.
@@ -369,52 +377,6 @@ case "$AUDIO_TRACK_MODE" in
         ;;
 esac
 
-# --- AUDIO FILTER CHAIN ---
-# Every mapped track is normalized (two-pass loudnorm) and encoded to Opus.
-# Each track gets its own measurement pass since loudness varies per track.
-TARGET_I="-20"
-TARGET_TP="-2"
-TARGET_LRA="13"
-af_filter=""
-audio_params="-c:a libopus -b:a $AUDIO_BITRATE"
-
-echo "STAGE:audio_measure"
-echo "STATUS:Measuring audio for two-pass normalization (${#audio_indices[@]} track(s))..."
-
-filter_idx=0
-for idx in "${audio_indices[@]}"; do
-    # Create temp file for measurement JSON
-    LOUDNORM_JSON=$(mktemp)
-
-    # Run pass 1: measurement
-    ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
-        -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
-        -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
-
-    # Parse JSON output (using sed for BusyBox compatibility)
-    MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-
-    rm -f "$LOUDNORM_JSON"
-
-    # Validate we got measurements
-    if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
-        echo "ERROR:Failed to parse loudnorm measurements for stream $idx"
-        exit 1
-    fi
-
-    echo "STATUS:Audio stream $idx measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
-
-    # Build pass 2 filter with measured values, targeted at this track's output position
-    af_filter="${af_filter} -filter:a:${filter_idx} aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
-    filter_idx=$((filter_idx + 1))
-done
-
-echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
-
 subtitle_info=$(probe_stream_list subtitle)
 sub_map=""
 sub_codec="-c:s copy"
@@ -515,56 +477,149 @@ else
     video_params="-c:v libsvtav1 -preset $PRESET -crf $CRF -g 225 $svt_params_arg"
 fi
 
-# --- ENCODING ---
+# --- AUDIO MEASUREMENT + ENCODE (branch A) ---
+# Runs concurrently with video encoding (branch V below). Two-pass loudnorm
+# needs a measurement read before the encode read, so this branch reads the
+# source twice; video encoding takes far longer at preset 4, so branch A
+# stays hidden behind it rather than adding to wall clock.
+TARGET_I="-20"
+TARGET_TP="-2"
+TARGET_LRA="13"
+
+# fd 3 keeps a handle on the wrapper's real stdout so branch A can still
+# report STATUS: lines to the UI even though its own stdout/stderr (which
+# would otherwise leak raw ffmpeg progress key=value lines and corrupt
+# branch V's progress parsing) are captured to $audio_log instead.
+exec 3>&1
+
+measure_and_encode_audio() {
+    local af_filter="" filter_idx=0 idx
+
+    for idx in "${audio_indices[@]}"; do
+        LOUDNORM_JSON=$(mktemp)
+
+        ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
+            -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
+            -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
+
+        MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+
+        rm -f "$LOUDNORM_JSON"
+
+        if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
+            echo "STATUS:Failed to parse loudnorm measurements for stream $idx" >&3
+            return 1
+        fi
+
+        echo "STATUS:Audio stream $idx measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU" >&3
+
+        af_filter="${af_filter} -filter:a:${filter_idx} aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
+        filter_idx=$((filter_idx + 1))
+    done
+
+    echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)" >&3
+
+    local ffmpeg_cmd_a="ffmpeg -i \"$INPUT_FILE\" $audio_map -vn -sn -dn $af_filter -c:a libopus -b:a $AUDIO_BITRATE -f matroska -y \"$tmp_audio\""
+    echo "STATUS:CMD (audio): $ffmpeg_cmd_a" >&3
+    echo "$ffmpeg_cmd_a" > "$AUDIO_CMD_FILE"
+
+    ffmpeg -v error -i "$INPUT_FILE" $audio_map -vn -sn -dn \
+        $af_filter \
+        -c:a libopus -b:a "$AUDIO_BITRATE" \
+        -f matroska -y "$tmp_audio"
+}
+
+# --- ENCODING (branch V + branch A, concurrent) ---
 
 echo "STAGE:encoding"
-echo "STATUS:Encoding video..."
+echo "STATUS:Encoding video and audio concurrently..."
 
-# Build the full ffmpeg command (stored in MKV metadata for reproducibility)
-FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 $audio_map $sub_map $vf $af_filter $video_params $color_flags $audio_params $sub_codec -f matroska -y \"$OUTPUT_FILE\""
-echo "CMD:$FFMPEG_CMD"
+# Build the video-branch ffmpeg command (stored in MKV metadata for reproducibility)
+FFMPEG_CMD_V="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 $sub_map -an -dn $vf $video_params $color_flags $sub_codec -f matroska -y \"$tmp_video\""
+echo "CMD:$FFMPEG_CMD_V"
 
+# Branch V: video (+ subtitles). The only process permitted to write to the
+# wrapper's own stdout - its -progress output drives the UI's progress bar.
 nice -n 10 ffmpeg -v quiet -progress - -nostats \
     -i "$INPUT_FILE" \
-    -map 0:v:0 $audio_map $sub_map \
+    -map 0:v:0 $sub_map -an -dn \
     $vf \
-    $af_filter \
     $video_params \
     $color_flags \
-    $audio_params \
     $sub_codec \
-    -f matroska -y "$temp_file" 2>&1
+    -f matroska -y "$tmp_video" 2>&1 &
+pid_v=$!
 
-ffmpeg_status=$?
+# Branch A: audio measurement + encode. Fully redirected to a log file - no
+# -progress, so no risk of a stray key=value line corrupting branch V's
+# frame counter.
+{ measure_and_encode_audio; } > "$audio_log" 2>&1 &
+pid_a=$!
 
-if [[ $ffmpeg_status -ne 0 ]]; then
-    echo "ERROR:FFmpeg encoding failed"
-    rm -f "$temp_file"
+wait $pid_v
+rc_v=$?
+wait $pid_a
+rc_a=$?
+
+if [[ $rc_v -ne 0 || $rc_a -ne 0 ]]; then
+    [[ $rc_v -ne 0 ]] && echo "ERROR:Video encoding failed"
+    if [[ $rc_a -ne 0 ]]; then
+        echo "ERROR:Audio encoding failed"
+        if [[ -f "$audio_log" ]]; then
+            while IFS= read -r line; do echo "STATUS:$line"; done < "$audio_log"
+        fi
+    fi
+    kill_all
+    rm -f "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE"
     exit 1
 fi
+
+FFMPEG_CMD_A=$(cat "$AUDIO_CMD_FILE" 2>/dev/null)
+rm -f "$AUDIO_CMD_FILE" "$audio_log"
 
 # --- FINALIZATION ---
 
 echo "STAGE:finalizing"
 echo "STATUS:Finalizing output file with correct metadata..."
 
-# Build MKV global tags XML with the ffmpeg command for reproducibility
-TAGS_XML=$(mktemp)
-FFMPEG_CMD_XML=$(printf '%s' "$FFMPEG_CMD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
-printf '<?xml version="1.0" encoding="UTF-8"?>\n<Tags>\n  <Tag>\n    <Simple>\n      <Name>ENCODER_SETTINGS</Name>\n      <String>%s</String>\n    </Simple>\n  </Tag>\n</Tags>\n' "$FFMPEG_CMD_XML" > "$TAGS_XML"
+# A/V sync: ffmpeg normalizes each split output to start at timestamp 0, so
+# any source-level offset between the audio and video streams (which the
+# single combined filtergraph used to absorb) has to be reintroduced here.
+video_start=$(probe_field "$video_ord" start_time)
+sync_args=()
+out_track=0
+for idx in "${audio_indices[@]}"; do
+    audio_start=$(probe_field "$idx" start_time)
+    if [[ -n "$video_start" && -n "$audio_start" ]]; then
+        delta_ms=$(awk -v a="$audio_start" -v v="$video_start" 'BEGIN { printf "%.0f", (a - v) * 1000 }')
+        if [[ "$delta_ms" != "0" ]]; then
+            sync_args+=(--sync "${out_track}:${delta_ms}")
+            echo "STATUS:Audio track $idx start offset ${delta_ms}ms relative to video, applying --sync"
+        fi
+    fi
+    out_track=$((out_track + 1))
+done
 
-# Use mkvmerge to remux, calculate BPS tags, and embed encoding metadata
-mkvmerge -o "$OUTPUT_FILE" --global-tags "$TAGS_XML" "$temp_file" >/dev/null 2>&1
+# Build MKV global tags XML with both ffmpeg commands (stored for reproducibility)
+TAGS_XML=$(mktemp)
+FFMPEG_CMD_XML_V=$(printf '%s' "$FFMPEG_CMD_V" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+FFMPEG_CMD_XML_A=$(printf '%s' "$FFMPEG_CMD_A" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+printf '<?xml version="1.0" encoding="UTF-8"?>\n<Tags>\n  <Tag>\n    <Simple>\n      <Name>ENCODER_SETTINGS</Name>\n      <String>%s\n%s</String>\n    </Simple>\n  </Tag>\n</Tags>\n' "$FFMPEG_CMD_XML_V" "$FFMPEG_CMD_XML_A" > "$TAGS_XML"
+
+# Use mkvmerge to join the two branches, calculate BPS tags, and embed encoding metadata
+mkvmerge -o "$OUTPUT_FILE" --global-tags "$TAGS_XML" "$tmp_video" "${sync_args[@]}" "$tmp_audio" >/dev/null 2>&1
 mkvmerge_status=$?
-rm -f "$TAGS_XML"
+rm -f "$TAGS_XML" "$tmp_video" "$tmp_audio"
 
 if [[ $mkvmerge_status -eq 0 && -f "$OUTPUT_FILE" ]]; then
     echo "STAGE:complete"
     echo "STATUS:Conversion complete"
-    rm -f "$temp_file"
     exit 0
 else
     echo "ERROR:Failed to finalize output file"
-    rm -f "$temp_file"
     exit 1
 fi
