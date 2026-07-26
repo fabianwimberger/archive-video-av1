@@ -89,9 +89,16 @@ first_stream() {
 
 # --- MAIN CONVERSION LOGIC ---
 
-# Use same directory as output file for temp file
+# Encode to TEMP_DIR when available so the (long-running) encode pass writes
+# to fast local storage instead of the output share; mkvmerge remuxes the
+# result into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
 output_dir="$(dirname "$OUTPUT_FILE")"
-temp_file="${output_dir}/.$(basename "$OUTPUT_FILE").tmp"
+if [[ -d "$TEMP_DIR" && -w "$TEMP_DIR" ]]; then
+    temp_dir="$TEMP_DIR"
+else
+    temp_dir="$output_dir"
+fi
+temp_file="${temp_dir}/.$(basename "$OUTPUT_FILE").tmp"
 
 # Get total frames for progress calculation
 TOTAL_FRAMES=$(get_total_frames "$INPUT_FILE")
@@ -206,7 +213,7 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
             time=$(awk -v d="$duration" -v p="$percent" 'BEGIN { printf "%.0f", d * p / 100 }')
 
             # Run cropdetect - filter analysis to null output
-            crop_value=$(ffmpeg -hide_banner -ss $time -i "$INPUT_FILE" -t 3 -vf cropdetect -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
+            crop_value=$(ffmpeg -hide_banner -ss $time -i "$INPUT_FILE" -t 3 -vf cropdetect=round=4 -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
 
             echo "STATUS:Sample ${percent}% (@${time}s): ${crop_value:-none}"
 
@@ -274,12 +281,16 @@ if [[ $is_av1 -eq 0 ]]; then
     fi
 fi
 
-# Build video filter string
+# Build video filter string (skip entirely when copying the video stream,
+# since -vf is incompatible with -c:v copy)
 vf_parts=""
 [[ -n "$crop" ]] && vf_parts="$crop"
 [[ -n "$scale_filter" ]] && { [[ -n "$vf_parts" ]] && vf_parts="${vf_parts},${scale_filter}" || vf_parts="$scale_filter"; }
-[[ -n "$vf_parts" ]] && vf_parts="${vf_parts},format=yuv420p10le" || vf_parts="format=yuv420p10le"
-vf="-vf $vf_parts"
+if [[ $is_av1 -eq 0 ]]; then
+    [[ -n "$vf_parts" ]] && vf_parts="${vf_parts},format=yuv420p10le" || vf_parts="format=yuv420p10le"
+fi
+vf=""
+[[ -n "$vf_parts" ]] && vf="-vf $vf_parts"
 
 # Detect audio/subs
 audio_streams=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
@@ -295,13 +306,13 @@ fi
 case "$AUDIO_TRACK_MODE" in
     preferred)
         audio_map="-map 0:$audio_idx"
-        encode_audio=1
+        audio_indices=("$audio_idx")
         echo "STATUS:Audio track mode: preferred (stream $audio_idx)"
         ;;
     all)
         audio_map="-map 0:a"
-        encode_audio=0
-        echo "STATUS:Audio track mode: all"
+        mapfile -t audio_indices <<< "$(awk -F',' 'NF && $1 != "" { print $1 }' <<< "$audio_streams")"
+        echo "STATUS:Audio track mode: all (${#audio_indices[@]} track(s))"
         ;;
     *)
         echo "ERROR:Invalid AUDIO_TRACK_MODE '$AUDIO_TRACK_MODE' (expected preferred or all)"
@@ -310,21 +321,24 @@ case "$AUDIO_TRACK_MODE" in
 esac
 
 # --- AUDIO FILTER CHAIN ---
+# Every mapped track is normalized (two-pass loudnorm) and encoded to Opus.
+# Each track gets its own measurement pass since loudness varies per track.
 TARGET_I="-20"
 TARGET_TP="-2"
 TARGET_LRA="13"
 af_filter=""
-audio_params="-c:a copy"
+audio_params="-c:a libopus -b:a $AUDIO_BITRATE"
 
-if [[ $encode_audio -eq 1 ]]; then
-    echo "STAGE:audio_measure"
-    echo "STATUS:Measuring audio for two-pass normalization..."
+echo "STAGE:audio_measure"
+echo "STATUS:Measuring audio for two-pass normalization (${#audio_indices[@]} track(s))..."
 
+filter_idx=0
+for idx in "${audio_indices[@]}"; do
     # Create temp file for measurement JSON
     LOUDNORM_JSON=$(mktemp)
 
     # Run pass 1: measurement
-    ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$audio_idx \
+    ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
         -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
         -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
 
@@ -339,19 +353,18 @@ if [[ $encode_audio -eq 1 ]]; then
 
     # Validate we got measurements
     if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
-        echo "ERROR:Failed to parse loudnorm measurements"
+        echo "ERROR:Failed to parse loudnorm measurements for stream $idx"
         exit 1
     fi
 
-    echo "STATUS:Audio measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
+    echo "STATUS:Audio stream $idx measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
 
-    # Build pass 2 filter with measured values
-    af_filter="-af aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
-    audio_params="-c:a libopus -b:a $AUDIO_BITRATE"
-    echo "STATUS:Audio: two-pass normalization (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
-else
-    echo "STATUS:Audio: copying all tracks without loudness normalization"
-fi
+    # Build pass 2 filter with measured values, targeted at this track's output position
+    af_filter="${af_filter} -filter:a:${filter_idx} aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
+    filter_idx=$((filter_idx + 1))
+done
+
+echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
 
 subtitle_info=$(ffprobe -v error -select_streams s -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
 sub_map=""

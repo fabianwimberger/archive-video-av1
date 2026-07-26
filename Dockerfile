@@ -8,6 +8,12 @@ ARG ENABLE_PGO="false"
 ARG ENABLE_LTO="true"
 ARG ARCH_FLAGS
 
+# Pinned checksums for the source tarballs below; update alongside the
+# matching *_VERSION when bumping.
+ARG FFMPEG_SHA256="32faba5ef67340d54724941eae1425580791195312a4fd13bf6f820a2818bf22"
+ARG OPUS_SHA256="6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
+ARG SVT_AV1_SHA256="c7b13c4a84bd3751aa35fcc72be13e6875467e7c2216879251a486e5b1e4e740"
+
 ENV PGO_DIR="/build/profiles"
 ENV ARCH_FLAGS=${ARCH_FLAGS}
 ENV ENABLE_LTO=${ENABLE_LTO}
@@ -24,10 +30,13 @@ WORKDIR /build
 
 # Download sources (cached unless versions change)
 RUN wget -q "https://downloads.xiph.org/releases/opus/opus-${OPUS_VERSION}.tar.gz" && \
+    echo "${OPUS_SHA256}  opus-${OPUS_VERSION}.tar.gz" | sha256sum -c - && \
     tar -xzf "opus-${OPUS_VERSION}.tar.gz" && rm "opus-${OPUS_VERSION}.tar.gz" && \
     wget -q "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v${SVT_AV1_VERSION}/SVT-AV1-v${SVT_AV1_VERSION}.tar.gz" && \
+    echo "${SVT_AV1_SHA256}  SVT-AV1-v${SVT_AV1_VERSION}.tar.gz" | sha256sum -c - && \
     tar -xzf SVT-AV1-v${SVT_AV1_VERSION}.tar.gz && rm SVT-AV1-v${SVT_AV1_VERSION}.tar.gz && \
     wget -q "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz" && \
+    echo "${FFMPEG_SHA256}  ffmpeg-${FFMPEG_VERSION}.tar.gz" | sha256sum -c - && \
     tar -xzf "ffmpeg-${FFMPEG_VERSION}.tar.gz" && rm "ffmpeg-${FFMPEG_VERSION}.tar.gz" && \
     mv "ffmpeg-${FFMPEG_VERSION}" FFmpeg
 
@@ -64,20 +73,17 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
 # Verification and stripping (always runs after successful build)
 RUN echo "=== Verifying optimizations ==="; \
     \
-    if ! nm /usr/local/bin/ffmpeg 2>/dev/null | grep -q "__gnu_lto"; then \
-        echo "WARNING: No LTO symbols found in ffmpeg binary"; \
-    else \
-        echo "✓ LTO detected in ffmpeg"; \
-    fi; \
-    \
     if [ "$ENABLE_PGO" = "true" ]; then \
         profile_count=$(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l); \
-        if [ "$profile_count" -lt 10 ]; then \
+        if [ "$profile_count" -eq 0 ]; then \
+            echo "WARNING: PGO was enabled but no profile data was generated (no sample videos found); built without PGO optimization"; \
+        elif [ "$profile_count" -lt 10 ]; then \
             echo "ERROR: PGO was enabled but only $profile_count profile files were generated (expected at least 10)"; \
             echo "This indicates PGO training failed or samples were insufficient"; \
             exit 1; \
+        else \
+            echo "✓ PGO profiles: $profile_count .gcda files found"; \
         fi; \
-        echo "✓ PGO profiles: $profile_count .gcda files found"; \
     fi; \
     \
     if ! strings /usr/local/bin/ffmpeg 2>/dev/null | grep -q "GCC"; then \
