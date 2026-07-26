@@ -44,4 +44,19 @@ def test_pgo_training_uses_preferred_audio_stream():
         in script
     )
     assert 'ffmpeg -hide_banner -i "$f" -map 0:$audio_idx -t 10' in script
-    assert 'ffmpeg -hide_banner -i "$f" -map 0:v:0 -map 0:$audio_idx -t 15' in script
+    # Training encodes video and audio as separate invocations, mirroring the
+    # concurrent branch V / branch A split in conversion_wrapper.sh.
+    assert 'ffmpeg -hide_banner -i "$f" -map 0:v:0 -an -sn -dn -t 15' in script
+    assert 'ffmpeg -hide_banner -i "$f" -map 0:$audio_idx -vn -sn -dn -t 15' in script
+
+
+def test_only_video_branch_emits_progress():
+    script = WRAPPER.read_text()
+
+    assert "-progress -" in script
+
+    start = script.index("measure_and_encode_audio()")
+    end = script.index("\n}\n", start)
+    audio_branch = script[start:end]
+
+    assert "-progress" not in audio_branch

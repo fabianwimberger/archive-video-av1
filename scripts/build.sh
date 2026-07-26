@@ -142,9 +142,10 @@ train_pgo() {
         basename_f=$(basename "$f")
         echo "Training: $basename_f"
 
-        # Map sample filename prefix to preset params
+        # Map sample filename prefix to preset params (kept in sync with
+        # BUILTIN_PRESETS in backend/app/services/lifecycle.py)
         preset_crf=26
-        svt_base="tune=0:film-grain=8"
+        svt_base="tune=0"
         case "$basename_f" in
             animated_*)
                 preset_crf=35
@@ -153,8 +154,13 @@ train_pgo() {
                 ;;
             grainy_*)
                 preset_crf=26
-                svt_base="tune=0:film-grain=16:film-grain-denoise=1"
+                svt_base="tune=0:film-grain=12:film-grain-denoise=1"
                 echo "    Preset: grainy (CRF $preset_crf, $svt_base)"
+                ;;
+            verygrainy_*)
+                preset_crf=26
+                svt_base="tune=0:film-grain=18:film-grain-denoise=1"
+                echo "    Preset: verygrainy (CRF $preset_crf, $svt_base)"
                 ;;
             *)
                 echo "    Preset: default (CRF $preset_crf, $svt_base)"
@@ -172,7 +178,7 @@ train_pgo() {
         echo "    Audio: stream $audio_idx"
 
         echo "  Stage: crop_detect"
-        crop=$(ffmpeg -hide_banner -i "$f" -t 1 -vf cropdetect -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
+        crop=$(ffmpeg -hide_banner -i "$f" -t 1 -vf cropdetect=round=4 -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
         if [ -z "$crop" ]; then
             echo "ERROR: Crop detection failed"
             echo "Ensure sample videos are at least 10 seconds long and have valid video streams"
@@ -223,13 +229,22 @@ train_pgo() {
             echo "    HDR: HLG detected"
         fi
 
-        echo "  Stage: encoding"
-        ffmpeg -hide_banner -i "$f" -map 0:v:0 -map 0:$audio_idx -t 15 \
+        # Trained as two separate invocations (video-only, audio-only) to
+        # mirror the runtime shape (see conversion_wrapper.sh branch V/A) -
+        # training on the old combined command would optimize a code path
+        # that no longer runs at runtime. Kept serial: two processes writing
+        # the same .gcda files would race during gcov's merge-on-exit.
+        echo "  Stage: encoding (video)"
+        ffmpeg -hide_banner -i "$f" -map 0:v:0 -an -sn -dn -t 15 \
             -vf "$vf_chain" \
-            -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:measured_I=${i}:measured_TP=${tp}:measured_LRA=${lra}:measured_thresh=${thresh}:offset=${offset}" \
             -c:v libsvtav1 -preset 4 -crf $preset_crf -g 225 -svtav1-params "${svt_base}${svt_hdr}" \
             $color_flags \
-            -c:a libopus -b:a 96k -f matroska -y /dev/null || { echo "ERROR: Encoding failed"; exit 1; }
+            -f matroska -y /dev/null || { echo "ERROR: Video encoding failed"; exit 1; }
+
+        echo "  Stage: encoding (audio)"
+        ffmpeg -hide_banner -i "$f" -map 0:$audio_idx -vn -sn -dn -t 15 \
+            -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:measured_I=${i}:measured_TP=${tp}:measured_LRA=${lra}:measured_thresh=${thresh}:offset=${offset}" \
+            -c:a libopus -b:a 96k -f matroska -y /dev/null || { echo "ERROR: Audio encoding failed"; exit 1; }
     done
     echo "Profiles: $(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l)"
 }

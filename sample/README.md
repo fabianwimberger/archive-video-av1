@@ -12,12 +12,13 @@ Place `.mkv` sample files in this directory **before building** the Docker image
 
 ```
 sample/
-  default_movie.4k.mkv     # Live-action (CRF 26, film-grain=8)
-  animated_show.1080p.mkv   # Animated (CRF 35, tune=0)
-  grainy_film.1080p.mkv     # Grainy (CRF 26, film-grain=16, film-grain-denoise=1)
+  default_movie.4k.mkv        # Live-action (CRF 26, tune=0)
+  animated_show.1080p.mkv     # Animated (CRF 35, tune=0)
+  grainy_film.1080p.mkv       # Grainy (CRF 26, film-grain=12, film-grain-denoise=1)
+  verygrainy_film.1080p.mkv   # Very Grainy (CRF 26, film-grain=18, film-grain-denoise=1)
 ```
 
-Files without a recognized prefix (`default_`, `animated_`, `grainy_`) are trained with the default preset.
+Files without a recognized prefix (`default_`, `animated_`, `grainy_`, `verygrainy_`) are trained with the default preset.
 
 ## Sample Requirements
 
