@@ -109,13 +109,16 @@ build_all() {
         --cc="${CC:-gcc}" --cxx="${CXX:-g++}" \
         --enable-lto --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
         "$cpudetect_flag" --disable-autodetect --disable-programs \
+        --disable-everything \
         --enable-ffmpeg --enable-ffprobe \
         --enable-avcodec --enable-avformat --enable-avfilter \
         --enable-swresample --enable-protocol=file,pipe \
-        --enable-demuxer=matroska,mov,mpegts --enable-muxer=matroska,null \
-        --enable-decoder=h264,hevc,av1,aac,ac3,eac3,dca,truehd,mlp,pgssub \
-        --enable-encoder=libsvtav1,libopus,pcm_s16le,wrapped_avframe \
-        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm \
+        --enable-demuxer=matroska,mov --enable-muxer=matroska,null \
+        --enable-decoder=h264,hevc,av1,aac,ac3,eac3,dca,truehd,mlp,pgssub,movtext \
+        --enable-encoder=libsvtav1,libopus,pcm_s16le,wrapped_avframe,srt \
+        --enable-parser=h264,hevc,av1,aac,ac3,dca,mlp \
+        --enable-bsf=extract_extradata,av1_metadata,h264_mp4toannexb,hevc_mp4toannexb \
+        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm,showinfo \
         --enable-libsvtav1 --enable-libopus --enable-zlib \
         --extra-cflags="$CFLAGS -I/usr/local/include" \
         --extra-ldflags="$LDFLAGS -L/usr/local/lib"
