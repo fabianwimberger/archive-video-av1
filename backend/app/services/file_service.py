@@ -220,26 +220,19 @@ class FileService:
         from app.models.preset import Preset
 
         async with AsyncSessionLocal() as db:
-            if film_grain >= 12:
-                grainy_result = await db.execute(
-                    select(Preset).where(Preset.name == "Grainy")
-                )
-                grainy = grainy_result.scalar_one_or_none()
-                preset_id = grainy.id if grainy else None
-                return (
-                    preset_id,
-                    f"High film grain detected ({film_grain}), using Grainy preset",
-                )
+            if film_grain >= 18:
+                name = "Very Grainy"
+                reason = f"Very high film grain detected ({film_grain}), using Very Grainy preset"
+            elif film_grain >= 12:
+                name = "Grainy"
+                reason = f"High film grain detected ({film_grain}), using Grainy preset"
             else:
-                default_result = await db.execute(
-                    select(Preset).where(Preset.name == "Default")
-                )
-                default_preset = default_result.scalar_one_or_none()
-                preset_id = default_preset.id if default_preset else None
-                return (
-                    preset_id,
-                    f"Film grain level ({film_grain}) within normal range, using Default preset",
-                )
+                name = "Default"
+                reason = f"Film grain level ({film_grain}) within normal range, using Default preset"
+
+            result = await db.execute(select(Preset).where(Preset.name == name))
+            preset = result.scalar_one_or_none()
+            return (preset.id if preset else None, reason)
 
     async def delete_converted_file(self, converted_path: str) -> bool:
         """
