@@ -213,7 +213,7 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
             time=$(awk -v d="$duration" -v p="$percent" 'BEGIN { printf "%.0f", d * p / 100 }')
 
             # Run cropdetect - filter analysis to null output
-            crop_value=$(ffmpeg -hide_banner -ss $time -i "$INPUT_FILE" -t 3 -vf cropdetect -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
+            crop_value=$(ffmpeg -hide_banner -ss $time -i "$INPUT_FILE" -t 3 -vf cropdetect=round=4 -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
 
             echo "STATUS:Sample ${percent}% (@${time}s): ${crop_value:-none}"
 
