@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Callable, Dict, Any, List, Optional, TypedDict
 from app.config import settings
@@ -102,6 +103,16 @@ class ConversionService:
                     "PATH": "/usr/bin:/bin:/usr/local/bin",
                     "LC_ALL": "C.UTF-8",
                     "LANG": "C.UTF-8",
+                    **{
+                        k: os.environ[k]
+                        for k in (
+                            "AUDIO_TRACK_MODE",
+                            "SUBTITLE_TRACK_MODE",
+                            "PREFERRED_AUDIO_LANGUAGES",
+                            "PREFERRED_SUBTITLE_LANGUAGES",
+                        )
+                        if k in os.environ
+                    },
                 },
             )
 
