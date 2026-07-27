@@ -71,9 +71,9 @@ def test_pgo_training_svt_base_matches_builtin_presets():
     script = BUILD_SCRIPT.read_text()
 
     match = re.search(r'base_svt="([^"]+)"', script)
-    assert match, "base_svt=\"...\" literal not found in build.sh"
+    assert match, 'base_svt="..." literal not found in build.sh'
     assert match.group(1) == BASE_SVT_PARAMS
 
     match = re.search(r'animated_svt="([^"]+)"', script)
-    assert match, "animated_svt=\"...\" literal not found in build.sh"
+    assert match, 'animated_svt="..." literal not found in build.sh'
     assert match.group(1) == ANIMATED_SVT_PARAMS
