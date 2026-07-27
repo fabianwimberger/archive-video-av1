@@ -76,45 +76,43 @@
                 <h5 class="card-title mb-0"><i class="bi bi-sliders me-2"></i>Settings</h5>
                 <button id="btn-manage-presets" class="btn btn-outline-primary btn-sm">Manage Presets</button>
             </div>
-            <div class="card-body p-3" id="settings-panel">
-                <div class="mb-2">
-                    <label for="preset-select" class="form-label small fw-bold mb-1">Preset Selection</label>
+            <div class="card-body p-3 d-flex flex-column gap-3" id="settings-panel">
+                <div>
+                    <label for="preset-select" class="settings-eyebrow"><i class="bi bi-bookmark-star"></i>Preset</label>
                     <select id="preset-select" class="form-select form-select-sm">
                         <option value="" disabled>Loading presets...</option>
                     </select>
                     <div id="preset-modified-badge" class="small text-warning mt-1 d-none"><i class="bi bi-pencil-square me-1"></i>Modified from preset</div>
                 </div>
 
-                <div class="mb-2">
-                    <label for="preset-slider" class="form-label small d-flex justify-content-between mb-1">
-                        <span>Encoding Preset (Speed)</span>
-                        <span id="preset-value" class="badge bg-secondary">4</span>
-                    </label>
+                <div>
+                    <label for="preset-slider" class="settings-eyebrow"><i class="bi bi-speedometer2"></i>Encoding Speed<span id="preset-value" class="settings-value">4</span></label>
                     <input type="range" id="preset-slider" class="form-range" min="0" max="10" value="4">
+                    <div class="range-scale"><span>Slower · smaller file</span><span>Faster · larger file</span></div>
                 </div>
 
-                <div class="mb-2">
-                    <label for="crf-slider" class="form-label small d-flex justify-content-between mb-1">
-                        <span>CRF (Quality)</span>
-                        <span id="crf-value" class="badge bg-secondary">28</span>
-                    </label>
+                <div>
+                    <label for="crf-slider" class="settings-eyebrow"><i class="bi bi-gem"></i>Quality (CRF)<span id="crf-value" class="settings-value">28</span></label>
                     <input type="range" id="crf-slider" class="form-range" min="0" max="51" value="26">
+                    <div class="range-scale"><span>Higher quality</span><span>Smaller file</span></div>
                 </div>
 
-                <div class="mb-2">
-                    <label for="svt-tune" class="form-label small mb-1 d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                        <span>SVT-AV1 Params</span>
+                <div class="svt-panel">
+                    <div class="svt-panel__header">
+                        <span class="settings-eyebrow"><i class="bi bi-cpu"></i>SVT-AV1 Encoder</span>
                         <div class="d-flex gap-1 flex-wrap">
-                            <button id="btn-auto-preset" class="btn btn-outline-info btn-xs" type="button" title="Auto-suggest encoding speed (0-10) for the selected file" disabled>
-                                <i class="bi bi-stars"></i> Auto Speed
+                            <button id="btn-auto-preset" class="btn btn-auto btn-xs" type="button" title="Auto-suggest encoding speed (0-10) for the selected file" disabled>
+                                <i class="bi bi-speedometer2"></i> Auto Speed
                             </button>
-                            <button id="btn-auto-estimate" class="btn btn-outline-primary btn-xs" type="button" title="Auto-estimate film-grain / denoise SVT-AV1 params for the selected file" disabled>
+                            <button id="btn-auto-estimate" class="btn btn-auto btn-xs" type="button" title="Auto-estimate film-grain / denoise SVT-AV1 params for the selected file" disabled>
                                 <i class="bi bi-magic"></i> Auto Grain
                             </button>
                         </div>
-                    </label>
-                    <div class="row g-1">
-                        <div class="col-4">
+                    </div>
+
+                    <div class="svt-row">
+                        <div class="svt-field">
+                            <label for="svt-tune" class="svt-field-label" data-bs-toggle="tooltip" data-bs-title="Rate-distortion tuning target. The exact mapping of 0/1/2 to visual quality, PSNR or SSIM depends on the encoder build.">Tune <i class="bi bi-question-circle"></i></label>
                             <select id="svt-tune" class="form-select form-select-sm" aria-label="SVT tune">
                                 <option value="0">Tune 0</option>
                                 <option value="1">Tune 1</option>
@@ -122,61 +120,70 @@
                                 <option value="">No tune</option>
                             </select>
                         </div>
-                        <div class="col-4">
-                            <input type="number" id="svt-film-grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="Grain">
+                        <div class="svt-field">
+                            <label for="svt-film-grain" class="svt-field-label">Film Grain</label>
+                            <div class="d-flex gap-1">
+                                <input type="number" id="svt-film-grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="0-50">
+                                <canvas id="svt-grain-preview" class="svt-grain-swatch" width="30" height="30" title="Preview of the selected grain intensity"></canvas>
+                            </div>
                             <datalist id="svt-film-grain-options">
                                 <option value="0"></option>
                                 <option value="8"></option>
                                 <option value="16"></option>
                             </datalist>
                         </div>
-                        <div class="col-4 d-flex align-items-center">
+                        <div class="svt-field svt-field--switch">
                             <div class="form-check form-switch mb-0">
                                 <input class="form-check-input" type="checkbox" role="switch" id="svt-denoise">
-                                <label class="form-check-label small" for="svt-denoise">Denoise</label>
+                                <label class="form-check-label small" for="svt-denoise" data-bs-toggle="tooltip" data-bs-title="Denoises the source before encoding — separate from the synthetic grain re-added at playback.">Denoise</label>
                             </div>
                         </div>
                     </div>
-                    <div class="d-flex flex-wrap column-gap-3 row-gap-1 mt-2">
-                        <div class="form-check form-switch mb-0">
+
+                    <div class="svt-toggle-grid">
+                        <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Preserves detail in flat areas (skies, walls) that CRF would otherwise over-compress.">
                             <input class="form-check-input" type="checkbox" role="switch" id="svt-variance-boost">
-                            <label class="form-check-label small" for="svt-variance-boost">Variance Boost</label>
-                        </div>
-                        <div class="form-check form-switch mb-0">
+                            <span>Variance Boost</span>
+                        </label>
+                        <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Adjusts temporal filtering strength, trading fine detail for cleaner motion.">
                             <input class="form-check-input" type="checkbox" role="switch" id="svt-tf-strength">
-                            <label class="form-check-label small" for="svt-tf-strength">TF Strength</label>
-                        </div>
-                        <div class="form-check form-switch mb-0">
+                            <span>TF Strength</span>
+                        </label>
+                        <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Biases the encoder's rate-distortion decisions toward sharper edges.">
                             <input class="form-check-input" type="checkbox" role="switch" id="svt-sharpness">
-                            <label class="form-check-label small" for="svt-sharpness">Sharpness</label>
-                        </div>
-                        <div class="form-check form-switch mb-0">
+                            <span>Sharpness</span>
+                        </label>
+                        <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Enables in-loop restoration filtering to reduce blocking and ringing artifacts.">
                             <input class="form-check-input" type="checkbox" role="switch" id="svt-restoration">
-                            <label class="form-check-label small" for="svt-restoration">Restoration</label>
-                        </div>
-                        <div class="form-check form-switch mb-0">
+                            <span>Restoration</span>
+                        </label>
+                        <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Uses frequency-weighted quantization matrices for better perceptual quality at the same bitrate.">
                             <input class="form-check-input" type="checkbox" role="switch" id="svt-qm">
-                            <label class="form-check-label small" for="svt-qm">Quantization Matrices</label>
-                        </div>
+                            <span>Quantization Matrices</span>
+                        </label>
                     </div>
-                    <input type="text" id="svt-extra-params" class="form-control form-control-sm mt-2" placeholder="Additional SVT params">
+
+                    <input type="text" id="svt-extra-params" class="form-control form-control-sm svt-mono mt-2" placeholder="Additional SVT params, e.g. scd=1">
                     <div id="estimate-info" class="form-text small text-muted mt-1" style="min-height: 1.2em;"></div>
+
+                    <div class="svt-summary">
+                        <span class="svt-summary-label">Resolved</span>
+                        <code id="svt-resolved-params">Using encoder defaults</code>
+                    </div>
                 </div>
 
-                <div class="mb-2">
-                    <label for="audio-bitrate" class="form-label small mb-1">Audio Bitrate</label>
+                <div>
+                    <label for="audio-bitrate" class="settings-eyebrow"><i class="bi bi-soundwave"></i>Audio Bitrate</label>
                     <input type="text" id="audio-bitrate" class="form-control form-control-sm" value="96k">
                 </div>
 
-                <div class="mb-2">
-                    <div class="form-check">
-                        <input type="checkbox" id="skip-crop" class="form-check-input">
-                        <label for="skip-crop" class="form-check-label small">Skip Crop</label>
-                    </div>
+                <div class="form-check">
+                    <input type="checkbox" id="skip-crop" class="form-check-input">
+                    <label for="skip-crop" class="form-check-label small">Skip Crop</label>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label small fw-bold mb-1">Max Resolution</label>
+                <div>
+                    <label class="settings-eyebrow"><i class="bi bi-aspect-ratio"></i>Max Resolution</label>
                     <div class="btn-group w-100" role="group">
                         <input type="radio" class="btn-check" name="resolution" id="res-720" value="720">
                         <label class="btn btn-outline-secondary btn-sm" for="res-720">720p</label>
@@ -187,7 +194,7 @@
                     </div>
                 </div>
 
-                <button id="btn-convert-selected" class="btn btn-primary w-100 mb-2" disabled>
+                <button id="btn-convert-selected" class="btn btn-primary w-100 mt-auto" disabled>
                     <i class="bi bi-play-fill me-1"></i> Convert Selected (<span id="convert-count">0</span>)
                 </button>
             </div>
@@ -371,48 +378,52 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">SVT Params</label>
-                                <div class="row g-1">
-                                    <div class="col-4">
-                                        <select id="preset-edit-svt_tune" class="form-select form-select-sm" aria-label="SVT tune">
-                                            <option value="0">Tune 0</option>
-                                            <option value="1">Tune 1</option>
-                                            <option value="2">Tune 2</option>
-                                            <option value="">No tune</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-4">
-                                        <input type="number" id="preset-edit-svt_film_grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="Grain">
-                                    </div>
-                                    <div class="col-4 d-flex align-items-center">
-                                        <div class="form-check form-switch mb-0">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_denoise">
-                                            <label class="form-check-label small" for="preset-edit-svt_denoise">Denoise</label>
+                                <div class="svt-panel">
+                                    <div class="svt-row mb-0">
+                                        <div class="svt-field">
+                                            <label for="preset-edit-svt_tune" class="svt-field-label">Tune</label>
+                                            <select id="preset-edit-svt_tune" class="form-select form-select-sm" aria-label="SVT tune">
+                                                <option value="0">Tune 0</option>
+                                                <option value="1">Tune 1</option>
+                                                <option value="2">Tune 2</option>
+                                                <option value="">No tune</option>
+                                            </select>
+                                        </div>
+                                        <div class="svt-field">
+                                            <label for="preset-edit-svt_film_grain" class="svt-field-label">Film Grain</label>
+                                            <input type="number" id="preset-edit-svt_film_grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="0-50">
+                                        </div>
+                                        <div class="svt-field svt-field--switch">
+                                            <div class="form-check form-switch mb-0">
+                                                <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_denoise">
+                                                <label class="form-check-label small" for="preset-edit-svt_denoise">Denoise</label>
+                                            </div>
                                         </div>
                                     </div>
+                                    <div class="svt-toggle-grid">
+                                        <label class="svt-toggle form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_variance_boost">
+                                            <span>Variance Boost</span>
+                                        </label>
+                                        <label class="svt-toggle form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_tf_strength">
+                                            <span>TF Strength</span>
+                                        </label>
+                                        <label class="svt-toggle form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_sharpness">
+                                            <span>Sharpness</span>
+                                        </label>
+                                        <label class="svt-toggle form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_restoration">
+                                            <span>Restoration</span>
+                                        </label>
+                                        <label class="svt-toggle form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_qm">
+                                            <span>Quantization Matrices</span>
+                                        </label>
+                                    </div>
+                                    <input type="text" id="preset-edit-svt_extra_params" class="form-control form-control-sm svt-mono mt-2" placeholder="Additional SVT params">
                                 </div>
-                                <div class="d-flex flex-wrap column-gap-3 row-gap-1 mt-2">
-                                    <div class="form-check form-switch mb-0">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_variance_boost">
-                                        <label class="form-check-label small" for="preset-edit-svt_variance_boost">Variance Boost</label>
-                                    </div>
-                                    <div class="form-check form-switch mb-0">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_tf_strength">
-                                        <label class="form-check-label small" for="preset-edit-svt_tf_strength">TF Strength</label>
-                                    </div>
-                                    <div class="form-check form-switch mb-0">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_sharpness">
-                                        <label class="form-check-label small" for="preset-edit-svt_sharpness">Sharpness</label>
-                                    </div>
-                                    <div class="form-check form-switch mb-0">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_restoration">
-                                        <label class="form-check-label small" for="preset-edit-svt_restoration">Restoration</label>
-                                    </div>
-                                    <div class="form-check form-switch mb-0">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_qm">
-                                        <label class="form-check-label small" for="preset-edit-svt_qm">Quantization Matrices</label>
-                                    </div>
-                                </div>
-                                <input type="text" id="preset-edit-svt_extra_params" class="form-control form-control-sm mt-2" placeholder="Additional SVT params">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">Audio Bitrate</label>

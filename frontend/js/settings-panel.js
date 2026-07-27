@@ -11,6 +11,7 @@ class SettingsPanel {
         await this.loadPresets();
         this.populatePresetSelect();
         this.setupEventListeners();
+        this.refreshSvtSummary();
     }
 
     async loadPresets() {
@@ -79,11 +80,18 @@ class SettingsPanel {
         });
 
         // Other inputs
-        ['svt-film-grain', 'svt-extra-params', 'audio-bitrate'].forEach(id => {
-            document.getElementById(id).addEventListener('input', () => this.checkModified());
+        document.getElementById('audio-bitrate').addEventListener('input', () => this.checkModified());
+        ['svt-film-grain', 'svt-extra-params'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                this.checkModified();
+                this.refreshSvtSummary();
+            });
         });
         ['svt-tune', 'svt-denoise', 'svt-variance-boost', 'svt-tf-strength', 'svt-sharpness', 'svt-restoration', 'svt-qm'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => this.checkModified());
+            document.getElementById(id).addEventListener('change', () => {
+                this.checkModified();
+                this.refreshSvtSummary();
+            });
         });
         document.getElementById('skip-crop').addEventListener('change', () => this.checkModified());
         document.querySelectorAll('input[name="resolution"]').forEach(el => {
@@ -114,6 +122,39 @@ class SettingsPanel {
 
         document.getElementById('estimate-info').textContent = '';
         this.checkModified();
+        this.refreshSvtSummary();
+    }
+
+    refreshSvtSummary() {
+        const params = svtParamsForm.read(svtParamsForm.mainIds());
+        const summary = document.getElementById('svt-resolved-params');
+        if (summary) summary.textContent = params || 'Using encoder defaults';
+        this.renderGrainSwatch();
+    }
+
+    renderGrainSwatch() {
+        const canvas = document.getElementById('svt-grain-preview');
+        if (!canvas || !canvas.getContext) return;
+        const ctx = canvas.getContext('2d');
+        const grain = parseInt(document.getElementById('svt-film-grain').value, 10) || 0;
+        const w = canvas.width;
+        const h = canvas.height;
+        const style = getComputedStyle(document.documentElement);
+        const surface = style.getPropertyValue('--app-surface-2').trim() || '#1b212a';
+        const muted = style.getPropertyValue('--app-muted').trim() || '#8b96a5';
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = surface;
+        ctx.fillRect(0, 0, w, h);
+
+        const intensity = Math.min(Math.max(grain, 0), 50) / 50;
+        const dotCount = Math.round(intensity * w * h * 0.4);
+        ctx.fillStyle = muted;
+        for (let i = 0; i < dotCount; i++) {
+            ctx.globalAlpha = 0.15 + Math.random() * 0.55;
+            ctx.fillRect(Math.random() * w, Math.random() * h, 1, 1);
+        }
+        ctx.globalAlpha = 1;
     }
 
     checkModified() {
@@ -180,6 +221,7 @@ class SettingsPanel {
 
             svtParamsForm.write(svtParamsForm.mainIds(), params);
             this.checkModified();
+            this.refreshSvtSummary();
 
             const info = document.getElementById('estimate-info');
             info.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Estimated: grain=${result.film_grain}, denoise=${result.denoise} (${utils.escapeHtml(result.reason)})</span>`;

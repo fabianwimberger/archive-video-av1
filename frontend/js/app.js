@@ -19,6 +19,7 @@ class ConversionApp {
 
         this.setupViewSwitching();
         this.setupQueueResizer();
+        this.initTooltips();
 
         // Connect WebSocket
         wsClient.connect();
@@ -46,6 +47,12 @@ class ConversionApp {
             html.setAttribute('data-bs-theme', newTheme);
             localStorage.setItem('theme', newTheme);
             this.updateThemeIcon(newTheme, icon);
+        });
+    }
+
+    initTooltips() {
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+            bootstrap.Tooltip.getOrCreateInstance(el);
         });
     }
 
