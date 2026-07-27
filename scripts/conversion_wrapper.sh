@@ -76,11 +76,18 @@ probe_field() {
 # probe_stream_list <codec_type>: "index,language" per line, matching the
 # shape of the old `-of csv=p=0` output so find_preferred_stream/first_stream
 # keep working unchanged. No language tag produces a trailing comma.
+#
+# Reads the stream's own "index" field rather than reusing $ord (its flat
+# position under streams.stream.N): the two are only guaranteed equal because
+# the probe never uses -select_streams. If that changes later, $ord would
+# become selection-relative while every -map call still expects an absolute
+# stream index - reading "index" directly keeps this correct either way.
 probe_stream_list() {
-    local ord lang
+    local ord idx lang
     for ord in $(probe_ordinals "$1"); do
+        idx=$(probe_field "$ord" index)
         lang=$(probe_get "streams\.stream\.${ord}\.tags\.language")
-        echo "${ord},${lang}"
+        echo "${idx},${lang}"
     done
 }
 
@@ -575,7 +582,8 @@ pid_a=$!
 # Fail fast: if the branch that finishes first already failed, the job is
 # doomed regardless of the other branch's outcome, so stop it now instead of
 # waiting out its full (possibly long) encode before reporting the failure.
-wait -n -p finished_pid $pid_v $pid_a
+# `wait -n` with explicit PIDs needs bash >= 5.1 (the base image pins 5.3).
+wait -n $pid_v $pid_a
 first_rc=$?
 if [[ $first_rc -ne 0 ]]; then
     trap '' SIGTERM SIGINT
