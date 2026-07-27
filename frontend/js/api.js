@@ -309,22 +309,38 @@ const svtParamsForm = {
         tune: 'tune',
         filmGrain: 'film-grain',
         denoise: 'film-grain-denoise',
+        varianceBoost: 'enable-variance-boost',
+        tfStrength: 'tf-strength',
+        sharpness: 'sharpness',
+        restoration: 'enable-restoration',
+        qm: 'enable-qm',
     },
+
+    // Quantization matrices are exposed as one toggle; qm-min/qm-max/chroma-qm-*
+    // are fixed implementation details, not separately editable.
+    qmKeys: ['enable-qm', 'qm-min', 'qm-max', 'chroma-qm-min', 'chroma-qm-max'],
+    qmParams: 'enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15',
 
     normalizeExtra(value) {
         return (value || '').trim().replace(/^:+|:+$/g, '');
     },
 
-    read({ tuneId, grainId, denoiseId, extraId }) {
+    read(ids) {
         const params = [];
-        const tune = document.getElementById(tuneId).value;
-        const grain = document.getElementById(grainId).value.trim();
-        const denoise = document.getElementById(denoiseId).value;
-        const extra = this.normalizeExtra(document.getElementById(extraId).value);
+        const tune = document.getElementById(ids.tuneId).value;
+        const grain = document.getElementById(ids.grainId).value.trim();
+        const extra = this.normalizeExtra(document.getElementById(ids.extraId).value);
 
+        // Order matches BASE_SVT_PARAMS/ANIMATED_SVT_PARAMS in lifecycle.py, so
+        // reading back an unmodified preset reproduces its exact stored string.
         if (tune !== '') params.push(`${this.fields.tune}=${tune}`);
+        if (document.getElementById(ids.varianceBoostId).checked) params.push(`${this.fields.varianceBoost}=1`);
+        if (document.getElementById(ids.tfStrengthId).checked) params.push(`${this.fields.tfStrength}=1`);
+        if (document.getElementById(ids.sharpnessId).checked) params.push(`${this.fields.sharpness}=1`);
+        if (document.getElementById(ids.restorationId).checked) params.push(`${this.fields.restoration}=1`);
+        if (document.getElementById(ids.qmId).checked) params.push(this.qmParams);
         if (grain !== '' && grain !== '0') params.push(`${this.fields.filmGrain}=${grain}`);
-        if (denoise !== '') params.push(`${this.fields.denoise}=${denoise}`);
+        if (document.getElementById(ids.denoiseId).checked) params.push(`${this.fields.denoise}=1`);
         if (extra) params.push(extra);
 
         return params.join(':');
@@ -334,12 +350,16 @@ const svtParamsForm = {
         const normalized = this.normalizeExtra(params);
         const selectValues = {
             tune: new Set(['', '0', '1', '2']),
-            denoise: new Set(['', '0', '1']),
         };
         const values = {
             tune: '0',
             grain: '',
-            denoise: '',
+            denoise: false,
+            varianceBoost: false,
+            tfStrength: false,
+            sharpness: false,
+            restoration: false,
+            qm: false,
             extra: [],
         };
 
@@ -353,8 +373,18 @@ const svtParamsForm = {
                 values.tune = value;
             } else if (key === this.fields.filmGrain) {
                 values.grain = value === '0' ? '' : value;
-            } else if (key === this.fields.denoise && selectValues.denoise.has(value)) {
-                values.denoise = value;
+            } else if (key === this.fields.denoise) {
+                values.denoise = value === '1';
+            } else if (key === this.fields.varianceBoost) {
+                values.varianceBoost = value === '1';
+            } else if (key === this.fields.tfStrength) {
+                values.tfStrength = value === '1';
+            } else if (key === this.fields.sharpness) {
+                values.sharpness = value === '1';
+            } else if (key === this.fields.restoration) {
+                values.restoration = value === '1';
+            } else if (this.qmKeys.includes(key)) {
+                if (key === this.fields.qm && value === '1') values.qm = true;
             } else {
                 values.extra.push(part);
             }
@@ -362,7 +392,12 @@ const svtParamsForm = {
 
         document.getElementById(ids.tuneId).value = values.tune;
         document.getElementById(ids.grainId).value = values.grain;
-        document.getElementById(ids.denoiseId).value = values.denoise;
+        document.getElementById(ids.denoiseId).checked = values.denoise;
+        document.getElementById(ids.varianceBoostId).checked = values.varianceBoost;
+        document.getElementById(ids.tfStrengthId).checked = values.tfStrength;
+        document.getElementById(ids.sharpnessId).checked = values.sharpness;
+        document.getElementById(ids.restorationId).checked = values.restoration;
+        document.getElementById(ids.qmId).checked = values.qm;
         document.getElementById(ids.extraId).value = values.extra.join(':');
     },
 
@@ -371,6 +406,11 @@ const svtParamsForm = {
             tuneId: 'svt-tune',
             grainId: 'svt-film-grain',
             denoiseId: 'svt-denoise',
+            varianceBoostId: 'svt-variance-boost',
+            tfStrengthId: 'svt-tf-strength',
+            sharpnessId: 'svt-sharpness',
+            restorationId: 'svt-restoration',
+            qmId: 'svt-qm',
             extraId: 'svt-extra-params',
         };
     },
@@ -380,6 +420,11 @@ const svtParamsForm = {
             tuneId: 'preset-edit-svt_tune',
             grainId: 'preset-edit-svt_film_grain',
             denoiseId: 'preset-edit-svt_denoise',
+            varianceBoostId: 'preset-edit-svt_variance_boost',
+            tfStrengthId: 'preset-edit-svt_tf_strength',
+            sharpnessId: 'preset-edit-svt_sharpness',
+            restorationId: 'preset-edit-svt_restoration',
+            qmId: 'preset-edit-svt_qm',
             extraId: 'preset-edit-svt_extra_params',
         };
     }

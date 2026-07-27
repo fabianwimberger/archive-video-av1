@@ -82,7 +82,7 @@ class SettingsPanel {
         ['svt-film-grain', 'svt-extra-params', 'audio-bitrate'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => this.checkModified());
         });
-        ['svt-tune', 'svt-denoise'].forEach(id => {
+        ['svt-tune', 'svt-denoise', 'svt-variance-boost', 'svt-tf-strength', 'svt-sharpness', 'svt-restoration', 'svt-qm'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => this.checkModified());
         });
         document.getElementById('skip-crop').addEventListener('change', () => this.checkModified());

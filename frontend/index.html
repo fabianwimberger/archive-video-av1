@@ -130,15 +130,36 @@
                                 <option value="16"></option>
                             </datalist>
                         </div>
-                        <div class="col-4">
-                            <select id="svt-denoise" class="form-select form-select-sm" aria-label="Film grain denoise">
-                                <option value="">Denoise default</option>
-                                <option value="1">Denoise on</option>
-                                <option value="0">Denoise off</option>
-                            </select>
+                        <div class="col-4 d-flex align-items-center">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" role="switch" id="svt-denoise">
+                                <label class="form-check-label small" for="svt-denoise">Denoise</label>
+                            </div>
                         </div>
                     </div>
-                    <input type="text" id="svt-extra-params" class="form-control form-control-sm mt-1" placeholder="Additional SVT params">
+                    <div class="d-flex flex-wrap column-gap-3 row-gap-1 mt-2">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="svt-variance-boost">
+                            <label class="form-check-label small" for="svt-variance-boost">Variance Boost</label>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="svt-tf-strength">
+                            <label class="form-check-label small" for="svt-tf-strength">TF Strength</label>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="svt-sharpness">
+                            <label class="form-check-label small" for="svt-sharpness">Sharpness</label>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="svt-restoration">
+                            <label class="form-check-label small" for="svt-restoration">Restoration</label>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="svt-qm">
+                            <label class="form-check-label small" for="svt-qm">Quantization Matrices</label>
+                        </div>
+                    </div>
+                    <input type="text" id="svt-extra-params" class="form-control form-control-sm mt-2" placeholder="Additional SVT params">
                     <div id="estimate-info" class="form-text small text-muted mt-1" style="min-height: 1.2em;"></div>
                 </div>
 
@@ -362,15 +383,36 @@
                                     <div class="col-4">
                                         <input type="number" id="preset-edit-svt_film_grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="Grain">
                                     </div>
-                                    <div class="col-4">
-                                        <select id="preset-edit-svt_denoise" class="form-select form-select-sm" aria-label="Film grain denoise">
-                                            <option value="">Denoise default</option>
-                                            <option value="1">Denoise on</option>
-                                            <option value="0">Denoise off</option>
-                                        </select>
+                                    <div class="col-4 d-flex align-items-center">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_denoise">
+                                            <label class="form-check-label small" for="preset-edit-svt_denoise">Denoise</label>
+                                        </div>
                                     </div>
                                 </div>
-                                <input type="text" id="preset-edit-svt_extra_params" class="form-control form-control-sm mt-1" placeholder="Additional SVT params">
+                                <div class="d-flex flex-wrap column-gap-3 row-gap-1 mt-2">
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_variance_boost">
+                                        <label class="form-check-label small" for="preset-edit-svt_variance_boost">Variance Boost</label>
+                                    </div>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_tf_strength">
+                                        <label class="form-check-label small" for="preset-edit-svt_tf_strength">TF Strength</label>
+                                    </div>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_sharpness">
+                                        <label class="form-check-label small" for="preset-edit-svt_sharpness">Sharpness</label>
+                                    </div>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_restoration">
+                                        <label class="form-check-label small" for="preset-edit-svt_restoration">Restoration</label>
+                                    </div>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_qm">
+                                        <label class="form-check-label small" for="preset-edit-svt_qm">Quantization Matrices</label>
+                                    </div>
+                                </div>
+                                <input type="text" id="preset-edit-svt_extra_params" class="form-control form-control-sm mt-2" placeholder="Additional SVT params">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">Audio Bitrate</label>
