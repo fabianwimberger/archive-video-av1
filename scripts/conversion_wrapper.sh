@@ -498,7 +498,7 @@ measure_and_encode_audio() {
     for idx in "${audio_indices[@]}"; do
         LOUDNORM_JSON=$(mktemp)
 
-        ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
+        nice -n 10 ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
             -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
             -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
 
@@ -524,15 +524,22 @@ measure_and_encode_audio() {
     echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)" >&3
 
     local ffmpeg_cmd_a="ffmpeg -i \"$INPUT_FILE\" $audio_map -map_chapters -1 -vn -sn -dn $af_filter -c:a libopus -b:a $AUDIO_BITRATE -f matroska -y \"$tmp_audio\""
-    echo "STATUS:CMD (audio): $ffmpeg_cmd_a" >&3
     echo "$ffmpeg_cmd_a" > "$AUDIO_CMD_FILE"
+
+    # Full command goes to $AUDIO_CMD_FILE only (read back into the output's
+    # ENCODER_SETTINGS tag at finalization) - not echoed live here. fd 3
+    # shares the same underlying pipe as branch V's progress-key=value
+    # writes; with enough audio tracks this line can exceed PIPE_BUF (4096B),
+    # and a write past that size isn't atomic and could interleave with
+    # branch V's lines, corrupting both.
+    echo "STATUS:CMD (audio): audio encode starting (${#audio_indices[@]} track(s))" >&3
 
     # -map_chapters -1: ffmpeg copies chapters from the input by default even
     # with explicit stream -map. Without this, both branches would carry the
     # source's chapters into their own temp file, and mkvmerge would then
     # merge both sets - doubling every chapter entry in the output. Branch V
     # keeps the default (copies chapters once), so this branch drops them.
-    ffmpeg -v error -i "$INPUT_FILE" $audio_map -map_chapters -1 -vn -sn -dn \
+    nice -n 10 ffmpeg -v error -i "$INPUT_FILE" $audio_map -map_chapters -1 -vn -sn -dn \
         $af_filter \
         -c:a libopus -b:a "$AUDIO_BITRATE" \
         -f matroska -y "$tmp_audio"
@@ -565,6 +572,16 @@ pid_v=$!
 { measure_and_encode_audio; } > "$audio_log" 2>&1 &
 pid_a=$!
 
+# Fail fast: if the branch that finishes first already failed, the job is
+# doomed regardless of the other branch's outcome, so stop it now instead of
+# waiting out its full (possibly long) encode before reporting the failure.
+wait -n -p finished_pid $pid_v $pid_a
+first_rc=$?
+if [[ $first_rc -ne 0 ]]; then
+    trap '' SIGTERM SIGINT
+    kill_all
+fi
+
 wait $pid_v
 rc_v=$?
 wait $pid_a
@@ -578,6 +595,10 @@ if [[ $rc_v -ne 0 || $rc_a -ne 0 ]]; then
             while IFS= read -r line; do echo "STATUS:$line"; done < "$audio_log"
         fi
     fi
+    # Suppress before kill_all: its pkill -g $$ also signals this script's
+    # own PID, and the still-armed trap would re-enter cleanup() and print a
+    # spurious "Stopping conversion..." after the real error above.
+    trap '' SIGTERM SIGINT
     kill_all
     rm -f "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE"
     exit 1
