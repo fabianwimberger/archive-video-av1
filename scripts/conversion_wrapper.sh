@@ -19,18 +19,15 @@ PREFERRED_SUBTITLE_LANGUAGES="${PREFERRED_SUBTITLE_LANGUAGES:-ger,deu,de,eng,en}
 
 # --- TRAP SIGNALS ---
 
-# Kill every process in this script's process group. Branch A's ffmpeg calls
-# run inside a backgrounded subshell (see measure_and_encode_audio), so they
-# are grandchildren, not direct children - pkill -P $$ would miss them.
+# pkill -P $$ would miss branch A's ffmpeg (a backgrounded subshell's child,
+# not a direct child), so kill the whole process group instead.
 kill_all() {
     pkill -g $$ 2>/dev/null
 }
 
 cleanup() {
-    # Ignore further SIGTERM/SIGINT first: kill_all's pkill -g $$ also matches
-    # this script's own PID (unlike the old pkill -P $$), so without this the
-    # self-delivered signal re-enters this handler recursively and it never
-    # reaches exit.
+    # kill_all's pkill -g $$ also signals this script's own PID; without
+    # disarming the trap first, that self-signal re-enters this handler.
     trap '' SIGTERM SIGINT
     echo "STATUS:Stopping conversion..."
     kill_all
@@ -48,9 +45,8 @@ echo "STAGE:initializing"
 
 # --- HELPER FUNCTIONS (from original script) ---
 
-# Single-probe helpers: $PROBE holds one `ffprobe -of flat` dump of the whole
-# container. Every field lookup below reads from it instead of re-opening the
-# file, since each ffprobe invocation re-indexes the container from scratch.
+# Helpers read from $PROBE (one ffprobe -of flat dump) instead of re-probing
+# the container per field.
 
 # probe_get <escaped-key>: value for a flat "key=value" line (quotes stripped).
 # Keys are matched as sed BRE patterns, so callers must escape literal dots.
@@ -73,15 +69,10 @@ probe_field() {
     probe_get "streams\.stream\.$1\.$2"
 }
 
-# probe_stream_list <codec_type>: "index,language" per line, matching the
-# shape of the old `-of csv=p=0` output so find_preferred_stream/first_stream
-# keep working unchanged. No language tag produces a trailing comma.
-#
-# Reads the stream's own "index" field rather than reusing $ord (its flat
-# position under streams.stream.N): the two are only guaranteed equal because
-# the probe never uses -select_streams. If that changes later, $ord would
-# become selection-relative while every -map call still expects an absolute
-# stream index - reading "index" directly keeps this correct either way.
+# probe_stream_list <codec_type>: "index,language" per line (matches the old
+# `-of csv=p=0` shape). Reads the stream's own "index" field rather than
+# $ord, since $ord only equals the absolute stream index as long as the
+# probe doesn't use -select_streams.
 probe_stream_list() {
     local ord idx lang
     for ord in $(probe_ordinals "$1"); do
@@ -139,9 +130,8 @@ first_stream() {
 
 # --- MAIN CONVERSION LOGIC ---
 
-# Encode to TEMP_DIR when available so the (long-running) encode pass writes
-# to fast local storage instead of the output share; mkvmerge remuxes the
-# result into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
+# Encode to TEMP_DIR (fast local storage) when available; mkvmerge remuxes
+# into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
 output_dir="$(dirname "$OUTPUT_FILE")"
 if [[ -d "$TEMP_DIR" && -w "$TEMP_DIR" ]]; then
     temp_dir="$TEMP_DIR"
@@ -153,8 +143,7 @@ tmp_audio="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.tmp"
 audio_log="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.log"
 AUDIO_CMD_FILE="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.cmd"
 
-# Single source probe: one ffprobe call for everything below, instead of
-# opening (and fully re-indexing) the container once per field.
+# One ffprobe call for everything below, instead of once per field.
 PROBE=$(ffprobe -v error \
     -show_entries "format=duration,start_time:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate,start_time,color_transfer,color_primaries,color_space:stream_tags=language" \
     -of flat "$INPUT_FILE" 2>/dev/null)
@@ -233,9 +222,7 @@ if [[ $is_hdr -eq 1 && "$color_transfer" == "smpte2084" ]]; then
         -print_format json "$INPUT_FILE" 2>/dev/null)
 
     if [[ -n "$hdr_side_data" ]]; then
-        # Extract mastering display color volume
-        # Values are fractions like "34000/50000" — divide to get SVT-AV1 format
-        # Chromaticity: 0.0-1.0 (CIE 1931), Luminance: cd/m² (nits)
+        # Values are fractions like "34000/50000" - divide to get SVT-AV1's format.
         extract_frac() { echo "$hdr_side_data" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([0-9]*\/[0-9]*\)\".*/\1/p" | head -1 | awk -F'/' '{printf "%.4f", $1/$2}'; }
         red_x=$(extract_frac red_x)
         red_y=$(extract_frac red_y)
@@ -408,9 +395,8 @@ case "$SUBTITLE_TRACK_MODE" in
         ;;
 esac
 
-# mov_text (MP4 text subtitles) cannot be copied into MKV; convert to srt.
-# Checks the codec of the stream(s) actually selected above, not stream s:0 -
-# language preference may have picked a different subtitle stream than s:0.
+# mov_text can't be copied into MKV; convert to srt. Checks the stream(s)
+# actually selected above, not s:0, since language preference may differ.
 if [[ "$SUBTITLE_TRACK_MODE" == "all" ]]; then
     if [[ -n "$sub_map" ]]; then
         has_mov_text=0
@@ -477,11 +463,8 @@ else
         echo "STATUS:HDR encoding params applied ($hdr_type)"
     fi
 
-    # luminance-qp-bias: lowers QP in low-luma regions to reduce dark-scene
-    # blockiness. Excluded for PQ/HDR10 - PQ's transfer curve maps luma
-    # non-linearly on an absolute-nits scale, so a bias tuned for SDR/HLG's
-    # relative gamma response doesn't carry the same meaning there. Applies
-    # to SDR and HLG.
+    # luminance-qp-bias reduces dark-scene blockiness; excluded for PQ/HDR10
+    # since PQ's luma scale isn't comparable to SDR/HLG's.
     if [[ "$color_transfer" != "smpte2084" ]]; then
         luma_svt="luminance-qp-bias=10"
         if [[ -n "$SVT_PARAMS" ]]; then
@@ -499,18 +482,14 @@ else
 fi
 
 # --- AUDIO MEASUREMENT + ENCODE (branch A) ---
-# Runs concurrently with video encoding (branch V below). Two-pass loudnorm
-# needs a measurement read before the encode read, so this branch reads the
-# source twice; video encoding takes far longer at preset 4, so branch A
-# stays hidden behind it rather than adding to wall clock.
+# Two-pass loudnorm needs a measurement read before the encode read; runs
+# concurrently with branch V, which takes far longer at preset 4.
 TARGET_I="-20"
 TARGET_TP="-2"
 TARGET_LRA="13"
 
-# fd 3 keeps a handle on the wrapper's real stdout so branch A can still
-# report STATUS: lines to the UI even though its own stdout/stderr (which
-# would otherwise leak raw ffmpeg progress key=value lines and corrupt
-# branch V's progress parsing) are captured to $audio_log instead.
+# fd 3 is a handle to the real stdout, so branch A can still report STATUS:
+# lines while its own stdout (raw ffmpeg output) goes to $audio_log instead.
 exec 3>&1
 
 measure_and_encode_audio() {
@@ -547,19 +526,14 @@ measure_and_encode_audio() {
     local ffmpeg_cmd_a="ffmpeg -i \"$INPUT_FILE\" $audio_map -map_chapters -1 -vn -sn -dn $af_filter -c:a libopus -b:a $AUDIO_BITRATE -f matroska -y \"$tmp_audio\""
     echo "$ffmpeg_cmd_a" > "$AUDIO_CMD_FILE"
 
-    # Full command goes to $AUDIO_CMD_FILE only (read back into the output's
-    # ENCODER_SETTINGS tag at finalization) - not echoed live here. fd 3
-    # shares the same underlying pipe as branch V's progress-key=value
-    # writes; with enough audio tracks this line can exceed PIPE_BUF (4096B),
-    # and a write past that size isn't atomic and could interleave with
-    # branch V's lines, corrupting both.
+    # Full command goes to $AUDIO_CMD_FILE (used for the ENCODER_SETTINGS tag
+    # later); not echoed live here since a long one could exceed PIPE_BUF and
+    # interleave with branch V's writes on the shared fd 3 pipe.
     echo "STATUS:CMD (audio): audio encode starting (${#audio_indices[@]} track(s))" >&3
 
-    # -map_chapters -1: ffmpeg copies chapters from the input by default even
-    # with explicit stream -map. Without this, both branches would carry the
-    # source's chapters into their own temp file, and mkvmerge would then
-    # merge both sets - doubling every chapter entry in the output. Branch V
-    # keeps the default (copies chapters once), so this branch drops them.
+    # -map_chapters -1: ffmpeg copies chapters by default even with an
+    # explicit stream -map. Branch V already carries them; without this,
+    # mkvmerge would merge both branches' copies and double every chapter.
     nice -n 10 ffmpeg -v error -i "$INPUT_FILE" $audio_map -map_chapters -1 -vn -sn -dn \
         $af_filter \
         -c:a libopus -b:a "$AUDIO_BITRATE" \
@@ -587,16 +561,13 @@ nice -n 10 ffmpeg -v quiet -progress - -nostats \
     -f matroska -y "$tmp_video" 2>&1 &
 pid_v=$!
 
-# Branch A: audio measurement + encode. Fully redirected to a log file - no
-# -progress, so no risk of a stray key=value line corrupting branch V's
-# frame counter.
+# Branch A: audio measurement + encode, fully redirected to a log file so it
+# can't leak a stray line into branch V's progress output.
 { measure_and_encode_audio; } > "$audio_log" 2>&1 &
 pid_a=$!
 
-# Fail fast: if the branch that finishes first already failed, the job is
-# doomed regardless of the other branch's outcome, so stop it now instead of
-# waiting out its full (possibly long) encode before reporting the failure.
-# `wait -n` with explicit PIDs needs bash >= 5.1 (the base image pins 5.3).
+# Fail fast: stop the other branch as soon as either one fails, rather than
+# waiting out its full encode first. wait -n needs bash >= 5.1.
 wait -n $pid_v $pid_a
 first_rc=$?
 if [[ $first_rc -ne 0 ]]; then
@@ -617,9 +588,9 @@ if [[ $rc_v -ne 0 || $rc_a -ne 0 ]]; then
             while IFS= read -r line; do echo "STATUS:$line"; done < "$audio_log"
         fi
     fi
-    # Suppress before kill_all: its pkill -g $$ also signals this script's
-    # own PID, and the still-armed trap would re-enter cleanup() and print a
-    # spurious "Stopping conversion..." after the real error above.
+    # Disarm first: kill_all's pkill -g $$ also signals this script's own
+    # PID, which would otherwise re-enter cleanup() and print a spurious
+    # "Stopping conversion..." after the real error above.
     trap '' SIGTERM SIGINT
     kill_all
     rm -f "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE"
@@ -634,14 +605,11 @@ rm -f "$AUDIO_CMD_FILE" "$audio_log"
 echo "STAGE:finalizing"
 echo "STATUS:Finalizing output file with correct metadata..."
 
-# A/V sync: neither branch seeks (no -ss), so ffmpeg preserves each stream's
-# original container-relative start time in its own output file rather than
-# resetting to zero - verified empirically (a source with an 11ms audio/video
-# start_time delta reproduced the same delta in the separately-demuxed audio
-# branch, matching the single-filtergraph baseline exactly). No manual
-# realignment needed; mkvmerge joins the branches using their own timestamps.
+# A/V sync: neither branch seeks, so ffmpeg preserves each stream's original
+# container-relative start time - mkvmerge joins them correctly without
+# manual realignment.
 
-# Build MKV global tags XML with both ffmpeg commands (stored for reproducibility)
+# Global tags XML: embeds both branches' ffmpeg commands for reproducibility.
 TAGS_XML=$(mktemp)
 FFMPEG_CMD_XML_V=$(printf '%s' "$FFMPEG_CMD_V" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
 FFMPEG_CMD_XML_A=$(printf '%s' "$FFMPEG_CMD_A" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')

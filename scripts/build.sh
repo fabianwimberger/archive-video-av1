@@ -145,9 +145,7 @@ train_pgo() {
         # Map sample filename prefix to preset params (kept in sync with
         # BUILTIN_PRESETS in backend/app/services/lifecycle.py)
         base_svt="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
-        # variance-boost/tf-strength dropped for animated: A/B testing showed
-        # variance-boost costs ~30% bitrate for ~0.5dB XPSNR even at matched
-        # bitrate, and tf-strength made no measurable difference at all.
+        # No variance-boost/tf-strength: not worth their bitrate cost on animated content.
         animated_svt="tune=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
         preset_crf=26
         svt_base="$base_svt"
@@ -229,10 +227,7 @@ train_pgo() {
             svt_hdr=":color-primaries=9:transfer-characteristics=16:matrix-coefficients=9"
             echo "    HDR: PQ/HDR10 detected"
 
-            # Extract mastering display + content light, mirroring
-            # conversion_wrapper.sh, so training builds the same
-            # -svtav1-params string runtime does for this file instead of a
-            # shortened one that never profiles SVT-AV1's metadata parsing.
+            # Mirrors conversion_wrapper.sh's mastering-display/content-light extraction.
             hdr_side_data=$(ffprobe -v quiet -select_streams v:0 \
                 -show_frames -read_intervals "%+#1" \
                 -print_format json "$f" 2>/dev/null)
@@ -273,17 +268,13 @@ train_pgo() {
             echo "    HDR: HLG detected"
         fi
 
-        # luminance-qp-bias mirrors conversion_wrapper.sh: excluded for
-        # PQ/HDR10, applies to SDR and HLG.
+        # luminance-qp-bias: applies to SDR/HLG, excluded for PQ/HDR10.
         if [ "$color_transfer" != "smpte2084" ]; then
             svt_hdr="${svt_hdr}:luminance-qp-bias=10"
         fi
 
-        # Trained as two separate invocations (video-only, audio-only) to
-        # mirror the runtime shape (see conversion_wrapper.sh branch V/A) -
-        # training on the old combined command would optimize a code path
-        # that no longer runs at runtime. Kept serial: two processes writing
-        # the same .gcda files would race during gcov's merge-on-exit.
+        # Two invocations to mirror the video/audio branch split at runtime.
+        # Kept serial - concurrent writers would race on .gcda merge.
         echo "  Stage: encoding (video)"
         ffmpeg -hide_banner -i "$f" -map 0:v:0 -an -sn -dn -t 15 \
             -vf "$vf_chain" \
