@@ -144,7 +144,7 @@ train_pgo() {
 
         # Map sample filename prefix to preset params (kept in sync with
         # BUILTIN_PRESETS in backend/app/services/lifecycle.py)
-        base_svt="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1"
+        base_svt="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15"
         preset_crf=26
         svt_base="$base_svt"
         case "$basename_f" in
@@ -267,6 +267,12 @@ train_pgo() {
             color_flags="-color_primaries bt2020 -color_trc arib-std-b67 -colorspace bt2020nc -color_range tv"
             svt_hdr=":color-primaries=9:transfer-characteristics=18:matrix-coefficients=9"
             echo "    HDR: HLG detected"
+        fi
+
+        # luminance-qp-bias mirrors conversion_wrapper.sh: excluded for
+        # PQ/HDR10, applies to SDR and HLG.
+        if [ "$color_transfer" != "smpte2084" ]; then
+            svt_hdr="${svt_hdr}:luminance-qp-bias=10"
         fi
 
         # Trained as two separate invocations (video-only, audio-only) to

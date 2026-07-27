@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 BASE_SVT_PARAMS = (
     "tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1"
+    ":enable-qm=1:qm-min=0:qm-max=15"
 )
 
 BUILTIN_PRESETS = [

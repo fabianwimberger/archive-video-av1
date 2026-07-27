@@ -477,6 +477,20 @@ else
         echo "STATUS:HDR encoding params applied ($hdr_type)"
     fi
 
+    # luminance-qp-bias: lowers QP in low-luma regions to reduce dark-scene
+    # blockiness. Excluded for PQ/HDR10 - PQ's transfer curve maps luma
+    # non-linearly on an absolute-nits scale, so a bias tuned for SDR/HLG's
+    # relative gamma response doesn't carry the same meaning there. Applies
+    # to SDR and HLG.
+    if [[ "$color_transfer" != "smpte2084" ]]; then
+        luma_svt="luminance-qp-bias=10"
+        if [[ -n "$SVT_PARAMS" ]]; then
+            SVT_PARAMS="${SVT_PARAMS}:${luma_svt}"
+        else
+            SVT_PARAMS="$luma_svt"
+        fi
+    fi
+
     svt_params_arg=""
     if [[ -n "$SVT_PARAMS" ]]; then
         svt_params_arg="-svtav1-params $SVT_PARAMS"
