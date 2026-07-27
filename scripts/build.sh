@@ -224,6 +224,45 @@ train_pgo() {
             color_flags="-color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc -color_range tv"
             svt_hdr=":color-primaries=9:transfer-characteristics=16:matrix-coefficients=9"
             echo "    HDR: PQ/HDR10 detected"
+
+            # Extract mastering display + content light, mirroring
+            # conversion_wrapper.sh, so training builds the same
+            # -svtav1-params string runtime does for this file instead of a
+            # shortened one that never profiles SVT-AV1's metadata parsing.
+            hdr_side_data=$(ffprobe -v quiet -select_streams v:0 \
+                -show_frames -read_intervals "%+#1" \
+                -print_format json "$f" 2>/dev/null)
+
+            if [ -n "$hdr_side_data" ]; then
+                extract_frac() { echo "$hdr_side_data" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([0-9]*\/[0-9]*\)\".*/\1/p" | head -1 | awk -F'/' '{printf "%.4f", $1/$2}'; }
+                red_x=$(extract_frac red_x)
+                red_y=$(extract_frac red_y)
+                green_x=$(extract_frac green_x)
+                green_y=$(extract_frac green_y)
+                blue_x=$(extract_frac blue_x)
+                blue_y=$(extract_frac blue_y)
+                white_x=$(extract_frac white_point_x)
+                white_y=$(extract_frac white_point_y)
+                min_lum=$(extract_frac min_luminance)
+                max_lum=$(extract_frac max_luminance)
+
+                if [ -n "$green_x" ] && [ -n "$green_y" ] && [ -n "$blue_x" ] && [ -n "$blue_y" ] && \
+                   [ -n "$red_x" ] && [ -n "$red_y" ] && [ -n "$white_x" ] && [ -n "$white_y" ] && \
+                   [ -n "$max_lum" ] && [ -n "$min_lum" ]; then
+                    mastering_display="G(${green_x},${green_y})B(${blue_x},${blue_y})R(${red_x},${red_y})WP(${white_x},${white_y})L(${max_lum},${min_lum})"
+                    svt_hdr="${svt_hdr}:mastering-display=${mastering_display}"
+                    echo "    Mastering display: $mastering_display"
+                fi
+
+                max_cll=$(echo "$hdr_side_data" | sed -n 's/.*"max_content"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+                max_fall=$(echo "$hdr_side_data" | sed -n 's/.*"max_average"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+
+                if [ -n "$max_cll" ] && [ -n "$max_fall" ]; then
+                    content_light="${max_cll},${max_fall}"
+                    svt_hdr="${svt_hdr}:content-light=${content_light}"
+                    echo "    Content light level: MaxCLL=$max_cll, MaxFALL=$max_fall"
+                fi
+            fi
         elif [ "$color_transfer" = "arib-std-b67" ]; then
             color_flags="-color_primaries bt2020 -color_trc arib-std-b67 -colorspace bt2020nc -color_range tv"
             svt_hdr=":color-primaries=9:transfer-characteristics=18:matrix-coefficients=9"

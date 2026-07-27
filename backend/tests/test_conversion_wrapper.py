@@ -1,6 +1,9 @@
 """Tests for conversion wrapper configuration."""
 
+import re
 from pathlib import Path
+
+from app.services.lifecycle import BASE_SVT_PARAMS
 
 
 WRAPPER = Path(__file__).resolve().parents[2] / "scripts" / "conversion_wrapper.sh"
@@ -60,3 +63,13 @@ def test_only_video_branch_emits_progress():
     audio_branch = script[start:end]
 
     assert "-progress" not in audio_branch
+
+
+def test_pgo_training_svt_base_matches_builtin_presets():
+    """PGO training's base SVT params must match BUILTIN_PRESETS, or the
+    profiled encoder settings silently diverge from what real jobs use."""
+    script = BUILD_SCRIPT.read_text()
+
+    match = re.search(r'base_svt="([^"]+)"', script)
+    assert match, "base_svt=\"...\" literal not found in build.sh"
+    assert match.group(1) == BASE_SVT_PARAMS
