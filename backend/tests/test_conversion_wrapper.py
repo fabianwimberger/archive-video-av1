@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from app.services.lifecycle import BASE_SVT_PARAMS
+from app.services.lifecycle import ANIMATED_SVT_PARAMS, BASE_SVT_PARAMS
 
 
 WRAPPER = Path(__file__).resolve().parents[2] / "scripts" / "conversion_wrapper.sh"
@@ -73,3 +73,7 @@ def test_pgo_training_svt_base_matches_builtin_presets():
     match = re.search(r'base_svt="([^"]+)"', script)
     assert match, "base_svt=\"...\" literal not found in build.sh"
     assert match.group(1) == BASE_SVT_PARAMS
+
+    match = re.search(r'animated_svt="([^"]+)"', script)
+    assert match, "animated_svt=\"...\" literal not found in build.sh"
+    assert match.group(1) == ANIMATED_SVT_PARAMS

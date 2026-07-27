@@ -144,13 +144,17 @@ train_pgo() {
 
         # Map sample filename prefix to preset params (kept in sync with
         # BUILTIN_PRESETS in backend/app/services/lifecycle.py)
-        base_svt="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15"
+        base_svt="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
+        # variance-boost/tf-strength dropped for animated: A/B testing showed
+        # variance-boost costs ~30% bitrate for ~0.5dB XPSNR even at matched
+        # bitrate, and tf-strength made no measurable difference at all.
+        animated_svt="tune=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
         preset_crf=26
         svt_base="$base_svt"
         case "$basename_f" in
             animated_*)
                 preset_crf=35
-                svt_base="$base_svt"
+                svt_base="$animated_svt"
                 echo "    Preset: animated (CRF $preset_crf, $svt_base)"
                 ;;
             grainy_*)

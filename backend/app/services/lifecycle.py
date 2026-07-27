@@ -12,7 +12,17 @@ logger = logging.getLogger(__name__)
 
 BASE_SVT_PARAMS = (
     "tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1"
-    ":enable-qm=1:qm-min=0:qm-max=15"
+    ":enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
+)
+
+# enable-variance-boost and tf-strength are dropped here: A/B testing on the
+# animated PGO sample showed variance-boost alone accounts for a ~30% bitrate
+# increase for a ~0.5dB XPSNR gain even at matched bitrate (not worth it for
+# an efficiency-oriented preset), and tf-strength made no measurable
+# difference at all (isolated by testing each flag alone).
+ANIMATED_SVT_PARAMS = (
+    "tune=1:sharpness=1:enable-restoration=1"
+    ":enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
 )
 
 BUILTIN_PRESETS = [
@@ -33,7 +43,7 @@ BUILTIN_PRESETS = [
         "is_builtin": True,
         "crf": 35,
         "encoder_preset": 4,
-        "svt_params": BASE_SVT_PARAMS,
+        "svt_params": ANIMATED_SVT_PARAMS,
         "audio_bitrate": "96k",
         "skip_crop_detect": False,
         "max_resolution": 1080,
