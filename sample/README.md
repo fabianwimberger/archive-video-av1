@@ -12,12 +12,15 @@ Place `.mkv` sample files in this directory **before building** the Docker image
 
 ```
 sample/
-  default_movie.4k.mkv     # Live-action (CRF 26, film-grain=8)
-  animated_show.1080p.mkv   # Animated (CRF 35, tune=0)
-  grainy_film.1080p.mkv     # Grainy (CRF 26, film-grain=16, film-grain-denoise=1)
+  default_movie.4k.mkv        # Live-action (CRF 26)
+  animated_show.1080p.mkv     # Animated (CRF 35)
+  grainy_film.1080p.mkv       # Grainy (CRF 26, film-grain=12, film-grain-denoise=1)
+  verygrainy_film.1080p.mkv   # Very Grainy (CRF 26, film-grain=18, film-grain-denoise=1)
 ```
 
-Files without a recognized prefix (`default_`, `animated_`, `grainy_`) are trained with the default preset.
+Default/Grainy/Very Grainy share a common SVT-AV1 base (`tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15`); Grainy/Very Grainy add `film-grain`/`film-grain-denoise` on top. Animated uses a reduced base (`tune=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15`) - `enable-variance-boost`/`tf-strength` don't earn their bitrate cost on animated content. Non-PQ sources (SDR/HLG) also get `luminance-qp-bias=10` appended at encode time, excluded for HDR10/PQ.
+
+Files without a recognized prefix (`default_`, `animated_`, `grainy_`, `verygrainy_`) are trained with the default preset.
 
 ## Sample Requirements
 
