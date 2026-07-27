@@ -523,11 +523,16 @@ measure_and_encode_audio() {
 
     echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)" >&3
 
-    local ffmpeg_cmd_a="ffmpeg -i \"$INPUT_FILE\" $audio_map -vn -sn -dn $af_filter -c:a libopus -b:a $AUDIO_BITRATE -f matroska -y \"$tmp_audio\""
+    local ffmpeg_cmd_a="ffmpeg -i \"$INPUT_FILE\" $audio_map -map_chapters -1 -vn -sn -dn $af_filter -c:a libopus -b:a $AUDIO_BITRATE -f matroska -y \"$tmp_audio\""
     echo "STATUS:CMD (audio): $ffmpeg_cmd_a" >&3
     echo "$ffmpeg_cmd_a" > "$AUDIO_CMD_FILE"
 
-    ffmpeg -v error -i "$INPUT_FILE" $audio_map -vn -sn -dn \
+    # -map_chapters -1: ffmpeg copies chapters from the input by default even
+    # with explicit stream -map. Without this, both branches would carry the
+    # source's chapters into their own temp file, and mkvmerge would then
+    # merge both sets - doubling every chapter entry in the output. Branch V
+    # keeps the default (copies chapters once), so this branch drops them.
+    ffmpeg -v error -i "$INPUT_FILE" $audio_map -map_chapters -1 -vn -sn -dn \
         $af_filter \
         -c:a libopus -b:a "$AUDIO_BITRATE" \
         -f matroska -y "$tmp_audio"
