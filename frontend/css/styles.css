@@ -569,6 +569,10 @@ body {
     background: var(--app-accent-soft);
 }
 
+.svt-toggle.form-switch:has(.form-check-input:indeterminate) {
+    opacity: 0.6;
+}
+
 .svt-toggle .form-check-input {
     margin-left: 0;
     flex-shrink: 0;

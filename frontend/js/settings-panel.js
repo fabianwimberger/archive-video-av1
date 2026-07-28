@@ -215,12 +215,10 @@ class SettingsPanel {
             if (result.film_grain > 0) {
                 grainParts.push(`film-grain=${result.film_grain}`);
             }
-            if (result.denoise > 0) {
-                grainParts.push(`film-grain-denoise=${result.denoise}`);
-            }
-            if (grainParts.length > 0) {
-                params = params ? `${params}:${grainParts.join(':')}` : grainParts.join(':');
-            }
+            // Always explicit: the estimate's denoise:0 must reach the encoder,
+            // not fall back to "unset" (which would leave the encoder default).
+            grainParts.push(`film-grain-denoise=${result.denoise > 0 ? 1 : 0}`);
+            params = params ? `${params}:${grainParts.join(':')}` : grainParts.join(':');
 
             svtParamsForm.write(svtParamsForm.mainIds(), params);
             this.checkModified();

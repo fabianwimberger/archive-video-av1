@@ -343,15 +343,16 @@ const svtParamsForm = {
         const selectValues = {
             tune: new Set(['', '0', '1', '2']),
         };
+        // true/false = explicit on/off; null = not mentioned, encoder default applies.
         const values = {
             tune: '',
             grain: '',
-            denoise: false,
-            varianceBoost: false,
-            tfStrength: false,
-            sharpness: false,
-            restoration: false,
-            qm: false,
+            denoise: null,
+            varianceBoost: null,
+            tfStrength: null,
+            sharpness: null,
+            restoration: null,
+            qm: null,
             extra: [],
         };
         const qmDefaults = this.getQmDefaults();
@@ -388,33 +389,46 @@ const svtParamsForm = {
 
     serialize(values) {
         const params = [];
+        // null stays omitted (encoder default); true/false emit explicitly,
+        // since some of these default to on and omitting can't express "off".
+        const emit = (key, val) => { if (val !== null) params.push(`${key}=${val ? 1 : 0}`); };
 
-        // Booleans always emit 0/1 explicitly - omitting can't express "off"
-        // since several of these default to on in the encoder.
         if (values.tune !== '') params.push(`${this.fields.tune}=${values.tune}`);
-        params.push(`${this.fields.varianceBoost}=${values.varianceBoost ? 1 : 0}`);
-        params.push(`${this.fields.tfStrength}=${values.tfStrength ? 1 : 0}`);
-        params.push(`${this.fields.sharpness}=${values.sharpness ? 1 : 0}`);
-        params.push(`${this.fields.restoration}=${values.restoration ? 1 : 0}`);
-        params.push(values.qm ? this.qmParams : `${this.fields.qm}=0`);
+        emit(this.fields.varianceBoost, values.varianceBoost);
+        emit(this.fields.tfStrength, values.tfStrength);
+        emit(this.fields.sharpness, values.sharpness);
+        emit(this.fields.restoration, values.restoration);
+        if (values.qm === true) params.push(this.qmParams);
+        else if (values.qm === false) params.push(`${this.fields.qm}=0`);
         if (values.grain !== '' && values.grain !== '0') params.push(`${this.fields.filmGrain}=${values.grain}`);
-        params.push(`${this.fields.denoise}=${values.denoise ? 1 : 0}`);
+        emit(this.fields.denoise, values.denoise);
         const extra = this.normalizeExtra(values.extra.join(':'));
         if (extra) params.push(extra);
 
         return params.join(':');
     },
 
+    // Checkboxes render a third, indeterminate "unset" state (write() below);
+    // a user click always resolves it to checked/unchecked per native behavior.
+    readTriState(el) {
+        return el.indeterminate ? null : el.checked;
+    },
+
+    writeTriState(el, value) {
+        el.indeterminate = value === null;
+        el.checked = value === true;
+    },
+
     read(ids) {
         const values = {
             tune: document.getElementById(ids.tuneId).value,
             grain: document.getElementById(ids.grainId).value.trim(),
-            denoise: document.getElementById(ids.denoiseId).checked,
-            varianceBoost: document.getElementById(ids.varianceBoostId).checked,
-            tfStrength: document.getElementById(ids.tfStrengthId).checked,
-            sharpness: document.getElementById(ids.sharpnessId).checked,
-            restoration: document.getElementById(ids.restorationId).checked,
-            qm: document.getElementById(ids.qmId).checked,
+            denoise: this.readTriState(document.getElementById(ids.denoiseId)),
+            varianceBoost: this.readTriState(document.getElementById(ids.varianceBoostId)),
+            tfStrength: this.readTriState(document.getElementById(ids.tfStrengthId)),
+            sharpness: this.readTriState(document.getElementById(ids.sharpnessId)),
+            restoration: this.readTriState(document.getElementById(ids.restorationId)),
+            qm: this.readTriState(document.getElementById(ids.qmId)),
             extra: [this.normalizeExtra(document.getElementById(ids.extraId).value)].filter(Boolean),
         };
         return this.serialize(values);
@@ -425,12 +439,12 @@ const svtParamsForm = {
 
         document.getElementById(ids.tuneId).value = values.tune;
         document.getElementById(ids.grainId).value = values.grain;
-        document.getElementById(ids.denoiseId).checked = values.denoise;
-        document.getElementById(ids.varianceBoostId).checked = values.varianceBoost;
-        document.getElementById(ids.tfStrengthId).checked = values.tfStrength;
-        document.getElementById(ids.sharpnessId).checked = values.sharpness;
-        document.getElementById(ids.restorationId).checked = values.restoration;
-        document.getElementById(ids.qmId).checked = values.qm;
+        this.writeTriState(document.getElementById(ids.denoiseId), values.denoise);
+        this.writeTriState(document.getElementById(ids.varianceBoostId), values.varianceBoost);
+        this.writeTriState(document.getElementById(ids.tfStrengthId), values.tfStrength);
+        this.writeTriState(document.getElementById(ids.sharpnessId), values.sharpness);
+        this.writeTriState(document.getElementById(ids.restorationId), values.restoration);
+        this.writeTriState(document.getElementById(ids.qmId), values.qm);
         document.getElementById(ids.extraId).value = values.extra.join(':');
     },
 

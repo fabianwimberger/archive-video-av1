@@ -193,9 +193,8 @@ train_pgo() {
         echo "  Stage: crop_detect"
         crop=$(ffmpeg -hide_banner -ss "$train_ss" -i "$f" -t 1 -vf cropdetect=round=4 -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
         if [ -z "$crop" ]; then
-            echo "ERROR: Crop detection failed"
-            echo "Ensure sample videos are at least 10 seconds long and have valid video streams"
-            exit 1
+            echo "WARNING: Crop detection failed for $basename_f, skipping this sample"
+            continue
         fi
         echo "    Detected: $crop"
 
