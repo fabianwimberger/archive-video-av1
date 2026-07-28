@@ -23,7 +23,8 @@ echo "=== ENABLE_LTO=${ENABLE_LTO} ==="
 if [ "$ENABLE_LTO" = "false" ]; then
     BASE_CFLAGS="${ARCH_FLAGS:+$ARCH_FLAGS }-O3 -fomit-frame-pointer"
     BASE_LDFLAGS="-Wl,-O3 -Wl,--gc-sections"
-    FFMPEG_LTO_FLAG="--disable-lto"
+    # FFmpeg's configure has no --disable-lto counterpart; omit the flag entirely.
+    FFMPEG_LTO_FLAG=""
 else
     BASE_CFLAGS="${ARCH_FLAGS:+$ARCH_FLAGS }-O3 -flto -fomit-frame-pointer"
     BASE_LDFLAGS="-Wl,-O3 -Wl,--gc-sections -flto"
@@ -109,7 +110,7 @@ build_all() {
     ./configure \
         --prefix=/usr/local --pkg-config-flags="--static" --extra-libs="-lpthread -lm" \
         --cc="${CC:-gcc}" --cxx="${CXX:-g++}" \
-        "$FFMPEG_LTO_FLAG" --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
+        $FFMPEG_LTO_FLAG --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
         "$cpudetect_flag" --disable-autodetect --disable-programs \
         --disable-everything \
         --enable-ffmpeg --enable-ffprobe \

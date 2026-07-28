@@ -50,8 +50,14 @@ def test_pgo_training_uses_preferred_audio_stream():
     # Training encodes video and audio as separate invocations, mirroring the
     # concurrent branch V / branch A split in conversion_wrapper.sh. Both seek
     # into the file first so training doesn't land on a black/logo intro.
-    assert 'ffmpeg -hide_banner -ss "$train_ss" -i "$f" -map 0:v:0 -an -sn -dn -t 15' in script
-    assert 'ffmpeg -hide_banner -ss "$train_ss" -i "$f" -map 0:$audio_idx -vn -sn -dn -t 15' in script
+    assert (
+        'ffmpeg -hide_banner -ss "$train_ss" -i "$f" -map 0:v:0 -an -sn -dn -t 15'
+        in script
+    )
+    assert (
+        'ffmpeg -hide_banner -ss "$train_ss" -i "$f" -map 0:$audio_idx -vn -sn -dn -t 15'
+        in script
+    )
 
 
 def test_only_video_branch_emits_progress():
@@ -105,10 +111,15 @@ def test_pgo_training_numbers_match_builtin_presets():
     verygrainy_block = re.search(r"verygrainy_\*\)(.*?);;", script, re.DOTALL)
     assert verygrainy_block, "verygrainy_*) case block not found in build.sh"
     verygrainy_crf = re.search(r"preset_crf=(\d+)", verygrainy_block.group(1))
-    assert verygrainy_crf and int(verygrainy_crf.group(1)) == presets["Very Grainy"]["crf"]
+    assert (
+        verygrainy_crf and int(verygrainy_crf.group(1)) == presets["Very Grainy"]["crf"]
+    )
     verygrainy_grain = re.search(r"film-grain=(\d+)", verygrainy_block.group(1))
     assert verygrainy_grain, "film-grain=... not found in verygrainy_*) block"
-    assert f"film-grain={verygrainy_grain.group(1)}" in presets["Very Grainy"]["svt_params"]
+    assert (
+        f"film-grain={verygrainy_grain.group(1)}"
+        in presets["Very Grainy"]["svt_params"]
+    )
 
 
 def test_pgo_training_matches_runtime_encode_constants():
