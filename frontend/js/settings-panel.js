@@ -166,10 +166,13 @@ class SettingsPanel {
         if (!preset) return;
 
         const current = this.getCurrentSettings();
+        // Normalize the same way current.svt_params already is, so an omitted
+        // boolean key doesn't register as a false "modified" positive.
+        const presetSvtParams = svtParamsForm.serialize(svtParamsForm.parse(preset.svt_params || ''));
         const isModified =
             current.crf !== preset.crf ||
             current.encoder_preset !== preset.encoder_preset ||
-            current.svt_params !== (preset.svt_params || '') ||
+            current.svt_params !== presetSvtParams ||
             current.audio_bitrate !== preset.audio_bitrate ||
             current.skip_crop_detect !== preset.skip_crop_detect ||
             current.max_resolution !== preset.max_resolution;

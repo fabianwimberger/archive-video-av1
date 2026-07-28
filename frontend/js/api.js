@@ -316,43 +316,35 @@ const svtParamsForm = {
         qm: 'enable-qm',
     },
 
-    // Quantization matrices are exposed as one toggle; qm-min/qm-max/chroma-qm-*
-    // are fixed implementation details, not separately editable.
+    // qm-min/qm-max/chroma-qm-* only round-trip via qmParams when they match its
+    // defaults; a divergent value is kept in extra instead of getting dropped.
     qmKeys: ['enable-qm', 'qm-min', 'qm-max', 'chroma-qm-min', 'chroma-qm-max'],
+    qmSubKeys: ['qm-min', 'qm-max', 'chroma-qm-min', 'chroma-qm-max'],
     qmParams: 'enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15',
+
+    getQmDefaults() {
+        if (!this._qmDefaults) {
+            this._qmDefaults = {};
+            this.qmParams.split(':').forEach(part => {
+                const [key, value] = part.split('=');
+                this._qmDefaults[key] = value;
+            });
+        }
+        return this._qmDefaults;
+    },
 
     normalizeExtra(value) {
         return (value || '').trim().replace(/^:+|:+$/g, '');
     },
 
-    read(ids) {
-        const params = [];
-        const tune = document.getElementById(ids.tuneId).value;
-        const grain = document.getElementById(ids.grainId).value.trim();
-        const extra = this.normalizeExtra(document.getElementById(ids.extraId).value);
-
-        // Order matches BASE_SVT_PARAMS/ANIMATED_SVT_PARAMS in lifecycle.py, so
-        // reading back an unmodified preset reproduces its exact stored string.
-        if (tune !== '') params.push(`${this.fields.tune}=${tune}`);
-        if (document.getElementById(ids.varianceBoostId).checked) params.push(`${this.fields.varianceBoost}=1`);
-        if (document.getElementById(ids.tfStrengthId).checked) params.push(`${this.fields.tfStrength}=1`);
-        if (document.getElementById(ids.sharpnessId).checked) params.push(`${this.fields.sharpness}=1`);
-        if (document.getElementById(ids.restorationId).checked) params.push(`${this.fields.restoration}=1`);
-        if (document.getElementById(ids.qmId).checked) params.push(this.qmParams);
-        if (grain !== '' && grain !== '0') params.push(`${this.fields.filmGrain}=${grain}`);
-        if (document.getElementById(ids.denoiseId).checked) params.push(`${this.fields.denoise}=1`);
-        if (extra) params.push(extra);
-
-        return params.join(':');
-    },
-
-    write(ids, params) {
+    // No DOM access - also used by checkModified() to normalize preset strings.
+    parse(params) {
         const normalized = this.normalizeExtra(params);
         const selectValues = {
             tune: new Set(['', '0', '1', '2']),
         };
         const values = {
-            tune: '0',
+            tune: '',
             grain: '',
             denoise: false,
             varianceBoost: false,
@@ -362,8 +354,7 @@ const svtParamsForm = {
             qm: false,
             extra: [],
         };
-
-        if (!normalized) values.tune = '';
+        const qmDefaults = this.getQmDefaults();
 
         normalized.split(':').filter(Boolean).forEach(part => {
             const [key, ...rest] = part.split('=');
@@ -383,12 +374,54 @@ const svtParamsForm = {
                 values.sharpness = value === '1';
             } else if (key === this.fields.restoration) {
                 values.restoration = value === '1';
-            } else if (this.qmKeys.includes(key)) {
-                if (key === this.fields.qm && value === '1') values.qm = true;
+            } else if (key === this.fields.qm) {
+                values.qm = value === '1';
+            } else if (this.qmSubKeys.includes(key)) {
+                if (value !== qmDefaults[key]) values.extra.push(part);
             } else {
                 values.extra.push(part);
             }
         });
+
+        return values;
+    },
+
+    serialize(values) {
+        const params = [];
+
+        // Booleans always emit 0/1 explicitly - omitting can't express "off"
+        // since several of these default to on in the encoder.
+        if (values.tune !== '') params.push(`${this.fields.tune}=${values.tune}`);
+        params.push(`${this.fields.varianceBoost}=${values.varianceBoost ? 1 : 0}`);
+        params.push(`${this.fields.tfStrength}=${values.tfStrength ? 1 : 0}`);
+        params.push(`${this.fields.sharpness}=${values.sharpness ? 1 : 0}`);
+        params.push(`${this.fields.restoration}=${values.restoration ? 1 : 0}`);
+        params.push(values.qm ? this.qmParams : `${this.fields.qm}=0`);
+        if (values.grain !== '' && values.grain !== '0') params.push(`${this.fields.filmGrain}=${values.grain}`);
+        params.push(`${this.fields.denoise}=${values.denoise ? 1 : 0}`);
+        const extra = this.normalizeExtra(values.extra.join(':'));
+        if (extra) params.push(extra);
+
+        return params.join(':');
+    },
+
+    read(ids) {
+        const values = {
+            tune: document.getElementById(ids.tuneId).value,
+            grain: document.getElementById(ids.grainId).value.trim(),
+            denoise: document.getElementById(ids.denoiseId).checked,
+            varianceBoost: document.getElementById(ids.varianceBoostId).checked,
+            tfStrength: document.getElementById(ids.tfStrengthId).checked,
+            sharpness: document.getElementById(ids.sharpnessId).checked,
+            restoration: document.getElementById(ids.restorationId).checked,
+            qm: document.getElementById(ids.qmId).checked,
+            extra: [this.normalizeExtra(document.getElementById(ids.extraId).value)].filter(Boolean),
+        };
+        return this.serialize(values);
+    },
+
+    write(ids, params) {
+        const values = this.parse(params);
 
         document.getElementById(ids.tuneId).value = values.tune;
         document.getElementById(ids.grainId).value = values.grain;

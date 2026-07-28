@@ -127,6 +127,15 @@ first_stream() {
     awk -F',' 'NF && $1 != "" { print $1; exit }' <<< "$1"
 }
 
+# probe_ordinal_for_index <codec_type> <index>: ordinal for a stream index
+# returned by find_preferred_stream/first_stream, for feeding into probe_field.
+probe_ordinal_for_index() {
+    local ord
+    for ord in $(probe_ordinals "$1"); do
+        [[ "$(probe_field "$ord" index)" == "$2" ]] && { echo "$ord"; return; }
+    done
+}
+
 
 # --- MAIN CONVERSION LOGIC ---
 
@@ -197,12 +206,13 @@ dv_profile=$(ffprobe -v error -select_streams v:0 \
     -of csv=p=0 "$INPUT_FILE" 2>/dev/null | head -1)
 
 if [[ -n "$dv_profile" ]]; then
-    is_hdr=1
-    hdr_type="DV"
-    # DV uses PQ transfer if not already set
+    echo "STATUS:Dolby Vision profile $dv_profile detected; RPU will be discarded, output color may not match the source"
     if [[ -z "$tc_value" ]]; then
-        tc_value=16
-        color_trc_name="smpte2084"
+        # Untagged base layer (e.g. profile 5) - leave metadata as detected.
+        :
+    else
+        is_hdr=1
+        hdr_type="DV"
     fi
 fi
 
@@ -379,6 +389,8 @@ case "$SUBTITLE_TRACK_MODE" in
         preferred_sub=$(find_preferred_stream "$subtitle_info" "$PREFERRED_SUBTITLE_LANGUAGES")
         first_sub=$(first_stream "$subtitle_info")
         subtitle_idx="${preferred_sub:-$first_sub}"
+        sub_ord=""
+        [[ -n "$subtitle_idx" ]] && sub_ord=$(probe_ordinal_for_index subtitle "$subtitle_idx")
         [[ -n "$subtitle_idx" ]] && sub_map="-map 0:$subtitle_idx"
         echo "STATUS:Subtitle track mode: preferred${subtitle_idx:+ (stream $subtitle_idx)}"
         ;;
@@ -415,8 +427,8 @@ if [[ "$SUBTITLE_TRACK_MODE" == "all" ]]; then
             echo "STATUS:Subtitle codec mov_text incompatible with MKV, converting to srt"
         fi
     fi
-elif [[ -n "$subtitle_idx" ]]; then
-    sub_codec_name=$(probe_field "$subtitle_idx" codec_name)
+elif [[ -n "$sub_ord" ]]; then
+    sub_codec_name=$(probe_field "$sub_ord" codec_name)
     if [[ "$sub_codec_name" == "mov_text" ]]; then
         sub_codec="-c:s srt"
         echo "STATUS:Subtitle codec mov_text incompatible with MKV, converting to srt"
@@ -465,7 +477,7 @@ else
 
     # luminance-qp-bias reduces dark-scene blockiness; excluded for PQ/HDR10
     # since PQ's luma scale isn't comparable to SDR/HLG's.
-    if [[ "$color_transfer" != "smpte2084" ]]; then
+    if [[ "$color_transfer" != "smpte2084" && "$SVT_PARAMS" != *"luminance-qp-bias="* ]]; then
         luma_svt="luminance-qp-bias=10"
         if [[ -n "$SVT_PARAMS" ]]; then
             SVT_PARAMS="${SVT_PARAMS}:${luma_svt}"

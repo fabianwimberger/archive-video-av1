@@ -44,9 +44,6 @@ RUN wget -q "https://downloads.xiph.org/releases/opus/opus-${OPUS_VERSION}.tar.g
 COPY scripts/build.sh /build/build.sh
 RUN chmod +x /build/build.sh
 
-# Copy samples (triggers PGO rebuild when samples change)
-COPY sample/ /build/samples/
-
 # ARCH_FLAGS is passed via build-arg:
 # - GitHub builds: not set (empty = generic, no -march flag)
 # - Local builds (Makefile): set to -march=native
@@ -57,6 +54,9 @@ COPY sample/ /build/samples/
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-generate; \
     fi
+
+# Copy samples after Layer 1, so a sample change doesn't invalidate it too.
+COPY sample/ /build/samples/
 
 # Layer 2: Run PGO training (rebuilds if samples change)
 RUN if [ "$ENABLE_PGO" = "true" ]; then \

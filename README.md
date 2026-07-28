@@ -197,6 +197,7 @@ Cluster state is shown in the Active Queue panel and is also available at `/api/
 
 Requirements:
 
+- `docker-compose.cluster.yml` is not shipped in this repo - it's your own node-specific compose file (ports, hostnames, `DISTRIBUTED_*` env vars per node). Create it yourself before running the commands below.
 - All participating nodes must mount the same media library at the same in-container `SOURCE_MOUNT` path.
 - Every node must be reachable from every other node through `DISTRIBUTED_PUBLIC_URL`.
 - For automatic leader election, leave `DISTRIBUTED_LEADER_URL` empty on every node and use stable, unique `DISTRIBUTED_NODE_ID` values.
