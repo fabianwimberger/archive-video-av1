@@ -207,13 +207,9 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
                 "reason": f"High detail, good bitrate ({bitrate_per_mp:.0f} kbps/MP)",
             }
 
-    # Default mapping
-    if y_norm < 15.0:
-        film_grain = 4
-    elif y_norm < 30.0:
-        film_grain = 8
-    else:
-        film_grain = 12
+    # Default mapping. y_norm <= 20.0 here (higher values return above), so
+    # this is always the low-texture case.
+    film_grain = 4 if y_norm < 15.0 else 8
 
     return {
         "film_grain": film_grain,

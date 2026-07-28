@@ -107,6 +107,7 @@ build_all() {
     # still pick AVX2 etc. on capable hosts instead of being stuck on the baseline.
     cpudetect_flag="--enable-runtime-cpudetect"
     [[ -n "$ARCH_FLAGS" ]] && cpudetect_flag="--disable-runtime-cpudetect"
+    # shellcheck disable=SC2086 # $FFMPEG_LTO_FLAG unquoted on purpose: drops the arg entirely when empty
     ./configure \
         --prefix=/usr/local --pkg-config-flags="--static" --extra-libs="-lpthread -lm" \
         --cc="${CC:-gcc}" --cxx="${CXX:-g++}" \

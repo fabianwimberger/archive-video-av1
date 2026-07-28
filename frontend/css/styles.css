@@ -514,6 +514,10 @@ body {
     padding-bottom: 0.3rem;
 }
 
+.svt-field--switch .form-check-input:indeterminate {
+    opacity: 0.6;
+}
+
 .svt-field-label {
     display: flex;
     align-items: center;
