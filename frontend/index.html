@@ -140,18 +140,21 @@
                         </div>
                     </div>
 
+                    <div class="svt-row">
+                        <div class="svt-field">
+                            <label for="svt-tf-strength" class="svt-field-label" data-bs-toggle="tooltip" data-bs-title="SVT-AV1 temporal filtering strength on alt-ref frames, 0-4. Higher = stronger filtering. Blank uses the encoder default (3).">TF Strength <i class="bi bi-question-circle"></i></label>
+                            <input type="number" id="svt-tf-strength" class="form-control form-control-sm" min="0" max="4" step="1" placeholder="0-4">
+                        </div>
+                        <div class="svt-field">
+                            <label for="svt-sharpness" class="svt-field-label" data-bs-toggle="tooltip" data-bs-title="SVT-AV1 deblocking sharpness bias, -7 to 7. Most effective with Tune 3/4. Blank uses the encoder default (0).">Sharpness <i class="bi bi-question-circle"></i></label>
+                            <input type="number" id="svt-sharpness" class="form-control form-control-sm" min="-7" max="7" step="1" placeholder="-7 to 7">
+                        </div>
+                    </div>
+
                     <div class="svt-toggle-grid">
                         <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Preserves detail in flat areas (skies, walls) that CRF would otherwise over-compress.">
                             <input class="form-check-input" type="checkbox" role="switch" id="svt-variance-boost">
                             <span>Variance Boost</span>
-                        </label>
-                        <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Adjusts temporal filtering strength, trading fine detail for cleaner motion.">
-                            <input class="form-check-input" type="checkbox" role="switch" id="svt-tf-strength">
-                            <span>TF Strength</span>
-                        </label>
-                        <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Biases the encoder's rate-distortion decisions toward sharper edges.">
-                            <input class="form-check-input" type="checkbox" role="switch" id="svt-sharpness">
-                            <span>Sharpness</span>
                         </label>
                         <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Enables in-loop restoration filtering to reduce blocking and ringing artifacts.">
                             <input class="form-check-input" type="checkbox" role="switch" id="svt-restoration">
@@ -400,18 +403,20 @@
                                             </div>
                                         </div>
                                     </div>
+                                    <div class="svt-row mb-0">
+                                        <div class="svt-field">
+                                            <label for="preset-edit-svt_tf_strength" class="svt-field-label">TF Strength</label>
+                                            <input type="number" id="preset-edit-svt_tf_strength" class="form-control form-control-sm" min="0" max="4" step="1" placeholder="0-4">
+                                        </div>
+                                        <div class="svt-field">
+                                            <label for="preset-edit-svt_sharpness" class="svt-field-label">Sharpness</label>
+                                            <input type="number" id="preset-edit-svt_sharpness" class="form-control form-control-sm" min="-7" max="7" step="1" placeholder="-7 to 7">
+                                        </div>
+                                    </div>
                                     <div class="svt-toggle-grid">
                                         <label class="svt-toggle form-switch">
                                             <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_variance_boost">
                                             <span>Variance Boost</span>
-                                        </label>
-                                        <label class="svt-toggle form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_tf_strength">
-                                            <span>TF Strength</span>
-                                        </label>
-                                        <label class="svt-toggle form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_sharpness">
-                                            <span>Sharpness</span>
                                         </label>
                                         <label class="svt-toggle form-switch">
                                             <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_restoration">

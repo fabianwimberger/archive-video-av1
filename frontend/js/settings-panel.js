@@ -81,13 +81,13 @@ class SettingsPanel {
 
         // Other inputs
         document.getElementById('audio-bitrate').addEventListener('input', () => this.checkModified());
-        ['svt-film-grain', 'svt-extra-params'].forEach(id => {
+        ['svt-film-grain', 'svt-tf-strength', 'svt-sharpness', 'svt-extra-params'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => {
                 this.checkModified();
                 this.refreshSvtSummary();
             });
         });
-        ['svt-tune', 'svt-denoise', 'svt-variance-boost', 'svt-tf-strength', 'svt-sharpness', 'svt-restoration', 'svt-qm'].forEach(id => {
+        ['svt-tune', 'svt-denoise', 'svt-variance-boost', 'svt-restoration', 'svt-qm'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => {
                 this.checkModified();
                 this.refreshSvtSummary();
