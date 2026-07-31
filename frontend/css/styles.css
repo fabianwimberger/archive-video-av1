@@ -1,23 +1,30 @@
 :root {
-    --app-bg: #f5f7fb;
+    --app-bg: #f3f4f8;
     --app-surface: #ffffff;
+    --app-surface-2: #ebedf3;
     --app-border: #dce3ec;
     --app-muted: #667085;
-    --app-accent: #2563eb;
-    --app-accent-soft: #e8f0ff;
-    --app-radius: 8px;
+    --app-accent: #b6551f;
+    --app-accent-soft: #fbede1;
+    --app-accent-cool: #0f8b8d;
+    --app-accent-cool-soft: #e2f5f4;
+    --app-radius: 10px;
     --app-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
     --queue-row-height: clamp(210px, 28vh, 420px);
+    --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 [data-bs-theme="dark"] {
-    --app-bg: #101418;
-    --app-surface: #161b22;
-    --app-border: #2b3542;
-    --app-muted: #9aa4b2;
-    --app-accent: #5b8def;
-    --app-accent-soft: #17243a;
-    --app-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    --app-bg: #0d1015;
+    --app-surface: #151a21;
+    --app-surface-2: #1b212a;
+    --app-border: #2a3140;
+    --app-muted: #93a0b3;
+    --app-accent: #b6551f;
+    --app-accent-soft: #2e2013;
+    --app-accent-cool: #45c7c0;
+    --app-accent-cool-soft: #12302e;
+    --app-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 html,
@@ -45,6 +52,10 @@ body {
     color: var(--bs-body-color);
     font-weight: 700;
     letter-spacing: 0;
+}
+
+.navbar-brand .bi-film {
+    color: var(--app-accent);
 }
 
 .navbar-brand:hover,
@@ -188,6 +199,7 @@ body {
 .card-title {
     font-size: 1rem;
     font-weight: 700;
+    letter-spacing: -0.01em;
 }
 
 .panel-actions,
@@ -252,8 +264,15 @@ body {
 }
 
 .btn-primary {
-    background: var(--app-accent);
-    border-color: var(--app-accent);
+    --bs-btn-bg: var(--app-accent);
+    --bs-btn-border-color: var(--app-accent);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--app-accent) 88%, black);
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--app-accent) 82%, black);
+    --bs-btn-active-bg: color-mix(in srgb, var(--app-accent) 78%, black);
+    --bs-btn-active-border-color: color-mix(in srgb, var(--app-accent) 72%, black);
+    --bs-btn-disabled-bg: var(--app-accent);
+    --bs-btn-disabled-border-color: var(--app-accent);
+    --bs-btn-focus-shadow-rgb: 182, 85, 31;
 }
 
 .progress {
@@ -333,6 +352,331 @@ body {
 
 .toast {
     border-radius: var(--app-radius);
+}
+
+/* ---- Global control theming (ties Bootstrap defaults to the app accent) ---- */
+
+.btn-outline-primary {
+    --bs-btn-color: var(--app-accent);
+    --bs-btn-border-color: var(--app-accent);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: var(--app-accent);
+    --bs-btn-hover-border-color: var(--app-accent);
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: var(--app-accent);
+    --bs-btn-active-border-color: var(--app-accent);
+    --bs-btn-disabled-color: var(--app-accent);
+    --bs-btn-disabled-border-color: var(--app-accent);
+    --bs-btn-focus-shadow-rgb: 182, 85, 31;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--app-accent);
+    box-shadow: 0 0 0 0.2rem var(--app-accent-soft);
+}
+
+.form-check-input:focus {
+    border-color: var(--app-accent);
+    box-shadow: 0 0 0 0.2rem var(--app-accent-soft);
+}
+
+.form-check-input:checked {
+    background-color: var(--app-accent);
+    border-color: var(--app-accent);
+}
+
+.form-range:focus {
+    outline: none;
+}
+
+.form-range::-webkit-slider-thumb {
+    background-color: var(--app-accent);
+}
+
+.form-range::-moz-range-thumb {
+    background-color: var(--app-accent);
+}
+
+.btn-check:checked + .btn-outline-secondary,
+.btn-check:active + .btn-outline-secondary {
+    background-color: var(--app-accent);
+    border-color: var(--app-accent);
+    color: #fff;
+}
+
+/* ---- Settings panel ---- */
+
+.settings-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--app-muted);
+}
+
+.settings-eyebrow .bi {
+    font-size: 0.95em;
+    color: var(--app-accent);
+}
+
+.settings-value {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.76rem;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--bs-body-color);
+    background: var(--app-accent-soft);
+    border: 1px solid var(--app-border);
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+}
+
+.range-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--app-muted);
+    margin-top: 0.2rem;
+}
+
+/* ---- Collapsible settings sections ---- */
+
+.settings-section {
+    flex-shrink: 0;
+}
+
+.settings-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.settings-section__header .settings-eyebrow {
+    margin-bottom: 0;
+}
+
+.settings-section__toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--app-muted);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.settings-section__toggle:hover,
+.settings-section__toggle:focus-visible {
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+}
+
+.settings-section__toggle .bi {
+    display: block;
+    transition: transform 0.15s ease;
+}
+
+.settings-section.is-collapsed .settings-section__toggle .bi {
+    transform: rotate(-90deg);
+}
+
+.settings-section__body {
+    margin-top: 0.35rem;
+}
+
+.settings-section.is-collapsed .settings-section__body {
+    display: none;
+}
+
+/* ---- SVT-AV1 encoder panel (signature block) ---- */
+
+.svt-panel {
+    position: relative;
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    padding: 0.85rem 0.85rem 0.75rem;
+    overflow: hidden;
+}
+
+.svt-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--app-accent), transparent 75%);
+}
+
+.svt-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.7rem;
+}
+
+.svt-panel__header .settings-eyebrow {
+    margin-bottom: 0;
+}
+
+.svt-panel > .settings-section__body {
+    margin-top: 0;
+}
+
+.btn-auto {
+    color: var(--app-accent-cool);
+    border: 1px solid var(--app-accent-cool);
+    background: transparent;
+}
+
+.btn-auto:hover:not(:disabled),
+.btn-auto:focus:not(:disabled) {
+    background: var(--app-accent-cool-soft);
+    color: var(--app-accent-cool);
+}
+
+.btn-auto:disabled {
+    opacity: 0.45;
+}
+
+.svt-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 0.7rem;
+}
+
+.svt-field {
+    flex: 1 1 6.5rem;
+    min-width: 6.5rem;
+}
+
+.svt-field--switch {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding-bottom: 0.3rem;
+}
+
+.svt-field--switch .form-check-input:indeterminate {
+    opacity: 0.6;
+}
+
+.svt-field-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--app-muted);
+    margin-bottom: 0.2rem;
+    white-space: nowrap;
+}
+
+.svt-field-label .bi {
+    font-size: 0.85em;
+    cursor: help;
+}
+
+.svt-grain-swatch {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid var(--app-border);
+}
+
+.svt-toggle-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.25rem, 1fr));
+    gap: 0.4rem;
+    margin-bottom: 0.15rem;
+}
+
+.svt-toggle.form-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.55rem 0.4rem 0.55rem;
+    border: 1px solid var(--app-border);
+    border-radius: calc(var(--app-radius) - 3px);
+    background: var(--app-surface);
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--bs-body-color);
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.svt-toggle.form-switch:hover {
+    border-color: var(--app-accent-cool);
+}
+
+.svt-toggle.form-switch:has(.form-check-input:checked) {
+    border-color: var(--app-accent);
+    background: var(--app-accent-soft);
+}
+
+.svt-toggle.form-switch:has(.form-check-input:indeterminate) {
+    opacity: 0.6;
+}
+
+.svt-toggle .form-check-input {
+    margin-left: 0;
+    flex-shrink: 0;
+}
+
+.svt-toggle span {
+    line-height: 1.1;
+}
+
+.svt-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.svt-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 0.7rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--app-surface);
+    border: 1px dashed var(--app-border);
+    border-radius: calc(var(--app-radius) - 3px);
+    font-size: 0.74rem;
+    overflow-x: auto;
+}
+
+.svt-summary-label {
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.64rem;
+    font-weight: 700;
+    color: var(--app-muted);
+}
+
+.svt-summary code {
+    color: var(--app-accent-cool);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    background: none;
 }
 
 @media (max-width: 1200px) {

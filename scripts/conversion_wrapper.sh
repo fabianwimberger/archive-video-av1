@@ -19,21 +19,23 @@ PREFERRED_SUBTITLE_LANGUAGES="${PREFERRED_SUBTITLE_LANGUAGES:-ger,deu,de,eng,en}
 
 # --- TRAP SIGNALS ---
 
+# pkill -P $$ would miss branch A's ffmpeg (a backgrounded subshell's child,
+# not a direct child), so kill the whole process group instead.
+kill_all() {
+    pkill -g $$ 2>/dev/null
+}
+
 cleanup() {
+    # kill_all's pkill -g $$ also signals this script's own PID; without
+    # disarming the trap first, that self-signal re-enters this handler.
+    trap '' SIGTERM SIGINT
     echo "STATUS:Stopping conversion..."
-    # Kill all child processes in the current process group
-    pkill -P $$
+    kill_all
 
     # Clean up temp files
-    if [[ -n "$temp_file" && -f "$temp_file" ]]; then
-        rm -f "$temp_file"
-    fi
-    if [[ -n "$LOUDNORM_JSON" && -f "$LOUDNORM_JSON" ]]; then
-        rm -f "$LOUDNORM_JSON"
-    fi
-    if [[ -n "$TAGS_XML" && -f "$TAGS_XML" ]]; then
-        rm -f "$TAGS_XML"
-    fi
+    for f in "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE" "$LOUDNORM_JSON" "$TAGS_XML"; do
+        [[ -n "$f" && -f "$f" ]] && rm -f "$f"
+    done
 
     exit 1
 }
@@ -43,16 +45,55 @@ echo "STAGE:initializing"
 
 # --- HELPER FUNCTIONS (from original script) ---
 
+# Helpers read from $PROBE (one ffprobe -of flat dump) instead of re-probing
+# the container per field.
+
+# probe_get <escaped-key>: value for a flat "key=value" line (quotes stripped).
+# Keys are matched as sed BRE patterns, so callers must escape literal dots.
+probe_get() {
+    local val
+    val=$(sed -n "s/^$1=//p" <<< "$PROBE" | head -1)
+    val="${val%\"}"
+    val="${val#\"}"
+    echo "$val"
+}
+
+# probe_ordinals <codec_type>: stream ordinals (== absolute stream index for
+# well-formed containers) matching a codec_type, one per line.
+probe_ordinals() {
+    sed -n "s/^streams\.stream\.\([0-9]\{1,\}\)\.codec_type=\"$1\"\$/\1/p" <<< "$PROBE"
+}
+
+# probe_field <ordinal> <field>: a single stream field.
+probe_field() {
+    probe_get "streams\.stream\.$1\.$2"
+}
+
+# probe_stream_list <codec_type>: "index,language" per line (matches the old
+# `-of csv=p=0` shape). Reads the stream's own "index" field rather than
+# $ord, since $ord only equals the absolute stream index as long as the
+# probe doesn't use -select_streams.
+probe_stream_list() {
+    local ord idx lang
+    for ord in $(probe_ordinals "$1"); do
+        idx=$(probe_field "$ord" index)
+        lang=$(probe_get "streams\.stream\.${ord}\.tags\.language")
+        echo "${idx},${lang}"
+    done
+}
+
 get_total_frames() {
-    local video="$1"
-    local frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "$video")
+    local ord="$1"
+    local frames duration fps
+
+    frames=$(probe_field "$ord" nb_frames)
 
     if [[ ! "$frames" =~ ^[0-9]+$ ]]; then
-        local duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$video")
-        local fps=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "$video")
+        duration=$(probe_get 'format\.duration')
+        fps=$(probe_field "$ord" r_frame_rate)
 
         if [[ -n "$duration" && -n "$fps" && "$duration" != "N/A" ]]; then
-            frames=$(awk -v d="$duration" -v f="$fps" 'BEGIN { split(f,a,"/"); rate=a[1]/a[2]; printf "%.0f", d*rate }')
+            frames=$(awk -v d="$duration" -v f="$fps" 'BEGIN { split(f,a,"/"); rate=(a[2]>0)?a[1]/a[2]:0; printf "%.0f", d*rate }')
         fi
     fi
     echo "${frames:-0}"
@@ -86,37 +127,61 @@ first_stream() {
     awk -F',' 'NF && $1 != "" { print $1; exit }' <<< "$1"
 }
 
+# probe_ordinal_for_index <codec_type> <index>: ordinal for a stream index
+# returned by find_preferred_stream/first_stream, for feeding into probe_field.
+probe_ordinal_for_index() {
+    local ord
+    for ord in $(probe_ordinals "$1"); do
+        [[ "$(probe_field "$ord" index)" == "$2" ]] && { echo "$ord"; return; }
+    done
+}
+
 
 # --- MAIN CONVERSION LOGIC ---
 
-# Encode to TEMP_DIR when available so the (long-running) encode pass writes
-# to fast local storage instead of the output share; mkvmerge remuxes the
-# result into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
+# Encode to TEMP_DIR (fast local storage) when available; mkvmerge remuxes
+# into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
 output_dir="$(dirname "$OUTPUT_FILE")"
 if [[ -d "$TEMP_DIR" && -w "$TEMP_DIR" ]]; then
     temp_dir="$TEMP_DIR"
 else
     temp_dir="$output_dir"
 fi
-temp_file="${temp_dir}/.$(basename "$OUTPUT_FILE").tmp"
+tmp_video="${temp_dir}/.$(basename "$OUTPUT_FILE").video.tmp"
+tmp_audio="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.tmp"
+audio_log="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.log"
+AUDIO_CMD_FILE="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.cmd"
+
+# One ffprobe call for everything below, instead of once per field.
+PROBE=$(ffprobe -v error \
+    -show_entries "format=duration,start_time:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate,start_time,color_transfer,color_primaries,color_space:stream_tags=language" \
+    -of flat "$INPUT_FILE" 2>/dev/null)
+
+if [[ -z "$PROBE" ]]; then
+    echo "ERROR:Failed to probe input file"
+    exit 1
+fi
+
+video_ord=$(probe_ordinals video | head -1)
+if [[ -z "$video_ord" ]]; then
+    echo "ERROR:No video stream found"
+    exit 1
+fi
 
 # Get total frames for progress calculation
-TOTAL_FRAMES=$(get_total_frames "$INPUT_FILE")
+TOTAL_FRAMES=$(get_total_frames "$video_ord")
 echo "total_frames=$TOTAL_FRAMES"
 
 # Detect video codec
-video_codec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$INPUT_FILE")
+video_codec=$(probe_field "$video_ord" codec_name)
 is_av1=0
 [[ "$video_codec" == "av1" ]] && is_av1=1
 echo "STATUS:Detected video codec: $video_codec"
 
 # --- HDR DETECTION ---
-color_transfer=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=color_transfer -of csv=p=0 "$INPUT_FILE")
-color_primaries=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=color_primaries -of csv=p=0 "$INPUT_FILE")
-color_space=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=color_space -of csv=p=0 "$INPUT_FILE")
+color_transfer=$(probe_field "$video_ord" color_transfer)
+color_primaries=$(probe_field "$video_ord" color_primaries)
+color_space=$(probe_field "$video_ord" color_space)
 
 is_hdr=0
 hdr_type=""
@@ -141,12 +206,13 @@ dv_profile=$(ffprobe -v error -select_streams v:0 \
     -of csv=p=0 "$INPUT_FILE" 2>/dev/null | head -1)
 
 if [[ -n "$dv_profile" ]]; then
-    is_hdr=1
-    hdr_type="DV"
-    # DV uses PQ transfer if not already set
+    echo "STATUS:Dolby Vision profile $dv_profile detected; RPU will be discarded, output color may not match the source"
     if [[ -z "$tc_value" ]]; then
-        tc_value=16
-        color_trc_name="smpte2084"
+        # Untagged base layer (e.g. profile 5) - leave metadata as detected.
+        :
+    else
+        is_hdr=1
+        hdr_type="DV"
     fi
 fi
 
@@ -166,9 +232,7 @@ if [[ $is_hdr -eq 1 && "$color_transfer" == "smpte2084" ]]; then
         -print_format json "$INPUT_FILE" 2>/dev/null)
 
     if [[ -n "$hdr_side_data" ]]; then
-        # Extract mastering display color volume
-        # Values are fractions like "34000/50000" — divide to get SVT-AV1 format
-        # Chromaticity: 0.0-1.0 (CIE 1931), Luminance: cd/m² (nits)
+        # Values are fractions like "34000/50000" - divide to get SVT-AV1's format.
         extract_frac() { echo "$hdr_side_data" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([0-9]*\/[0-9]*\)\".*/\1/p" | head -1 | awk -F'/' '{printf "%.4f", $1/$2}'; }
         red_x=$(extract_frac red_x)
         red_y=$(extract_frac red_y)
@@ -204,7 +268,7 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
     echo "STATUS:Detecting crop parameters..."
 
     # Get video duration for percentage-based sampling
-    duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE")
+    duration=$(probe_get 'format\.duration')
 
     if [[ -n "$duration" && "$duration" != "N/A" ]]; then
         # Collect all crop values by sampling at 8 points
@@ -230,9 +294,8 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
 
         if [[ -n "$crop" ]]; then
             # Get original resolution
-            orig_res=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$INPUT_FILE")
-            orig_width=$(echo "$orig_res" | cut -d',' -f1)
-            orig_height=$(echo "$orig_res" | cut -d',' -f2)
+            orig_width=$(probe_field "$video_ord" width)
+            orig_height=$(probe_field "$video_ord" height)
             crop_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
             crop_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
 
@@ -268,10 +331,8 @@ if [[ $is_av1 -eq 0 ]]; then
         source_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
         source_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
     else
-        source_res=$(ffprobe -v error -select_streams v:0 \
-            -show_entries stream=width,height -of csv=p=0 "$INPUT_FILE")
-        source_width=$(echo "$source_res" | cut -d',' -f1)
-        source_height=$(echo "$source_res" | cut -d',' -f2)
+        source_width=$(probe_field "$video_ord" width)
+        source_height=$(probe_field "$video_ord" height)
     fi
 
     if [[ -n "$source_width" && -n "$source_height" ]] && \
@@ -293,7 +354,7 @@ vf=""
 [[ -n "$vf_parts" ]] && vf="-vf $vf_parts"
 
 # Detect audio/subs
-audio_streams=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
+audio_streams=$(probe_stream_list audio)
 preferred_audio=$(find_preferred_stream "$audio_streams" "$PREFERRED_AUDIO_LANGUAGES")
 first_audio=$(first_stream "$audio_streams")
 audio_idx="${preferred_audio:-$first_audio}"
@@ -320,53 +381,7 @@ case "$AUDIO_TRACK_MODE" in
         ;;
 esac
 
-# --- AUDIO FILTER CHAIN ---
-# Every mapped track is normalized (two-pass loudnorm) and encoded to Opus.
-# Each track gets its own measurement pass since loudness varies per track.
-TARGET_I="-20"
-TARGET_TP="-2"
-TARGET_LRA="13"
-af_filter=""
-audio_params="-c:a libopus -b:a $AUDIO_BITRATE"
-
-echo "STAGE:audio_measure"
-echo "STATUS:Measuring audio for two-pass normalization (${#audio_indices[@]} track(s))..."
-
-filter_idx=0
-for idx in "${audio_indices[@]}"; do
-    # Create temp file for measurement JSON
-    LOUDNORM_JSON=$(mktemp)
-
-    # Run pass 1: measurement
-    ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
-        -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
-        -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
-
-    # Parse JSON output (using sed for BusyBox compatibility)
-    MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-    TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
-
-    rm -f "$LOUDNORM_JSON"
-
-    # Validate we got measurements
-    if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
-        echo "ERROR:Failed to parse loudnorm measurements for stream $idx"
-        exit 1
-    fi
-
-    echo "STATUS:Audio stream $idx measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU"
-
-    # Build pass 2 filter with measured values, targeted at this track's output position
-    af_filter="${af_filter} -filter:a:${filter_idx} aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
-    filter_idx=$((filter_idx + 1))
-done
-
-echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)"
-
-subtitle_info=$(ffprobe -v error -select_streams s -show_entries stream=index:stream_tags=language -of csv=p=0 "$INPUT_FILE")
+subtitle_info=$(probe_stream_list subtitle)
 sub_map=""
 sub_codec="-c:s copy"
 case "$SUBTITLE_TRACK_MODE" in
@@ -374,6 +389,8 @@ case "$SUBTITLE_TRACK_MODE" in
         preferred_sub=$(find_preferred_stream "$subtitle_info" "$PREFERRED_SUBTITLE_LANGUAGES")
         first_sub=$(first_stream "$subtitle_info")
         subtitle_idx="${preferred_sub:-$first_sub}"
+        sub_ord=""
+        [[ -n "$subtitle_idx" ]] && sub_ord=$(probe_ordinal_for_index subtitle "$subtitle_idx")
         [[ -n "$subtitle_idx" ]] && sub_map="-map 0:$subtitle_idx"
         echo "STATUS:Subtitle track mode: preferred${subtitle_idx:+ (stream $subtitle_idx)}"
         ;;
@@ -390,9 +407,28 @@ case "$SUBTITLE_TRACK_MODE" in
         ;;
 esac
 
-# mov_text (MP4 text subtitles) cannot be copied into MKV; convert to srt
-if [[ -n "$sub_map" || "$SUBTITLE_TRACK_MODE" == "all" ]]; then
-    sub_codec_name=$(ffprobe -v error -select_streams s:0 -show_entries stream=codec_name -of csv=p=0 "$INPUT_FILE" 2>/dev/null)
+# mov_text can't be copied into MKV; convert to srt. Checks the stream(s)
+# actually selected above, not s:0, since language preference may differ.
+if [[ "$SUBTITLE_TRACK_MODE" == "all" ]]; then
+    if [[ -n "$sub_map" ]]; then
+        has_mov_text=0
+        has_other=0
+        for sub_ord in $(probe_ordinals subtitle); do
+            if [[ "$(probe_field "$sub_ord" codec_name)" == "mov_text" ]]; then
+                has_mov_text=1
+            else
+                has_other=1
+            fi
+        done
+        if [[ $has_mov_text -eq 1 && $has_other -eq 1 ]]; then
+            echo "STATUS:Mixed subtitle codecs (mov_text and other) in 'all' mode; some subtitle tracks may fail to remux"
+        elif [[ $has_mov_text -eq 1 ]]; then
+            sub_codec="-c:s srt"
+            echo "STATUS:Subtitle codec mov_text incompatible with MKV, converting to srt"
+        fi
+    fi
+elif [[ -n "$sub_ord" ]]; then
+    sub_codec_name=$(probe_field "$sub_ord" codec_name)
     if [[ "$sub_codec_name" == "mov_text" ]]; then
         sub_codec="-c:s srt"
         echo "STATUS:Subtitle codec mov_text incompatible with MKV, converting to srt"
@@ -439,6 +475,17 @@ else
         echo "STATUS:HDR encoding params applied ($hdr_type)"
     fi
 
+    # luminance-qp-bias reduces dark-scene blockiness; excluded for PQ/HDR10
+    # since PQ's luma scale isn't comparable to SDR/HLG's.
+    if [[ "$color_transfer" != "smpte2084" && "$SVT_PARAMS" != *"luminance-qp-bias="* ]]; then
+        luma_svt="luminance-qp-bias=10"
+        if [[ -n "$SVT_PARAMS" ]]; then
+            SVT_PARAMS="${SVT_PARAMS}:${luma_svt}"
+        else
+            SVT_PARAMS="$luma_svt"
+        fi
+    fi
+
     svt_params_arg=""
     if [[ -n "$SVT_PARAMS" ]]; then
         svt_params_arg="-svtav1-params $SVT_PARAMS"
@@ -446,56 +493,163 @@ else
     video_params="-c:v libsvtav1 -preset $PRESET -crf $CRF -g 225 $svt_params_arg"
 fi
 
-# --- ENCODING ---
+# --- AUDIO MEASUREMENT + ENCODE (branch A) ---
+# Two-pass loudnorm needs a measurement read before the encode read; runs
+# concurrently with branch V, which takes far longer at preset 4.
+TARGET_I="-20"
+TARGET_TP="-2"
+TARGET_LRA="13"
+
+# fd 3 is a handle to the real stdout, so branch A can still report STATUS:
+# lines while its own stdout (raw ffmpeg output) goes to $audio_log instead.
+exec 3>&1
+
+measure_and_encode_audio() {
+    local af_filter="" filter_idx=0 idx
+
+    for idx in "${audio_indices[@]}"; do
+        LOUDNORM_JSON=$(mktemp)
+
+        nice -n 10 ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
+            -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
+            -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
+
+        MEASURED_I=$(sed -n 's/.*"input_i"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        MEASURED_TP=$(sed -n 's/.*"input_tp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        MEASURED_LRA=$(sed -n 's/.*"input_lra"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        MEASURED_THRESH=$(sed -n 's/.*"input_thresh"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+        TARGET_OFFSET=$(sed -n 's/.*"target_offset"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LOUDNORM_JSON" 2>/dev/null | head -1)
+
+        rm -f "$LOUDNORM_JSON"
+
+        if [[ -z "$MEASURED_I" || -z "$MEASURED_TP" || -z "$MEASURED_LRA" || -z "$MEASURED_THRESH" || -z "$TARGET_OFFSET" ]]; then
+            echo "STATUS:Failed to parse loudnorm measurements for stream $idx" >&3
+            return 1
+        fi
+
+        echo "STATUS:Audio stream $idx measurements - I:${MEASURED_I} LUFS, TP:${MEASURED_TP} dBTP, LRA:${MEASURED_LRA} LU" >&3
+
+        af_filter="${af_filter} -filter:a:${filter_idx} aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:measured_I=${MEASURED_I}:measured_TP=${MEASURED_TP}:measured_LRA=${MEASURED_LRA}:measured_thresh=${MEASURED_THRESH}:offset=${TARGET_OFFSET}"
+        filter_idx=$((filter_idx + 1))
+    done
+
+    echo "STATUS:Audio: two-pass normalization on ${#audio_indices[@]} track(s) (target: ${TARGET_I} LUFS, ${TARGET_TP} dBTP, ${TARGET_LRA} LU)" >&3
+
+    local ffmpeg_cmd_a="ffmpeg -i \"$INPUT_FILE\" $audio_map -map_chapters -1 -vn -sn -dn $af_filter -c:a libopus -b:a $AUDIO_BITRATE -f matroska -y \"$tmp_audio\""
+    echo "$ffmpeg_cmd_a" > "$AUDIO_CMD_FILE"
+
+    # Full command goes to $AUDIO_CMD_FILE (used for the ENCODER_SETTINGS tag
+    # later); not echoed live here since a long one could exceed PIPE_BUF and
+    # interleave with branch V's writes on the shared fd 3 pipe.
+    echo "STATUS:CMD (audio): audio encode starting (${#audio_indices[@]} track(s))" >&3
+
+    # -map_chapters -1: ffmpeg copies chapters by default even with an
+    # explicit stream -map. Branch V already carries them; without this,
+    # mkvmerge would merge both branches' copies and double every chapter.
+    local audio_start
+    audio_start=$(date +%s)
+
+    nice -n 10 ffmpeg -v error -i "$INPUT_FILE" $audio_map -map_chapters -1 -vn -sn -dn \
+        $af_filter \
+        -c:a libopus -b:a "$AUDIO_BITRATE" \
+        -f matroska -y "$tmp_audio"
+    local rc=$?
+
+    if [[ $rc -eq 0 ]]; then
+        local audio_elapsed=$(( $(date +%s) - audio_start ))
+        local audio_size
+        audio_size=$(du -h "$tmp_audio" 2>/dev/null | cut -f1)
+        echo "STATUS:Audio encode complete: ${#audio_indices[@]} track(s), ${AUDIO_BITRATE}, ${audio_elapsed}s, ${audio_size:-unknown size}" >&3
+    fi
+
+    return $rc
+}
+
+# --- ENCODING (branch V + branch A, concurrent) ---
 
 echo "STAGE:encoding"
-echo "STATUS:Encoding video..."
+echo "STATUS:Encoding video and audio concurrently..."
 
-# Build the full ffmpeg command (stored in MKV metadata for reproducibility)
-FFMPEG_CMD="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 $audio_map $sub_map $vf $af_filter $video_params $color_flags $audio_params $sub_codec -f matroska -y \"$OUTPUT_FILE\""
-echo "CMD:$FFMPEG_CMD"
+# Build the video-branch ffmpeg command (stored in MKV metadata for reproducibility)
+FFMPEG_CMD_V="ffmpeg -i \"$INPUT_FILE\" -map 0:v:0 $sub_map -an -dn $vf $video_params $color_flags $sub_codec -f matroska -y \"$tmp_video\""
+echo "CMD:$FFMPEG_CMD_V"
 
+# Branch V: video (+ subtitles). The only process permitted to write to the
+# wrapper's own stdout - its -progress output drives the UI's progress bar.
 nice -n 10 ffmpeg -v quiet -progress - -nostats \
     -i "$INPUT_FILE" \
-    -map 0:v:0 $audio_map $sub_map \
+    -map 0:v:0 $sub_map -an -dn \
     $vf \
-    $af_filter \
     $video_params \
     $color_flags \
-    $audio_params \
     $sub_codec \
-    -f matroska -y "$temp_file" 2>&1
+    -f matroska -y "$tmp_video" 2>&1 &
+pid_v=$!
 
-ffmpeg_status=$?
+# Branch A: audio measurement + encode, fully redirected to a log file so it
+# can't leak a stray line into branch V's progress output.
+{ measure_and_encode_audio; } > "$audio_log" 2>&1 &
+pid_a=$!
 
-if [[ $ffmpeg_status -ne 0 ]]; then
-    echo "ERROR:FFmpeg encoding failed"
-    rm -f "$temp_file"
+# Fail fast: stop the other branch as soon as either one fails, rather than
+# waiting out its full encode first. wait -n needs bash >= 5.1.
+wait -n $pid_v $pid_a
+first_rc=$?
+if [[ $first_rc -ne 0 ]]; then
+    trap '' SIGTERM SIGINT
+    kill_all
+fi
+
+wait $pid_v
+rc_v=$?
+wait $pid_a
+rc_a=$?
+
+if [[ $rc_v -ne 0 || $rc_a -ne 0 ]]; then
+    [[ $rc_v -ne 0 ]] && echo "ERROR:Video encoding failed"
+    if [[ $rc_a -ne 0 ]]; then
+        echo "ERROR:Audio encoding failed"
+        if [[ -f "$audio_log" ]]; then
+            while IFS= read -r line; do echo "STATUS:$line"; done < "$audio_log"
+        fi
+    fi
+    # Disarm first: kill_all's pkill -g $$ also signals this script's own
+    # PID, which would otherwise re-enter cleanup() and print a spurious
+    # "Stopping conversion..." after the real error above.
+    trap '' SIGTERM SIGINT
+    kill_all
+    rm -f "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE"
     exit 1
 fi
+
+FFMPEG_CMD_A=$(cat "$AUDIO_CMD_FILE" 2>/dev/null)
+rm -f "$AUDIO_CMD_FILE" "$audio_log"
 
 # --- FINALIZATION ---
 
 echo "STAGE:finalizing"
 echo "STATUS:Finalizing output file with correct metadata..."
 
-# Build MKV global tags XML with the ffmpeg command for reproducibility
-TAGS_XML=$(mktemp)
-FFMPEG_CMD_XML=$(printf '%s' "$FFMPEG_CMD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
-printf '<?xml version="1.0" encoding="UTF-8"?>\n<Tags>\n  <Tag>\n    <Simple>\n      <Name>ENCODER_SETTINGS</Name>\n      <String>%s</String>\n    </Simple>\n  </Tag>\n</Tags>\n' "$FFMPEG_CMD_XML" > "$TAGS_XML"
+# A/V sync: neither branch seeks, so ffmpeg preserves each stream's original
+# container-relative start time - mkvmerge joins them correctly without
+# manual realignment.
 
-# Use mkvmerge to remux, calculate BPS tags, and embed encoding metadata
-mkvmerge -o "$OUTPUT_FILE" --global-tags "$TAGS_XML" "$temp_file" >/dev/null 2>&1
+# Global tags XML: embeds both branches' ffmpeg commands for reproducibility.
+TAGS_XML=$(mktemp)
+FFMPEG_CMD_XML_V=$(printf '%s' "$FFMPEG_CMD_V" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+FFMPEG_CMD_XML_A=$(printf '%s' "$FFMPEG_CMD_A" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+printf '<?xml version="1.0" encoding="UTF-8"?>\n<Tags>\n  <Tag>\n    <Simple>\n      <Name>ENCODER_SETTINGS</Name>\n      <String>%s\n%s</String>\n    </Simple>\n  </Tag>\n</Tags>\n' "$FFMPEG_CMD_XML_V" "$FFMPEG_CMD_XML_A" > "$TAGS_XML"
+
+# Use mkvmerge to join the two branches, calculate BPS tags, and embed encoding metadata
+mkvmerge -o "$OUTPUT_FILE" --global-tags "$TAGS_XML" "$tmp_video" "$tmp_audio" >/dev/null 2>&1
 mkvmerge_status=$?
-rm -f "$TAGS_XML"
+rm -f "$TAGS_XML" "$tmp_video" "$tmp_audio"
 
 if [[ $mkvmerge_status -eq 0 && -f "$OUTPUT_FILE" ]]; then
     echo "STAGE:complete"
     echo "STATUS:Conversion complete"
-    rm -f "$temp_file"
     exit 0
 else
     echo "ERROR:Failed to finalize output file"
-    rm -f "$temp_file"
     exit 1
 fi

@@ -55,6 +55,9 @@ async def _noop_async(*a, **k):
 
 
 alembic.command.upgrade = lambda *a, **k: None
+_original_sync_builtin_presets = _lifecycle_module.sync_builtin_presets
+_original_recover_interrupted_jobs = _lifecycle_module.recover_interrupted_jobs
+_original_prune_history = _lifecycle_module.prune_history
 _lifecycle_module.sync_builtin_presets = _noop_async
 _lifecycle_module.recover_interrupted_jobs = _noop_async
 _lifecycle_module.prune_history = _noop_async
@@ -116,6 +119,15 @@ def seeded_client(client):
 @pytest.fixture
 def original_jobqueue_methods():
     return {"start": _original_start_worker, "stop": _original_stop_worker}
+
+
+@pytest.fixture
+def original_lifecycle_functions():
+    return {
+        "sync_builtin_presets": _original_sync_builtin_presets,
+        "recover_interrupted_jobs": _original_recover_interrupted_jobs,
+        "prune_history": _original_prune_history,
+    }
 
 
 async def _init_db():

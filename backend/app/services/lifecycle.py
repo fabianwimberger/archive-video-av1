@@ -10,6 +10,17 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+BASE_SVT_PARAMS = (
+    "tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1"
+    ":enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
+)
+
+# No variance-boost/tf-strength: not worth their bitrate cost on animated content.
+ANIMATED_SVT_PARAMS = (
+    "tune=1:sharpness=1:enable-restoration=1"
+    ":enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
+)
+
 BUILTIN_PRESETS = [
     {
         "name": "Default",
@@ -17,7 +28,7 @@ BUILTIN_PRESETS = [
         "is_builtin": True,
         "crf": 26,
         "encoder_preset": 4,
-        "svt_params": "tune=0",
+        "svt_params": BASE_SVT_PARAMS,
         "audio_bitrate": "96k",
         "skip_crop_detect": False,
         "max_resolution": 1080,
@@ -28,7 +39,7 @@ BUILTIN_PRESETS = [
         "is_builtin": True,
         "crf": 35,
         "encoder_preset": 4,
-        "svt_params": "tune=0",
+        "svt_params": ANIMATED_SVT_PARAMS,
         "audio_bitrate": "96k",
         "skip_crop_detect": False,
         "max_resolution": 1080,
@@ -39,7 +50,7 @@ BUILTIN_PRESETS = [
         "is_builtin": True,
         "crf": 26,
         "encoder_preset": 4,
-        "svt_params": "tune=0:film-grain=12:film-grain-denoise=1",
+        "svt_params": f"{BASE_SVT_PARAMS}:film-grain=12:film-grain-denoise=1",
         "audio_bitrate": "96k",
         "skip_crop_detect": False,
         "max_resolution": 1080,
@@ -50,7 +61,7 @@ BUILTIN_PRESETS = [
         "is_builtin": True,
         "crf": 26,
         "encoder_preset": 4,
-        "svt_params": "tune=0:film-grain=18:film-grain-denoise=1",
+        "svt_params": f"{BASE_SVT_PARAMS}:film-grain=18:film-grain-denoise=1",
         "audio_bitrate": "96k",
         "skip_crop_detect": False,
         "max_resolution": 1080,

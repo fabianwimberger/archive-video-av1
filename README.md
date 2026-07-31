@@ -23,9 +23,10 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
 - **Distributed processing** with opt-in LAN peer discovery and remote job delegation
 - **Persistent** — conversion history, custom presets, and queue state survive restarts
 - **Conversion presets:**
-  - **Default** — CRF 26, film grain preservation (`film-grain=8`)
-  - **Animated** — CRF 35, tune=0 (visual quality) — optimized for animated content
-  - **Grainy** — CRF 26, heavy grain preservation (`film-grain=16:film-grain-denoise=1`)
+  - **Default** — CRF 26, general purpose
+  - **Animated** — CRF 35 — optimized for animated content
+  - **Grainy** — CRF 26, grain preservation (`film-grain=12:film-grain-denoise=1`)
+  - **Very Grainy** — CRF 26, heavy grain preservation (`film-grain=18:film-grain-denoise=1`)
   - **Custom presets** — create, edit, duplicate, import/export your own presets
 - **Automatic crop detection** (consensus-based, 8-point sampling)
 - **Two-pass audio normalization** (loudnorm, Opus stereo output)
@@ -143,10 +144,10 @@ Open `http://localhost:8000` after starting the container.
 4. **FFmpeg pipeline per file:**
    - Detect video codec (skip re-encode if AV1)
    - Crop detection via 8-point consensus sampling
-   - Two-pass loudnorm audio measurement and normalization
    - Configurable audio and subtitle stream selection
-   - SVT-AV1 encoding with progress output
-   - `mkvmerge` finalization with metadata
+   - SVT-AV1 video (+ subtitle) encoding and two-pass loudnorm audio
+     normalization run as concurrent branches with live progress output
+   - `mkvmerge` joins the two branches and finalizes metadata
 5. **Real-time updates** are pushed to the browser via WebSocket
 6. **Output** is saved alongside the source as Matroska (`_conv.mkv`), regardless of source container
 
@@ -154,7 +155,7 @@ Open `http://localhost:8000` after starting the container.
 
 Presets are stored in the SQLite database and survive restarts.
 
-- **Built-in presets** (`Default`, `Animated`, `Grainy`) are seeded automatically and synced on startup. They cannot be edited or deleted, but you can duplicate them to create user presets.
+- **Built-in presets** (`Default`, `Animated`, `Grainy`, `Very Grainy`) are seeded automatically and synced on startup. They cannot be edited or deleted, but you can duplicate them to create user presets.
 - **User presets** can be created from the settings panel, or saved from any past job's settings snapshot.
 - **Import / Export** — share presets as JSON documents via the Manage Presets modal.
 - **Default preset** — one preset can be marked as default; it is pre-selected in the UI on load.
@@ -196,6 +197,7 @@ Cluster state is shown in the Active Queue panel and is also available at `/api/
 
 Requirements:
 
+- `docker-compose.cluster.yml` is not shipped in this repo - it's your own node-specific compose file (ports, hostnames, `DISTRIBUTED_*` env vars per node). Create it yourself before running the commands below.
 - All participating nodes must mount the same media library at the same in-container `SOURCE_MOUNT` path.
 - Every node must be reachable from every other node through `DISTRIBUTED_PUBLIC_URL`.
 - For automatic leader election, leave `DISTRIBUTED_LEADER_URL` empty on every node and use stable, unique `DISTRIBUTED_NODE_ID` values.

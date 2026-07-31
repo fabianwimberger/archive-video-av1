@@ -309,41 +309,66 @@ const svtParamsForm = {
         tune: 'tune',
         filmGrain: 'film-grain',
         denoise: 'film-grain-denoise',
+        varianceBoost: 'enable-variance-boost',
+        tfStrength: 'tf-strength',
+        sharpness: 'sharpness',
+        restoration: 'enable-restoration',
+        qm: 'enable-qm',
+    },
+
+    // qm-min/qm-max/chroma-qm-* only round-trip via qmParams when they match its
+    // defaults; a divergent value is kept in extra and folded back into the qm
+    // block on output instead of getting dropped or duplicated.
+    qmKeys: ['enable-qm', 'qm-min', 'qm-max', 'chroma-qm-min', 'chroma-qm-max'],
+    qmSubKeys: ['qm-min', 'qm-max', 'chroma-qm-min', 'chroma-qm-max'],
+    qmParams: 'enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15',
+
+    // SVT-AV1 4.2.0 ranges (Parameters.md): tf-strength 0-4 default 3,
+    // sharpness -7 to 7 default 0. Both are scalars, not booleans.
+    tfStrengthRange: { min: 0, max: 4 },
+    sharpnessRange: { min: -7, max: 7 },
+
+    getQmDefaults() {
+        if (!this._qmDefaults) {
+            this._qmDefaults = {};
+            this.qmParams.split(':').forEach(part => {
+                const [key, value] = part.split('=');
+                this._qmDefaults[key] = value;
+            });
+        }
+        return this._qmDefaults;
     },
 
     normalizeExtra(value) {
         return (value || '').trim().replace(/^:+|:+$/g, '');
     },
 
-    read({ tuneId, grainId, denoiseId, extraId }) {
-        const params = [];
-        const tune = document.getElementById(tuneId).value;
-        const grain = document.getElementById(grainId).value.trim();
-        const denoise = document.getElementById(denoiseId).value;
-        const extra = this.normalizeExtra(document.getElementById(extraId).value);
-
-        if (tune !== '') params.push(`${this.fields.tune}=${tune}`);
-        if (grain !== '' && grain !== '0') params.push(`${this.fields.filmGrain}=${grain}`);
-        if (denoise !== '') params.push(`${this.fields.denoise}=${denoise}`);
-        if (extra) params.push(extra);
-
-        return params.join(':');
+    clampInt(value, range) {
+        const n = Math.round(Number(value));
+        if (Number.isNaN(n)) return null;
+        return Math.min(range.max, Math.max(range.min, n));
     },
 
-    write(ids, params) {
+    // No DOM access - also used by checkModified() to normalize preset strings.
+    parse(params) {
         const normalized = this.normalizeExtra(params);
         const selectValues = {
             tune: new Set(['', '0', '1', '2']),
-            denoise: new Set(['', '0', '1']),
         };
+        // Booleans: true/false = explicit on/off, null = not mentioned.
+        // tfStrength/sharpness: an integer string, or '' when not mentioned.
         const values = {
-            tune: '0',
+            tune: '',
             grain: '',
-            denoise: '',
+            denoise: null,
+            varianceBoost: null,
+            tfStrength: '',
+            sharpness: '',
+            restoration: null,
+            qm: null,
             extra: [],
         };
-
-        if (!normalized) values.tune = '';
+        const qmDefaults = this.getQmDefaults();
 
         normalized.split(':').filter(Boolean).forEach(part => {
             const [key, ...rest] = part.split('=');
@@ -353,16 +378,114 @@ const svtParamsForm = {
                 values.tune = value;
             } else if (key === this.fields.filmGrain) {
                 values.grain = value === '0' ? '' : value;
-            } else if (key === this.fields.denoise && selectValues.denoise.has(value)) {
-                values.denoise = value;
+            } else if (key === this.fields.denoise) {
+                values.denoise = value === '1';
+            } else if (key === this.fields.varianceBoost) {
+                values.varianceBoost = value === '1';
+            } else if (key === this.fields.tfStrength) {
+                const n = this.clampInt(value, this.tfStrengthRange);
+                if (n !== null) values.tfStrength = String(n);
+            } else if (key === this.fields.sharpness) {
+                const n = this.clampInt(value, this.sharpnessRange);
+                if (n !== null) values.sharpness = String(n);
+            } else if (key === this.fields.restoration) {
+                values.restoration = value === '1';
+            } else if (key === this.fields.qm) {
+                values.qm = value === '1';
+            } else if (this.qmSubKeys.includes(key)) {
+                if (value !== qmDefaults[key]) values.extra.push(part);
             } else {
                 values.extra.push(part);
             }
         });
 
+        return values;
+    },
+
+    serialize(values) {
+        const params = [];
+        // null stays omitted (encoder default); true/false emit explicitly,
+        // since some of these default to on and omitting can't express "off".
+        const emit = (key, val) => { if (val !== null) params.push(`${key}=${val ? 1 : 0}`); };
+
+        if (values.tune !== '') params.push(`${this.fields.tune}=${values.tune}`);
+        emit(this.fields.varianceBoost, values.varianceBoost);
+        if (values.tfStrength !== '') params.push(`${this.fields.tfStrength}=${values.tfStrength}`);
+        if (values.sharpness !== '') params.push(`${this.fields.sharpness}=${values.sharpness}`);
+        emit(this.fields.restoration, values.restoration);
+
+        // Pull any qm sub-key overrides out of extra so the qm block below
+        // absorbs them instead of both emitting the key.
+        const qmDefaults = this.getQmDefaults();
+        const qmOverrides = {};
+        const restExtra = [];
+        values.extra.forEach(part => {
+            const [key, ...rest] = part.split('=');
+            if (this.qmSubKeys.includes(key)) {
+                qmOverrides[key] = rest.join('=');
+            } else {
+                restExtra.push(part);
+            }
+        });
+        if (values.qm === true) {
+            const merged = { ...qmDefaults, ...qmOverrides };
+            params.push([`${this.fields.qm}=1`, ...this.qmSubKeys.map(k => `${k}=${merged[k]}`)].join(':'));
+        } else if (values.qm === false) {
+            params.push(`${this.fields.qm}=0`);
+        }
+
+        if (values.grain !== '' && values.grain !== '0') params.push(`${this.fields.filmGrain}=${values.grain}`);
+        emit(this.fields.denoise, values.denoise);
+        const extra = this.normalizeExtra(restExtra.join(':'));
+        if (extra) params.push(extra);
+
+        return params.join(':');
+    },
+
+    // Checkboxes render a third, indeterminate "unset" state (write() below);
+    // a user click always resolves it to checked/unchecked per native behavior.
+    readTriState(el) {
+        return el.indeterminate ? null : el.checked;
+    },
+
+    writeTriState(el, value) {
+        el.indeterminate = value === null;
+        el.checked = value === true;
+    },
+
+    readScalar(el, range) {
+        const raw = el.value.trim();
+        if (raw === '') return '';
+        const n = this.clampInt(raw, range);
+        return n === null ? '' : String(n);
+    },
+
+    read(ids) {
+        const values = {
+            tune: document.getElementById(ids.tuneId).value,
+            grain: document.getElementById(ids.grainId).value.trim(),
+            denoise: this.readTriState(document.getElementById(ids.denoiseId)),
+            varianceBoost: this.readTriState(document.getElementById(ids.varianceBoostId)),
+            tfStrength: this.readScalar(document.getElementById(ids.tfStrengthId), this.tfStrengthRange),
+            sharpness: this.readScalar(document.getElementById(ids.sharpnessId), this.sharpnessRange),
+            restoration: this.readTriState(document.getElementById(ids.restorationId)),
+            qm: this.readTriState(document.getElementById(ids.qmId)),
+            extra: [this.normalizeExtra(document.getElementById(ids.extraId).value)].filter(Boolean),
+        };
+        return this.serialize(values);
+    },
+
+    write(ids, params) {
+        const values = this.parse(params);
+
         document.getElementById(ids.tuneId).value = values.tune;
         document.getElementById(ids.grainId).value = values.grain;
-        document.getElementById(ids.denoiseId).value = values.denoise;
+        this.writeTriState(document.getElementById(ids.denoiseId), values.denoise);
+        this.writeTriState(document.getElementById(ids.varianceBoostId), values.varianceBoost);
+        document.getElementById(ids.tfStrengthId).value = values.tfStrength;
+        document.getElementById(ids.sharpnessId).value = values.sharpness;
+        this.writeTriState(document.getElementById(ids.restorationId), values.restoration);
+        this.writeTriState(document.getElementById(ids.qmId), values.qm);
         document.getElementById(ids.extraId).value = values.extra.join(':');
     },
 
@@ -371,6 +494,11 @@ const svtParamsForm = {
             tuneId: 'svt-tune',
             grainId: 'svt-film-grain',
             denoiseId: 'svt-denoise',
+            varianceBoostId: 'svt-variance-boost',
+            tfStrengthId: 'svt-tf-strength',
+            sharpnessId: 'svt-sharpness',
+            restorationId: 'svt-restoration',
+            qmId: 'svt-qm',
             extraId: 'svt-extra-params',
         };
     },
@@ -380,6 +508,11 @@ const svtParamsForm = {
             tuneId: 'preset-edit-svt_tune',
             grainId: 'preset-edit-svt_film_grain',
             denoiseId: 'preset-edit-svt_denoise',
+            varianceBoostId: 'preset-edit-svt_variance_boost',
+            tfStrengthId: 'preset-edit-svt_tf_strength',
+            sharpnessId: 'preset-edit-svt_sharpness',
+            restorationId: 'preset-edit-svt_restoration',
+            qmId: 'preset-edit-svt_qm',
             extraId: 'preset-edit-svt_extra_params',
         };
     }

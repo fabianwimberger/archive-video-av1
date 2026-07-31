@@ -11,6 +11,38 @@ class SettingsPanel {
         await this.loadPresets();
         this.populatePresetSelect();
         this.setupEventListeners();
+        this.setupCollapsibleSections();
+        this.refreshSvtSummary();
+    }
+
+    setupCollapsibleSections() {
+        const storageKey = 'settingsSectionsCollapsed';
+        let collapsed = {};
+        try {
+            collapsed = JSON.parse(localStorage.getItem(storageKey)) || {};
+        } catch (error) {
+            collapsed = {};
+        }
+
+        document.querySelectorAll('.settings-section[data-section]').forEach(section => {
+            const key = section.dataset.section;
+            const toggle = section.querySelector('.settings-section__toggle');
+            if (!toggle) return;
+
+            const applyState = (isCollapsed) => {
+                section.classList.toggle('is-collapsed', isCollapsed);
+                toggle.setAttribute('aria-expanded', String(!isCollapsed));
+            };
+
+            applyState(Boolean(collapsed[key]));
+
+            toggle.addEventListener('click', () => {
+                const isCollapsed = !section.classList.contains('is-collapsed');
+                applyState(isCollapsed);
+                collapsed[key] = isCollapsed;
+                localStorage.setItem(storageKey, JSON.stringify(collapsed));
+            });
+        });
     }
 
     async loadPresets() {
@@ -79,11 +111,18 @@ class SettingsPanel {
         });
 
         // Other inputs
-        ['svt-film-grain', 'svt-extra-params', 'audio-bitrate'].forEach(id => {
-            document.getElementById(id).addEventListener('input', () => this.checkModified());
+        document.getElementById('audio-bitrate').addEventListener('input', () => this.checkModified());
+        ['svt-film-grain', 'svt-tf-strength', 'svt-sharpness', 'svt-extra-params'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                this.checkModified();
+                this.refreshSvtSummary();
+            });
         });
-        ['svt-tune', 'svt-denoise'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => this.checkModified());
+        ['svt-tune', 'svt-denoise', 'svt-variance-boost', 'svt-restoration', 'svt-qm'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                this.checkModified();
+                this.refreshSvtSummary();
+            });
         });
         document.getElementById('skip-crop').addEventListener('change', () => this.checkModified());
         document.querySelectorAll('input[name="resolution"]').forEach(el => {
@@ -114,6 +153,39 @@ class SettingsPanel {
 
         document.getElementById('estimate-info').textContent = '';
         this.checkModified();
+        this.refreshSvtSummary();
+    }
+
+    refreshSvtSummary() {
+        const params = svtParamsForm.read(svtParamsForm.mainIds());
+        const summary = document.getElementById('svt-resolved-params');
+        if (summary) summary.textContent = params || 'Using encoder defaults';
+        this.renderGrainSwatch();
+    }
+
+    renderGrainSwatch() {
+        const canvas = document.getElementById('svt-grain-preview');
+        if (!canvas || !canvas.getContext) return;
+        const ctx = canvas.getContext('2d');
+        const grain = parseInt(document.getElementById('svt-film-grain').value, 10) || 0;
+        const w = canvas.width;
+        const h = canvas.height;
+        const style = getComputedStyle(document.documentElement);
+        const surface = style.getPropertyValue('--app-surface-2').trim() || '#1b212a';
+        const muted = style.getPropertyValue('--app-muted').trim() || '#8b96a5';
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = surface;
+        ctx.fillRect(0, 0, w, h);
+
+        const intensity = Math.min(Math.max(grain, 0), 50) / 50;
+        const dotCount = Math.round(intensity * w * h * 0.4);
+        ctx.fillStyle = muted;
+        for (let i = 0; i < dotCount; i++) {
+            ctx.globalAlpha = 0.15 + Math.random() * 0.55;
+            ctx.fillRect(Math.random() * w, Math.random() * h, 1, 1);
+        }
+        ctx.globalAlpha = 1;
     }
 
     checkModified() {
@@ -125,10 +197,13 @@ class SettingsPanel {
         if (!preset) return;
 
         const current = this.getCurrentSettings();
+        // Normalize the same way current.svt_params already is, so an omitted
+        // boolean key doesn't register as a false "modified" positive.
+        const presetSvtParams = svtParamsForm.serialize(svtParamsForm.parse(preset.svt_params || ''));
         const isModified =
             current.crf !== preset.crf ||
             current.encoder_preset !== preset.encoder_preset ||
-            current.svt_params !== (preset.svt_params || '') ||
+            current.svt_params !== presetSvtParams ||
             current.audio_bitrate !== preset.audio_bitrate ||
             current.skip_crop_detect !== preset.skip_crop_detect ||
             current.max_resolution !== preset.max_resolution;
@@ -171,15 +246,14 @@ class SettingsPanel {
             if (result.film_grain > 0) {
                 grainParts.push(`film-grain=${result.film_grain}`);
             }
-            if (result.denoise > 0) {
-                grainParts.push(`film-grain-denoise=${result.denoise}`);
-            }
-            if (grainParts.length > 0) {
-                params = params ? `${params}:${grainParts.join(':')}` : grainParts.join(':');
-            }
+            // Always explicit: the estimate's denoise:0 must reach the encoder,
+            // not fall back to "unset" (which would leave the encoder default).
+            grainParts.push(`film-grain-denoise=${result.denoise > 0 ? 1 : 0}`);
+            params = params ? `${params}:${grainParts.join(':')}` : grainParts.join(':');
 
             svtParamsForm.write(svtParamsForm.mainIds(), params);
             this.checkModified();
+            this.refreshSvtSummary();
 
             const info = document.getElementById('estimate-info');
             info.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Estimated: grain=${result.film_grain}, denoise=${result.denoise} (${utils.escapeHtml(result.reason)})</span>`;

@@ -17,16 +17,18 @@ if [ -z "${ARCH_FLAGS+x}" ]; then
     ARCH_FLAGS="-march=native"
 fi
 # If ARCH_FLAGS is set to empty string, we use no arch flags (generic build)
-BASE_CFLAGS="${ARCH_FLAGS:+$ARCH_FLAGS }-O3 -flto -fomit-frame-pointer"
 # Allow disabling LTO for faster CI builds (ENABLE_LTO=false)
 ENABLE_LTO="${ENABLE_LTO:-true}"
 echo "=== ENABLE_LTO=${ENABLE_LTO} ==="
 if [ "$ENABLE_LTO" = "false" ]; then
     BASE_CFLAGS="${ARCH_FLAGS:+$ARCH_FLAGS }-O3 -fomit-frame-pointer"
     BASE_LDFLAGS="-Wl,-O3 -Wl,--gc-sections"
+    # FFmpeg's configure has no --disable-lto counterpart; omit the flag entirely.
+    FFMPEG_LTO_FLAG=""
 else
     BASE_CFLAGS="${ARCH_FLAGS:+$ARCH_FLAGS }-O3 -flto -fomit-frame-pointer"
     BASE_LDFLAGS="-Wl,-O3 -Wl,--gc-sections -flto"
+    FFMPEG_LTO_FLAG="--enable-lto"
 fi
 PGO_DIR="/build/profiles"
 
@@ -93,7 +95,8 @@ build_all() {
     # Create pkgconfig
     mkdir -p /usr/local/lib/pkgconfig
     printf '%s\n' "prefix=/usr/local" "exec_prefix=\${prefix}" "libdir=\${prefix}/lib" "includedir=\${prefix}/include" "" "Name: SvtAv1Enc" "Description: SVT-AV1 encoder" "Version: ${SVT_AV1_VERSION}" "Libs: -L\${libdir} -lSvtAv1Enc" "Libs.private: -lpthread -lm" "Cflags: -I\${includedir}" > /usr/local/lib/pkgconfig/SvtAv1Enc.pc
-    pkg-config --exists SvtAv1Enc && echo "SvtAv1Enc found: $(pkg-config --modversion SvtAv1Enc)"
+    pkg-config --exists SvtAv1Enc || { echo "ERROR: SvtAv1Enc.pc not found"; exit 1; }
+    echo "SvtAv1Enc found: $(pkg-config --modversion SvtAv1Enc)"
 
     # Build FFmpeg
     cd /build/FFmpeg
@@ -104,21 +107,22 @@ build_all() {
     # still pick AVX2 etc. on capable hosts instead of being stuck on the baseline.
     cpudetect_flag="--enable-runtime-cpudetect"
     [[ -n "$ARCH_FLAGS" ]] && cpudetect_flag="--disable-runtime-cpudetect"
+    # shellcheck disable=SC2086 # $FFMPEG_LTO_FLAG unquoted on purpose: drops the arg entirely when empty
     ./configure \
         --prefix=/usr/local --pkg-config-flags="--static" --extra-libs="-lpthread -lm" \
         --cc="${CC:-gcc}" --cxx="${CXX:-g++}" \
-        --enable-lto --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
+        $FFMPEG_LTO_FLAG --enable-gpl --disable-debug --disable-doc --disable-shared --enable-static \
         "$cpudetect_flag" --disable-autodetect --disable-programs \
         --disable-everything \
         --enable-ffmpeg --enable-ffprobe \
         --enable-avcodec --enable-avformat --enable-avfilter \
         --enable-swresample --enable-protocol=file,pipe \
         --enable-demuxer=matroska,mov --enable-muxer=matroska,null \
-        --enable-decoder=h264,hevc,av1,aac,ac3,eac3,dca,truehd,mlp,pgssub,movtext \
+        --enable-decoder=h264,hevc,av1,vp9,mpeg2video,vc1,mpeg4,aac,ac3,eac3,dca,truehd,mlp,flac,mp3,vorbis,opus,pcm_s16le,pcm_s24le,pgssub,movtext \
         --enable-encoder=libsvtav1,libopus,pcm_s16le,wrapped_avframe,srt \
         --enable-parser=h264,hevc,av1,aac,ac3,dca,mlp \
         --enable-bsf=extract_extradata,av1_metadata,h264_mp4toannexb,hevc_mp4toannexb \
-        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm,showinfo \
+        --enable-filter=cropdetect,crop,scale,format,aformat,aresample,loudnorm,showinfo,null,anull \
         --enable-libsvtav1 --enable-libopus --enable-zlib \
         --extra-cflags="$CFLAGS -I/usr/local/include" \
         --extra-ldflags="$LDFLAGS -L/usr/local/lib"
@@ -131,7 +135,7 @@ train_pgo() {
     echo "=== PGO Training ==="
     mkdir -p "$PGO_DIR"
 
-    if ! ls /build/samples/*.mkv 2>/dev/null | head -1 > /dev/null; then
+    if ! compgen -G '/build/samples/*.mkv' > /dev/null; then
         echo "WARNING: PGO enabled but no sample videos found in /build/samples/"
         echo "Skipping PGO training; the build will fall back to a standard (non-PGO) build"
         return
@@ -142,19 +146,28 @@ train_pgo() {
         basename_f=$(basename "$f")
         echo "Training: $basename_f"
 
-        # Map sample filename prefix to preset params
+        # Map sample filename prefix to preset params (kept in sync with
+        # BUILTIN_PRESETS in backend/app/services/lifecycle.py)
+        base_svt="tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
+        # No variance-boost/tf-strength: not worth their bitrate cost on animated content.
+        animated_svt="tune=1:sharpness=1:enable-restoration=1:enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15"
         preset_crf=26
-        svt_base="tune=0:film-grain=8"
+        svt_base="$base_svt"
         case "$basename_f" in
             animated_*)
                 preset_crf=35
-                svt_base="tune=0"
+                svt_base="$animated_svt"
                 echo "    Preset: animated (CRF $preset_crf, $svt_base)"
                 ;;
             grainy_*)
                 preset_crf=26
-                svt_base="tune=0:film-grain=16:film-grain-denoise=1"
+                svt_base="${base_svt}:film-grain=12:film-grain-denoise=1"
                 echo "    Preset: grainy (CRF $preset_crf, $svt_base)"
+                ;;
+            verygrainy_*)
+                preset_crf=26
+                svt_base="${base_svt}:film-grain=18:film-grain-denoise=1"
+                echo "    Preset: verygrainy (CRF $preset_crf, $svt_base)"
                 ;;
             *)
                 echo "    Preset: default (CRF $preset_crf, $svt_base)"
@@ -171,12 +184,19 @@ train_pgo() {
         fi
         echo "    Audio: stream $audio_idx"
 
+        # Seek past a possible black/logo intro before sampling.
+        train_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f")
+        train_ss=0
+        if [ -n "$train_duration" ] && [ "$train_duration" != "N/A" ]; then
+            train_ss=$(awk -v d="$train_duration" 'BEGIN { s = d * 0.2; if (s < 0) s = 0; printf "%.0f", s }')
+        fi
+        echo "    Training offset: ${train_ss}s"
+
         echo "  Stage: crop_detect"
-        crop=$(ffmpeg -hide_banner -i "$f" -t 1 -vf cropdetect -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
+        crop=$(ffmpeg -hide_banner -ss "$train_ss" -i "$f" -t 1 -vf cropdetect=round=4 -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
         if [ -z "$crop" ]; then
-            echo "ERROR: Crop detection failed"
-            echo "Ensure sample videos are at least 10 seconds long and have valid video streams"
-            exit 1
+            echo "WARNING: Crop detection failed for $basename_f, skipping this sample"
+            continue
         fi
         echo "    Detected: $crop"
 
@@ -217,19 +237,66 @@ train_pgo() {
             color_flags="-color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc -color_range tv"
             svt_hdr=":color-primaries=9:transfer-characteristics=16:matrix-coefficients=9"
             echo "    HDR: PQ/HDR10 detected"
+
+            # Mirrors conversion_wrapper.sh's mastering-display/content-light extraction.
+            hdr_side_data=$(ffprobe -v quiet -select_streams v:0 \
+                -show_frames -read_intervals "%+#1" \
+                -print_format json "$f" 2>/dev/null)
+
+            if [ -n "$hdr_side_data" ]; then
+                extract_frac() { echo "$hdr_side_data" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([0-9]*\/[0-9]*\)\".*/\1/p" | head -1 | awk -F'/' '{printf "%.4f", $1/$2}'; }
+                red_x=$(extract_frac red_x)
+                red_y=$(extract_frac red_y)
+                green_x=$(extract_frac green_x)
+                green_y=$(extract_frac green_y)
+                blue_x=$(extract_frac blue_x)
+                blue_y=$(extract_frac blue_y)
+                white_x=$(extract_frac white_point_x)
+                white_y=$(extract_frac white_point_y)
+                min_lum=$(extract_frac min_luminance)
+                max_lum=$(extract_frac max_luminance)
+
+                if [ -n "$green_x" ] && [ -n "$green_y" ] && [ -n "$blue_x" ] && [ -n "$blue_y" ] && \
+                   [ -n "$red_x" ] && [ -n "$red_y" ] && [ -n "$white_x" ] && [ -n "$white_y" ] && \
+                   [ -n "$max_lum" ] && [ -n "$min_lum" ]; then
+                    mastering_display="G(${green_x},${green_y})B(${blue_x},${blue_y})R(${red_x},${red_y})WP(${white_x},${white_y})L(${max_lum},${min_lum})"
+                    svt_hdr="${svt_hdr}:mastering-display=${mastering_display}"
+                    echo "    Mastering display: $mastering_display"
+                fi
+
+                max_cll=$(echo "$hdr_side_data" | sed -n 's/.*"max_content"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+                max_fall=$(echo "$hdr_side_data" | sed -n 's/.*"max_average"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+
+                if [ -n "$max_cll" ] && [ -n "$max_fall" ]; then
+                    content_light="${max_cll},${max_fall}"
+                    svt_hdr="${svt_hdr}:content-light=${content_light}"
+                    echo "    Content light level: MaxCLL=$max_cll, MaxFALL=$max_fall"
+                fi
+            fi
         elif [ "$color_transfer" = "arib-std-b67" ]; then
             color_flags="-color_primaries bt2020 -color_trc arib-std-b67 -colorspace bt2020nc -color_range tv"
             svt_hdr=":color-primaries=9:transfer-characteristics=18:matrix-coefficients=9"
             echo "    HDR: HLG detected"
         fi
 
-        echo "  Stage: encoding"
-        ffmpeg -hide_banner -i "$f" -map 0:v:0 -map 0:$audio_idx -t 15 \
+        # luminance-qp-bias: applies to SDR/HLG, excluded for PQ/HDR10.
+        if [ "$color_transfer" != "smpte2084" ]; then
+            svt_hdr="${svt_hdr}:luminance-qp-bias=10"
+        fi
+
+        # Two invocations to mirror the video/audio branch split at runtime.
+        # Kept serial - concurrent writers would race on .gcda merge.
+        echo "  Stage: encoding (video)"
+        ffmpeg -hide_banner -ss "$train_ss" -i "$f" -map 0:v:0 -an -sn -dn -t 15 \
             -vf "$vf_chain" \
-            -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:measured_I=${i}:measured_TP=${tp}:measured_LRA=${lra}:measured_thresh=${thresh}:offset=${offset}" \
             -c:v libsvtav1 -preset 4 -crf $preset_crf -g 225 -svtav1-params "${svt_base}${svt_hdr}" \
             $color_flags \
-            -c:a libopus -b:a 96k -f matroska -y /dev/null || { echo "ERROR: Encoding failed"; exit 1; }
+            -f matroska -y /dev/null || { echo "ERROR: Video encoding failed"; exit 1; }
+
+        echo "  Stage: encoding (audio)"
+        ffmpeg -hide_banner -ss "$train_ss" -i "$f" -map 0:$audio_idx -vn -sn -dn -t 15 \
+            -af "aformat=channel_layouts=stereo,loudnorm=I=-20:TP=-2:LRA=13:linear=true:measured_I=${i}:measured_TP=${tp}:measured_LRA=${lra}:measured_thresh=${thresh}:offset=${offset}" \
+            -c:a libopus -b:a 96k -f matroska -y /dev/null || { echo "ERROR: Audio encoding failed"; exit 1; }
     done
     echo "Profiles: $(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l)"
 }
@@ -245,7 +312,7 @@ case "$BUILD_TYPE" in
         ;;
     "pgo-use")
         if ls "$PGO_DIR"/*.gcda >/dev/null 2>&1; then
-            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training"
+            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training -Wno-error=coverage-mismatch"
         else
             echo "WARNING: No PGO profile data found in $PGO_DIR, falling back to standard build"
             build_all ""
