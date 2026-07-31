@@ -11,7 +11,38 @@ class SettingsPanel {
         await this.loadPresets();
         this.populatePresetSelect();
         this.setupEventListeners();
+        this.setupCollapsibleSections();
         this.refreshSvtSummary();
+    }
+
+    setupCollapsibleSections() {
+        const storageKey = 'settingsSectionsCollapsed';
+        let collapsed = {};
+        try {
+            collapsed = JSON.parse(localStorage.getItem(storageKey)) || {};
+        } catch (error) {
+            collapsed = {};
+        }
+
+        document.querySelectorAll('.settings-section[data-section]').forEach(section => {
+            const key = section.dataset.section;
+            const toggle = section.querySelector('.settings-section__toggle');
+            if (!toggle) return;
+
+            const applyState = (isCollapsed) => {
+                section.classList.toggle('is-collapsed', isCollapsed);
+                toggle.setAttribute('aria-expanded', String(!isCollapsed));
+            };
+
+            applyState(Boolean(collapsed[key]));
+
+            toggle.addEventListener('click', () => {
+                const isCollapsed = !section.classList.contains('is-collapsed');
+                applyState(isCollapsed);
+                collapsed[key] = isCollapsed;
+                localStorage.setItem(storageKey, JSON.stringify(collapsed));
+            });
+        });
     }
 
     async loadPresets() {
