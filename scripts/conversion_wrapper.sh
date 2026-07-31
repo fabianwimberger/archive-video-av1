@@ -546,10 +546,23 @@ measure_and_encode_audio() {
     # -map_chapters -1: ffmpeg copies chapters by default even with an
     # explicit stream -map. Branch V already carries them; without this,
     # mkvmerge would merge both branches' copies and double every chapter.
+    local audio_start
+    audio_start=$(date +%s)
+
     nice -n 10 ffmpeg -v error -i "$INPUT_FILE" $audio_map -map_chapters -1 -vn -sn -dn \
         $af_filter \
         -c:a libopus -b:a "$AUDIO_BITRATE" \
         -f matroska -y "$tmp_audio"
+    local rc=$?
+
+    if [[ $rc -eq 0 ]]; then
+        local audio_elapsed=$(( $(date +%s) - audio_start ))
+        local audio_size
+        audio_size=$(du -h "$tmp_audio" 2>/dev/null | cut -f1)
+        echo "STATUS:Audio encode complete: ${#audio_indices[@]} track(s), ${AUDIO_BITRATE}, ${audio_elapsed}s, ${audio_size:-unknown size}" >&3
+    fi
+
+    return $rc
 }
 
 # --- ENCODING (branch V + branch A, concurrent) ---
