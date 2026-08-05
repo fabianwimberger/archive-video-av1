@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:26.10 AS builder
 
-ARG FFMPEG_VERSION="8.1.2"
+ARG FFMPEG_VERSION="9.0"
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.2.0"
 ARG ENABLE_PGO="false"
@@ -10,13 +10,14 @@ ARG ARCH_FLAGS
 
 # Pinned checksums for the source tarballs below; update alongside the
 # matching *_VERSION when bumping.
-ARG FFMPEG_SHA256="32faba5ef67340d54724941eae1425580791195312a4fd13bf6f820a2818bf22"
+ARG FFMPEG_SHA256="1b12b07e0a6c39fc0025104ed1e9b6096fd1a11628daad8ac98a68d8cfd4ebed"
 ARG OPUS_SHA256="6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
 ARG SVT_AV1_SHA256="c7b13c4a84bd3751aa35fcc72be13e6875467e7c2216879251a486e5b1e4e740"
 
 ENV PGO_DIR="/build/profiles"
 ENV ARCH_FLAGS=${ARCH_FLAGS}
 ENV ENABLE_LTO=${ENABLE_LTO}
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential gcc-16 g++-16 cmake nasm pkg-config \
@@ -98,7 +99,8 @@ FROM ubuntu:26.10
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/venv/bin:$PATH" \
     LC_ALL=C.UTF-8 \
-    LANG=C.UTF-8
+    LANG=C.UTF-8 \
+    DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
