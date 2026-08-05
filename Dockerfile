@@ -17,6 +17,7 @@ ARG SVT_AV1_SHA256="c7b13c4a84bd3751aa35fcc72be13e6875467e7c2216879251a486e5b1e4
 ENV PGO_DIR="/build/profiles"
 ENV ARCH_FLAGS=${ARCH_FLAGS}
 ENV ENABLE_LTO=${ENABLE_LTO}
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential gcc-16 g++-16 cmake nasm pkg-config \
@@ -98,7 +99,8 @@ FROM ubuntu:26.10
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/venv/bin:$PATH" \
     LC_ALL=C.UTF-8 \
-    LANG=C.UTF-8
+    LANG=C.UTF-8 \
+    DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
