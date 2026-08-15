@@ -1,6 +1,7 @@
 """File system operations for browsing and file management."""
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 from sqlalchemy import select
@@ -10,6 +11,14 @@ from app.utils.ffprobe import get_video_info, has_converted_file
 from app.models.job import Job
 
 logger = logging.getLogger(__name__)
+
+
+def _natural_sort_key(path: Path) -> list:
+    """Split name into text/number chunks so 'Season 2' sorts before 'Season 10'."""
+    return [
+        int(chunk) if chunk.isdigit() else chunk.lower()
+        for chunk in re.split(r"(\d+)", path.name)
+    ]
 
 
 def _directory_has_videos(directory: Path) -> bool:
@@ -82,7 +91,7 @@ class FileService:
 
             # Pre-load last jobs for all source files in this directory
             file_paths = []
-            for item in sorted(target_path.iterdir()):
+            for item in sorted(target_path.iterdir(), key=_natural_sort_key):
                 if item.is_file() and item.suffix.lower() in self.VIDEO_EXTENSIONS:
                     file_paths.append(str(item))
 
@@ -126,7 +135,7 @@ class FileService:
                         }
 
             # Scan directory
-            for item in sorted(target_path.iterdir()):
+            for item in sorted(target_path.iterdir(), key=_natural_sort_key):
                 if item.is_dir():
                     # Only show directories that contain video files
                     if _directory_has_videos(item):

@@ -60,6 +60,22 @@ async def test_browse_directory_includes_mp4_sources(db_session, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_browse_directory_sorts_seasons_naturally(tmp_path):
+    for name in ["Season 10", "Season 2", "Season 1"]:
+        season_dir = tmp_path / name
+        season_dir.mkdir()
+        (season_dir / "episode.mkv").write_bytes(b"video")
+
+    service = FileService()
+    service.source_mount = tmp_path
+
+    result = await service.browse_directory()
+
+    names = [d["name"] for d in result["directories"]]
+    assert names == ["Season 1", "Season 2", "Season 10"]
+
+
+@pytest.mark.asyncio
 async def test_delete_file_rejects_empty_converted_file(tmp_path):
     source = tmp_path / "movie.mkv"
     source.write_bytes(b"source")
