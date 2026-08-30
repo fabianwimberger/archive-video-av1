@@ -1,6 +1,7 @@
 """Tests for conversion wrapper configuration."""
 
 import re
+import subprocess
 from pathlib import Path
 
 from app.services.lifecycle import ANIMATED_SVT_PARAMS, BASE_SVT_PARAMS, BUILTIN_PRESETS
@@ -133,3 +134,77 @@ def test_pgo_training_matches_runtime_encode_constants():
 
     assert "luminance-qp-bias=10" in build_script
     assert 'luma_svt="luminance-qp-bias=10"' in wrapper_script
+
+
+def _extract_crop_detect_block():
+    script = WRAPPER.read_text()
+    start = script.index("        orig_width=$(probe_field")
+    end = script.index('echo "STATUS:Consensus:')
+    return script[start:end]
+
+
+def test_crop_detect_filters_asymmetric_samples_before_consensus():
+    """Dark/underlit scenes push cropdetect's black-level threshold into real
+    picture content on one side only, producing crop values with mismatched
+    left/right or top/bottom bars. A genuine letterbox/pillarbox always has
+    matching bars, so those samples must be excluded from the vote instead of
+    just requiring more exact-match repeats of noisy data."""
+    block = _extract_crop_detect_block()
+
+    assert "dx = x - (ow - w - x)" in block
+    assert "dy = y - (oh - h - y)" in block
+    assert "(dx <= 8 && dy <= 8)" in block
+    assert '$symmetric" == "yes"' in block
+    assert "rejected, asymmetric - likely a dark scene" in block
+
+    # orig_width/orig_height must be resolved once, before sampling starts,
+    # so every sample can be checked for symmetry as it comes in.
+    assert block.index("orig_width=$(probe_field") < block.index("for percent in")
+
+
+def test_crop_detect_consensus_threshold_lowered_after_symmetry_filter():
+    """Requiring 3 exact-string matches across noisy raw samples was too
+    strict once asymmetric outliers are filtered out first: 2 agreeing
+    symmetric samples out of 8 is already a strong signal, since a false
+    positive would have to reproduce the exact same (symmetric) crop twice by
+    chance. Filtering must happen before the vote, or 2 would be too lax."""
+    block = _extract_crop_detect_block()
+
+    assert "if ($1 >= 2) print $2" in block
+    assert "if ($1 >= 3) print $2" not in block
+
+    # The threshold relies on the symmetry filter to have already run.
+    assert block.index('$symmetric" == "yes"') < block.index("if ($1 >= 2)")
+
+
+def test_crop_detect_symmetry_check_runs_synthetic_samples_correctly():
+    """Execute the actual awk formula from conversion_wrapper.sh (not a
+    reimplementation of it) against the real sample set logged for a 1899
+    episode, where 6 of 8 cropdetect windows were dark-scene false positives."""
+    script = WRAPPER.read_text()
+    match = re.search(
+        r"symmetric=\$\(echo \"\$crop_value\" \| awk -F'\[=:\]' -v ow=\"\$orig_width\" -v oh=\"\$orig_height\" '(\{.*?\})'\)",
+        script,
+        re.DOTALL,
+    )
+    assert match, "symmetry-check awk block not found in conversion_wrapper.sh"
+    awk_program = match.group(1)
+
+    samples = {
+        "crop=1920:816:0:132": "yes",
+        "crop=1764:812:124:136": "no",
+        "crop=1912:816:8:132": "yes",
+        "crop=1784:816:136:132": "no",
+        "crop=992:708:872:238": "no",
+        "crop=1812:708:46:136": "no",
+        "crop=1880:816:0:132": "no",
+    }
+    for crop_value, expected in samples.items():
+        result = subprocess.run(
+            ["awk", "-F", "[=:]", "-v", "ow=1920", "-v", "oh=1080", awk_program],
+            input=crop_value,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert result.stdout.strip() == expected, crop_value
