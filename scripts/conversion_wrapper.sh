@@ -271,7 +271,11 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
     duration=$(probe_get 'format\.duration')
 
     if [[ -n "$duration" && "$duration" != "N/A" ]]; then
-        # Collect all crop values by sampling at 8 points
+        # Get original resolution
+        orig_width=$(probe_field "$video_ord" width)
+        orig_height=$(probe_field "$video_ord" height)
+
+        # Collect crop values by sampling at 8 points
         all_crops=""
         for percent in 10 20 30 40 50 60 70 80; do
             time=$(awk -v d="$duration" -v p="$percent" 'BEGIN { printf "%.0f", d * p / 100 }')
@@ -279,23 +283,34 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
             # Run cropdetect - filter analysis to null output
             crop_value=$(ffmpeg -hide_banner -ss $time -i "$INPUT_FILE" -t 3 -vf cropdetect=round=4 -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
 
-            echo "STATUS:Sample ${percent}% (@${time}s): ${crop_value:-none}"
+            if [[ -n "$crop_value" ]]; then
+                # Reject asymmetric bars - a real letterbox/pillarbox is centered
+                symmetric=$(echo "$crop_value" | awk -F'[=:]' -v ow="$orig_width" -v oh="$orig_height" '{
+                    w=$2; h=$3; x=$4; y=$5
+                    dx = x - (ow - w - x); if (dx < 0) dx = -dx
+                    dy = y - (oh - h - y); if (dy < 0) dy = -dy
+                    print (dx <= 8 && dy <= 8) ? "yes" : "no"
+                }')
 
-            # Only add non-empty values
-            [[ -n "$crop_value" ]] && all_crops="${all_crops}${crop_value}"$'\n'
+                if [[ "$symmetric" == "yes" ]]; then
+                    echo "STATUS:Sample ${percent}% (@${time}s): ${crop_value}"
+                    all_crops="${all_crops}${crop_value}"$'\n'
+                else
+                    echo "STATUS:Sample ${percent}% (@${time}s): ${crop_value} (rejected, asymmetric - likely a dark scene)"
+                fi
+            else
+                echo "STATUS:Sample ${percent}% (@${time}s): none"
+            fi
         done
 
-        # Find consensus: require exactly 3 or more exact matches across all parameters
+        # Find consensus: require 2 or more matching symmetric samples
         consensus=$(echo "$all_crops" | grep -v '^$' | sort | uniq -c | sort -rn | head -1)
         consensus_count=$(echo "$consensus" | awk '{print $1}')
-        crop=$(echo "$consensus" | awk '{if ($1 >= 3) print $2}')
+        crop=$(echo "$consensus" | awk '{if ($1 >= 2) print $2}')
 
         echo "STATUS:Consensus: ${consensus_count:-0} matches for $(echo "$consensus" | awk '{print $2}')"
 
         if [[ -n "$crop" ]]; then
-            # Get original resolution
-            orig_width=$(probe_field "$video_ord" width)
-            orig_height=$(probe_field "$video_ord" height)
             crop_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
             crop_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
 
