@@ -4,7 +4,7 @@ sqlalchemy==2.0.52
 aiosqlite==0.22.1
 python-multipart==0.0.32
 websockets==17.1
-alembic==1.19.1
+alembic==1.19.2
 httpx==0.28.1
 
 # Testing
