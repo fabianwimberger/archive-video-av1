@@ -124,7 +124,7 @@ RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-
     && echo "  https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" >> /usr/share/licenses/FFmpeg-LICENSE \
     && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
     && echo "This Docker image also includes:" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "  - SVT-AV1 (BSD-3-Clause): https://gitlab.com/AOMediaCodec/SVT-AV1" >> /usr/share/licenses/FFmpeg-LICENSE \
+    && echo "  - SVT-AV1 (BSD-3-Clause-Clear): https://gitlab.com/AOMediaCodec/SVT-AV1" >> /usr/share/licenses/FFmpeg-LICENSE \
     && echo "  - Opus (BSD-3-Clause): https://opus-codec.org/" >> /usr/share/licenses/FFmpeg-LICENSE \
     && echo "================================================================================" >> /usr/share/licenses/FFmpeg-LICENSE
 
