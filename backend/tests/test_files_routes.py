@@ -1,9 +1,29 @@
 """Tests for the /files API routes."""
 
 import pytest
+import asyncio
 
 import app.routes.files as files_routes
 from app.services.file_service import file_service
+from app.database import AsyncSessionLocal
+from app.models.job import Job
+
+
+def record_conversion(source, output):
+    async def save():
+        async with AsyncSessionLocal() as db:
+            db.add(
+                Job(
+                    source_file=str(source),
+                    output_file=str(output),
+                    status="completed",
+                    source_size_bytes=source.stat().st_size if source.exists() else 0,
+                    output_size_bytes=output.stat().st_size,
+                )
+            )
+            await db.commit()
+
+    asyncio.run(save())
 
 
 @pytest.fixture
@@ -159,6 +179,7 @@ def test_analyze_file_rejects_path_outside_mount(client, mounted, tmp_path_facto
 def test_delete_converted_file_success(client, mounted):
     converted = mounted / "movie_conv.mkv"
     converted.write_bytes(b"converted")
+    record_conversion(mounted / "movie.mkv", converted)
 
     response = client.delete("/api/files/converted", params={"path": str(converted)})
 
@@ -190,6 +211,7 @@ def test_delete_file_success_when_converted_exists(client, mounted):
     source.write_bytes(b"source")
     converted = mounted / "movie_conv.mkv"
     converted.write_bytes(b"converted")
+    record_conversion(source, converted)
 
     response = client.delete("/api/files", params={"path": str(source)})
 

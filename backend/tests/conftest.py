@@ -3,6 +3,7 @@
 import asyncio
 import os
 import tempfile
+from pathlib import Path
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -11,11 +12,16 @@ from fastapi.testclient import TestClient
 TEST_DB_FILE = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 TEST_DB_FILE.close()
 TEST_DATABASE_URL = f"sqlite+aiosqlite:///{TEST_DB_FILE.name}"
+TEST_FILES = tempfile.TemporaryDirectory(prefix="video-tests-")
+VIDEO_ROOT = Path(TEST_FILES.name) / "videos"
+VIDEO_ROOT.mkdir()
 
 # Patch config BEFORE importing app modules
 import app.config as _config_module  # noqa: E402
 
 _config_module.settings.DATABASE_PATH = TEST_DB_FILE.name
+_config_module.settings.SOURCE_MOUNT = str(VIDEO_ROOT)
+_config_module.settings.TEMP_DIR = str(Path(TEST_FILES.name) / "temp")
 
 # Patch other things
 import starlette.staticfiles  # noqa: E402
@@ -112,6 +118,8 @@ def client():
 
 @pytest.fixture(scope="function")
 def seeded_client(client):
+    for name in ("test.mkv", "a.mkv", "b.mkv"):
+        (VIDEO_ROOT / name).write_bytes(b"source")
     asyncio.run(_seed_test_data())
     return client
 

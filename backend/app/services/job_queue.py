@@ -163,6 +163,8 @@ class JobQueue:
             except asyncio.CancelledError:
                 pass
             self.distributed_task = None
+        self.current_process = None
+        self.current_job_id = None
         if settings.DISTRIBUTED_ENABLED:
             from app.services.distributed import distributed_service
 

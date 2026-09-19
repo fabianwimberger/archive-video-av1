@@ -2,6 +2,7 @@
 
 import re
 import subprocess
+import pytest
 from pathlib import Path
 
 from app.services.lifecycle import ANIMATED_SVT_PARAMS, BASE_SVT_PARAMS, BUILTIN_PRESETS
@@ -9,6 +10,20 @@ from app.services.lifecycle import ANIMATED_SVT_PARAMS, BASE_SVT_PARAMS, BUILTIN
 
 WRAPPER = Path(__file__).resolve().parents[2] / "scripts" / "conversion_wrapper.sh"
 BUILD_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "build.sh"
+
+
+@pytest.mark.parametrize("script_path", [WRAPPER, BUILD_SCRIPT])
+def test_language_preference_order(script_path):
+    script = script_path.read_text()
+    start = script.index("find_preferred_stream() {")
+    end = script.index("\n}\n", start) + 3
+    command = (
+        script[start:end] + '\nfind_preferred_stream "1,eng\n2,ger\n3,ger" "ger,eng"\n'
+    )
+    result = subprocess.run(
+        ["bash", "-c", command], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "2"
 
 
 def test_track_selection_defaults_are_configurable():

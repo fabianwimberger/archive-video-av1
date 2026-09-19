@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 from app.services.file_service import file_service
 from app.services.grain_estimator import estimate_grain
+from app.services.distributed import distributed_service, LeaderRequestError
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +111,19 @@ async def delete_converted_file(
         Success status
     """
     try:
+        if distributed_service.should_use_leader():
+            try:
+                return await distributed_service.request_leader(
+                    "DELETE", "/api/files/converted", params={"path": path}
+                )
+            except LeaderRequestError as exc:
+                raise HTTPException(
+                    status_code=exc.status_code, detail=exc.detail
+                ) from exc
         await file_service.delete_converted_file(path)
         return {"success": True, "message": "File deleted successfully"}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -131,8 +143,19 @@ async def delete_file(path: str = Query(..., description="Path to file")):
         Success status
     """
     try:
+        if distributed_service.should_use_leader():
+            try:
+                return await distributed_service.request_leader(
+                    "DELETE", "/api/files", params={"path": path}
+                )
+            except LeaderRequestError as exc:
+                raise HTTPException(
+                    status_code=exc.status_code, detail=exc.detail
+                ) from exc
         await file_service.delete_file(path)
         return {"success": True, "message": "File deleted successfully"}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

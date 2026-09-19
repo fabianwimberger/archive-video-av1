@@ -3,10 +3,12 @@
 import asyncio
 import logging
 import os
+import signal
 from pathlib import Path
 from typing import Callable, Dict, Any, List, Optional, TypedDict
 from app.config import settings
 from app.utils.validation import validate_conversion_settings
+from app.utils.file_safety import validate_source_path
 
 
 class ProgressData(TypedDict):
@@ -56,6 +58,10 @@ class ConversionService:
         """
         # Validate conversion settings before building command
         validate_conversion_settings(conversion_settings)
+        source_file = str(validate_source_path(source_file))
+        expected_output = Path(self.get_output_path(source_file))
+        if Path(output_file) != expected_output or expected_output.is_symlink():
+            raise ValueError("Invalid conversion output path")
 
         # Support both 'encoder_preset' (new) and 'preset' (legacy) keys
         preset_value = conversion_settings.get(
@@ -90,13 +96,14 @@ class ConversionService:
         }
 
         log_lines: List[str] = []
+        process = None
 
         try:
             # Execute process
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True,
                 env={
                     "TEMP_DIR": settings.TEMP_DIR,
@@ -228,14 +235,6 @@ class ConversionService:
             # Wait for process to complete
             await process.wait()
 
-            # Capture stderr
-            if process.stderr is None:
-                raise RuntimeError("Process stderr is None")
-            stderr_output = await process.stderr.read()
-            if stderr_output:
-                stderr_str = stderr_output.decode().strip()
-                log_lines.append(f"STDERR: {stderr_str}")
-
             # Check exit code
             success = process.returncode == 0
 
@@ -255,6 +254,20 @@ class ConversionService:
             logger.error(f"Exception in conversion job {job_id}: {e}")
             log_lines.append(f"EXCEPTION: {str(e)}")
             return False, "\n".join(log_lines)
+        finally:
+            if process is not None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    await asyncio.wait_for(process.communicate(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    await process.communicate()
 
     def get_output_path(self, source_file: str) -> str:
         """
