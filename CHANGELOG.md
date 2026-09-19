@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.8.1] - 2026-09-19
+
+Fixes the history page being unscrollable with many entries, hardens vendor downloads, and corrects the SVT-AV1 licensing notes.
+
+### Fixes
+
+- History page now scrolls when the list is long, so older entries stay reachable instead of being clipped
+- Verify the SHA-256 hash of every downloaded vendor asset and pin the expected version, so a tampered or unexpected file fails the build instead of shipping
+
+### Documentation
+
+- Correct the SVT-AV1 license and PGO claims in `DOCKER_LICENSES.md` and the README
+
+### Dependencies
+
+- Bump alembic from 1.19.0 to 1.20.0
+- Bump websockets from 17.0.1 to 17.1
+
+### Documentation & Links
+
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.8.0...v1.8.1)
+
 ## [v1.8.0] - 2026-08-15
 
 Directory sort ordering, a Docker build hang, and a batch of dependency updates including FFmpeg 9.0.1.
