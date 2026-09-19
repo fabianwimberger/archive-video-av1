@@ -11,7 +11,7 @@ This Docker image contains the following third-party software packages:
 - **Note:** Compiled with `--enable-gpl --enable-static`. Source code for the exact version used is available at https://ffmpeg.org/releases/. A license notice is included in the image at `/usr/share/licenses/FFmpeg-LICENSE`.
 
 ### SVT-AV1
-- **License:** BSD-2-Clause
+- **License:** BSD-3-Clause-Clear
 - **Source:** https://gitlab.com/AOMediaCodec/SVT-AV1
 - **Description:** AV1 video encoder
 

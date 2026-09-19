@@ -18,7 +18,7 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
 ## Features
 
 - **Responsive web UI** with file browsing, queue controls, history filters, and real-time progress via WebSocket
-- **AV1 encoding** using SVT-AV1 with PGO-optimized FFmpeg
+- **AV1 encoding** using SVT-AV1 with FFmpeg (the pre-built image is a generic, portable build; source builds can enable PGO and `-march=native`)
 - **Batch processing** with sequential job queue
 - **Distributed processing** with opt-in LAN peer discovery and remote job delegation
 - **Persistent** — conversion history, custom presets, and queue state survive restarts
@@ -39,7 +39,7 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
 
 ### Option 1: Using Pre-built Image (Recommended)
 
-Pre-built images support both **AMD64** and **ARM64** architectures.
+Pre-built images support both **AMD64** and **ARM64** architectures. They ship a generic FFmpeg build (no PGO, no `-march=native`) so the same image runs on any host; for a PGO-optimized build, use [Option 2](#option-2-build-from-source-with-pgo-optimization).
 
 **Docker Compose:**
 
@@ -259,7 +259,7 @@ This software includes the following open-source components:
 | Component | License | Source |
 |-----------|---------|--------|
 | FFmpeg | [GPL v2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) | https://git.ffmpeg.org/ffmpeg.git |
-| SVT-AV1 | [BSD-3-Clause](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/LICENSE.md) | https://gitlab.com/AOMediaCodec/SVT-AV1 |
+| SVT-AV1 | [BSD-3-Clause-Clear](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/LICENSE.md) | https://gitlab.com/AOMediaCodec/SVT-AV1 |
 | Opus | [BSD-3-Clause](https://opus-codec.org/license/) | https://opus-codec.org/ |
 
 When using the pre-built Docker image, FFmpeg is compiled with GPL enabled. The FFmpeg license notice is included in the image at `/usr/share/licenses/FFmpeg-LICENSE`.

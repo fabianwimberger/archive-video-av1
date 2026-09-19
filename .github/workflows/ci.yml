@@ -63,7 +63,7 @@ jobs:
         with:
           files: backend/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   docker-amd64:
     name: Docker Build (amd64)

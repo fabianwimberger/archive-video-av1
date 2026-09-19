@@ -127,8 +127,9 @@ body {
 }
 
 #view-history.main-content > .card {
-    flex: 1;
-    min-height: 0;
+    height: auto;
+    min-height: calc(100% - 2rem);
+    flex: 0 0 auto;
 }
 
 .section-files {
