@@ -4,7 +4,7 @@ This directory is for **Profile-Guided Optimization (PGO)** sample videos.
 
 ## What is PGO?
 
-Profile-Guided Optimization trains FFmpeg during compilation using real video samples. This produces an optimized binary that runs faster for your specific content type.
+Profile-Guided Optimization collects execution profiles from SVT-AV1 and FFmpeg using real video samples, then rebuilds both with those profiles. Opus uses the configured compiler optimizations, including LTO when enabled, but is not instrumented for PGO.
 
 ## How to Use
 
@@ -31,11 +31,11 @@ Files without a recognized prefix (`default_`, `animated_`, `grainy_`, `verygrai
 - **Resolution**: Include a 4K sample to train the downscale code path (all presets default to 1080p cap)
 - **HDR**: Include an HDR10 or HLG sample to train HDR color handling
 
-## Benefits
+## Performance
 
-- **5-15% faster encoding** compared to generic builds
-- Optimized code paths for your specific video characteristics
-- Better CPU instruction cache utilization
+The speedup depends on the CPU, input content, and encoder settings. Compare otherwise identical builds with LTO alone and LTO plus PGO, using representative videos outside the training set. Keep architecture flags, encoder settings, and thread counts the same to isolate the effect of PGO.
+
+Profile mismatches fail the build. Missing profiles still produce compiler warnings; the profile-file count does not establish how much encoder code was trained or whether encoding became faster. With no profiles available, the build falls back to a standard build.
 
 ## Skip PGO
 

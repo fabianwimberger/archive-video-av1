@@ -312,7 +312,7 @@ case "$BUILD_TYPE" in
         ;;
     "pgo-use")
         if ls "$PGO_DIR"/*.gcda >/dev/null 2>&1; then
-            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training -Wno-error=coverage-mismatch"
+            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training -Werror=coverage-mismatch"
         else
             echo "WARNING: No PGO profile data found in $PGO_DIR, falling back to standard build"
             build_all ""
