@@ -51,7 +51,7 @@ RUN chmod +x /build/build.sh
 # Build script handles unset vs empty string differently
 
 # Build with PGO
-# Layer 1: Build Opus and FFmpeg with -fprofile-generate (cached if sources/script unchanged)
+# Keep instrumented compilation cached when only training samples change.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-generate; \
     fi
@@ -64,7 +64,7 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-train; \
     fi
 
-# Layer 3: Rebuild FFmpeg with -fprofile-use (rebuilds if training/profiles change)
+# Reuse build paths so SVT-AV1 and FFmpeg can locate their collected profiles.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-use; \
     else \
@@ -72,7 +72,7 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
     fi
 
 # Verification and stripping (always runs after successful build)
-RUN echo "=== Verifying optimizations ==="; \
+RUN echo "=== Checking profile availability ==="; \
     \
     if [ "$ENABLE_PGO" = "true" ]; then \
         profile_count=$(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l); \
@@ -83,12 +83,8 @@ RUN echo "=== Verifying optimizations ==="; \
             echo "This indicates PGO training failed or samples were insufficient"; \
             exit 1; \
         else \
-            echo "✓ PGO profiles: $profile_count .gcda files found"; \
+            echo "PGO profile files available: $profile_count (not a measure of profile coverage)"; \
         fi; \
-    fi; \
-    \
-    if ! strings /usr/local/bin/ffmpeg 2>/dev/null | grep -q "GCC"; then \
-        echo "WARNING: Unable to verify compiler in binary"; \
     fi; \
     \
     echo "=== Stripping binaries ==="; \
