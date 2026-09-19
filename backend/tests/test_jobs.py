@@ -1,6 +1,7 @@
 """Tests for job API endpoints."""
 
 import asyncio
+from .conftest import VIDEO_ROOT
 from sqlalchemy import select
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -10,7 +11,7 @@ from app.models.job import Job
 class TestCreateJob:
     def test_create_job_with_preset(self, seeded_client):
         payload = {
-            "source_file": "/videos/test.mkv",
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
             "preset_id": 1,
         }
         response = seeded_client.post("/api/jobs", json=payload)
@@ -20,7 +21,7 @@ class TestCreateJob:
 
     def test_create_job_with_settings_only(self, seeded_client):
         payload = {
-            "source_file": "/videos/test.mkv",
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
             "settings": {
                 "crf": 28,
                 "encoder_preset": 4,
@@ -37,7 +38,7 @@ class TestCreateJob:
 
     def test_create_local_only_job_assigns_current_node(self, seeded_client):
         payload = {
-            "source_file": "/videos/test.mkv",
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
             "preset_id": 1,
             "local_only": True,
         }
@@ -53,14 +54,14 @@ class TestCreateJob:
 
     def test_create_job_without_preset_or_settings(self, seeded_client):
         payload = {
-            "source_file": "/videos/test.mkv",
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
         }
         response = seeded_client.post("/api/jobs", json=payload)
         assert response.status_code == 422
 
     def test_create_job_with_preset_and_settings_override(self, seeded_client):
         payload = {
-            "source_file": "/videos/test.mkv",
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
             "preset_id": 1,
             "settings": {
                 "crf": 30,
@@ -98,7 +99,7 @@ class TestCreateJob:
 
         response = seeded_client.post(
             "/api/jobs",
-            json={"source_file": "/videos/test.mkv", "preset_id": 1},
+            json={"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1},
         )
 
         assert response.status_code == 200
@@ -112,7 +113,7 @@ class TestCreateJob:
 class TestGetJob:
     def test_get_job_returns_settings_as_dict(self, seeded_client):
         payload = {
-            "source_file": "/videos/test.mkv",
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
             "preset_id": 1,
         }
         create_resp = seeded_client.post("/api/jobs", json=payload)
@@ -128,7 +129,7 @@ class TestGetJob:
 class TestListJobs:
     def test_list_jobs_with_status_filter(self, seeded_client):
         # Create a job
-        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         seeded_client.post("/api/jobs", json=payload)
 
         response = seeded_client.get("/api/jobs?status=pending&limit=10&offset=0")
@@ -164,8 +165,8 @@ class TestListJobs:
             async with AsyncSessionLocal() as db:
                 db.add(
                     Job(
-                        source_file="/videos/replica.mkv",
-                        output_file="/videos/replica_conv.mkv",
+                        source_file=str(VIDEO_ROOT / "replica.mkv"),
+                        output_file=str(VIDEO_ROOT / "replica_conv.mkv"),
                         settings="{}",
                         status="pending",
                         queue_position=1,
@@ -185,7 +186,7 @@ class TestListJobs:
 
         assert response.status_code == 200
         assert all(
-            job["source_file"] != "/videos/replica.mkv"
+            job["source_file"] != str(VIDEO_ROOT / "replica.mkv")
             for job in response.json()["jobs"]
         )
 
@@ -193,8 +194,8 @@ class TestListJobs:
         async def add_replica():
             async with AsyncSessionLocal() as db:
                 replica = Job(
-                    source_file="/videos/replica.mkv",
-                    output_file="/videos/replica_conv.mkv",
+                    source_file=str(VIDEO_ROOT / "replica.mkv"),
+                    output_file=str(VIDEO_ROOT / "replica_conv.mkv"),
                     settings="{}",
                     status="pending",
                     cluster_job_id="leader:1",
@@ -217,7 +218,7 @@ class TestListJobs:
 class TestBatchJobs:
     def test_create_batch_jobs(self, seeded_client):
         payload = {
-            "files": ["/videos/a.mkv", "/videos/b.mkv"],
+            "files": [str(VIDEO_ROOT / "a.mkv"), str(VIDEO_ROOT / "b.mkv")],
             "preset_id": 1,
         }
         response = seeded_client.post("/api/jobs/batch", json=payload)
@@ -228,7 +229,7 @@ class TestBatchJobs:
 class TestRetryJob:
     def test_retry_job(self, seeded_client):
         # Create and complete a job manually
-        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         create_resp = seeded_client.post("/api/jobs", json=payload)
         job_id = create_resp.json()["job_ids"][0]
 
@@ -252,7 +253,7 @@ class TestRetryJob:
 
 class TestSaveJobAsPreset:
     def test_save_job_as_preset(self, seeded_client):
-        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         create_resp = seeded_client.post("/api/jobs", json=payload)
         job_id = create_resp.json()["job_ids"][0]
 
@@ -263,7 +264,7 @@ class TestSaveJobAsPreset:
 
 class TestClearJobs:
     def test_clear_queued(self, seeded_client):
-        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         seeded_client.post("/api/jobs", json=payload)
 
         response = seeded_client.delete("/api/jobs/queued")
@@ -275,7 +276,7 @@ class TestClearJobs:
     ):
         from app.services.distributed import distributed_service
 
-        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         seeded_client.post("/api/jobs", json=payload)
 
         async def fail_request(*_args, **_kwargs):
@@ -292,7 +293,7 @@ class TestClearJobs:
     def test_clear_queued_includes_peer_queues(self, seeded_client, monkeypatch):
         from app.services.distributed import distributed_service
 
-        payload = {"source_file": "/videos/test.mkv", "preset_id": 1}
+        payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         seeded_client.post("/api/jobs", json=payload)
 
         async def fake_clear_peer_jobs(path):

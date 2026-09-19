@@ -48,11 +48,14 @@ find_preferred_stream() {
             stream_language = tolower($2)
             for (i = 1; i <= count; i++) {
                 if (stream_language == preferred[i]) {
-                    print $1
-                    exit
+                    if (!best_rank || i < best_rank) {
+                        best_rank = i
+                        best_stream = $1
+                    }
                 }
             }
         }
+        END { if (best_rank) print best_stream }
     ' <<< "$streams"
 }
 

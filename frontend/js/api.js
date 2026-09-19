@@ -101,8 +101,8 @@ class ApiClient {
         return this.request(`/jobs?${params}`);
     }
 
-    async getJob(jobId) {
-        return this.request(`/jobs/${jobId}`);
+    async getJob(jobId, nodeId = null) {
+        return this.request(`/jobs/${jobId}${nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ''}`);
     }
 
     async updateJob(jobId, { notes }) {
@@ -112,8 +112,8 @@ class ApiClient {
         });
     }
 
-    async moveJobPosition(jobId, absolute) {
-        return this.request(`/jobs/${jobId}/position`, {
+    async moveJobPosition(jobId, absolute, nodeId = null) {
+        return this.request(`/jobs/${jobId}/position${nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ''}`, {
             method: 'PATCH',
             body: JSON.stringify({ absolute }),
         });
@@ -133,8 +133,8 @@ class ApiClient {
         });
     }
 
-    async deleteOrCancelJob(jobId) {
-        return this.request(`/jobs/${jobId}`, {
+    async deleteOrCancelJob(jobId, nodeId = null) {
+        return this.request(`/jobs/${jobId}${nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ''}`, {
             method: 'DELETE',
         });
     }
@@ -269,7 +269,7 @@ const utils = {
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     },
 
     formatBytes(bytes) {

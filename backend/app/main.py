@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from app.config import settings
+from app.config import APP_ROOT, ASSET_ROOT, settings
 from app.database import init_db
 
 # Configure logging
@@ -40,8 +40,8 @@ async def lifespan(app: FastAPI):
     from alembic import command
     from alembic.config import Config
 
-    cfg = Config("/app/alembic.ini")
-    cfg.set_main_option("script_location", "/app/alembic")
+    cfg = Config(str(APP_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(APP_ROOT / "alembic"))
     await asyncio.to_thread(command.upgrade, cfg, "head")
     logging.getLogger().setLevel(getattr(logging, settings.LOG_LEVEL))
     logger.info("Database migrated to head")
@@ -146,4 +146,6 @@ async def health_check():
 
 
 # Mount static files for frontend (must be last!)
-app.mount("/", StaticFiles(directory="/app/frontend", html=True), name="frontend")
+app.mount(
+    "/", StaticFiles(directory=str(ASSET_ROOT / "frontend"), html=True), name="frontend"
+)

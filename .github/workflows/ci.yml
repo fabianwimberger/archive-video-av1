@@ -89,8 +89,14 @@ jobs:
           platforms: linux/amd64
           load: true
 
-      - name: Test container starts
-        run: docker run --rm archive-video-av1:test-amd64 python3 --version
+      - name: Create sample video
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          ffmpeg -v error -f lavfi -i testsrc2=size=160x90:rate=24 -f lavfi -i sine=frequency=440 -t 3 -c:v libx264 -c:a aac /tmp/smoke.mkv
+
+      - name: Check startup and conversion
+        run: docker run --rm -v /tmp/smoke.mkv:/sample.mkv:ro archive-video-av1:test-amd64 python3 scripts/smoke_test.py /sample.mkv
 
       - name: Verify license file exists
         run: docker run --rm archive-video-av1:test-amd64 cat /usr/share/licenses/FFmpeg-LICENSE
@@ -119,8 +125,14 @@ jobs:
           platforms: linux/arm64
           load: true
 
-      - name: Test container starts
-        run: docker run --rm archive-video-av1:test-arm64 python3 --version
+      - name: Create sample video
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          ffmpeg -v error -f lavfi -i testsrc2=size=160x90:rate=24 -f lavfi -i sine=frequency=440 -t 3 -c:v libx264 -c:a aac /tmp/smoke.mkv
+
+      - name: Check startup and conversion
+        run: docker run --rm -v /tmp/smoke.mkv:/sample.mkv:ro archive-video-av1:test-arm64 python3 scripts/smoke_test.py /sample.mkv
 
       - name: Verify license file exists
         run: docker run --rm archive-video-av1:test-arm64 cat /usr/share/licenses/FFmpeg-LICENSE

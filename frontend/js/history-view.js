@@ -259,7 +259,7 @@ class HistoryView {
     async retryJob(jobId) {
         try {
             const result = await api.retryJob(jobId);
-            window.app.showNotification(`Retry started. <a href="#/convert" class="alert-link" onclick="app.switchView('convert')">View in queue</a>`, 'success');
+            window.app.showNotification('Retry started. View it in the queue.', 'success');
             window.jobQueue.loadJobs();
         } catch (error) {
             window.app.showNotification(`Error: ${error.message}`, 'danger');

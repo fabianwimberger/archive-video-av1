@@ -3,6 +3,7 @@
 import pytest
 
 from app.services.websocket_manager import WebSocketManager
+from app.config import settings
 
 
 class FakeWebSocket:
@@ -65,8 +66,13 @@ async def test_broadcast_sends_to_all_connections():
 
     await manager.broadcast({"type": "job_progress", "job_id": 1})
 
-    assert {"type": "job_progress", "job_id": 1} in ws1.sent
-    assert {"type": "job_progress", "job_id": 1} in ws2.sent
+    expected = {
+        "type": "job_progress",
+        "job_id": 1,
+        "node_id": settings.DISTRIBUTED_NODE_ID,
+    }
+    assert expected in ws1.sent
+    assert expected in ws2.sent
     assert manager.get_connection_count() == 2
 
 

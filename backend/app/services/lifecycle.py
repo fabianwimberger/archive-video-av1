@@ -102,6 +102,7 @@ async def recover_interrupted_jobs():
             .where(
                 Job.status == "processing",
                 Job.remote_job_id.is_(None),
+                Job.assigned_worker_url.is_(None),
                 Job.is_cluster_replica.is_(False),
             )
             .values(
