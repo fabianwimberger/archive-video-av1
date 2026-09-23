@@ -218,3 +218,64 @@ def test_delete_file_success_when_converted_exists(client, mounted):
     assert response.status_code == 200
     assert not source.exists()
     assert converted.exists()
+
+
+def _forward_to_leader(monkeypatch, *, error=None):
+    from app.services.distributed import distributed_service
+
+    monkeypatch.setattr(distributed_service, "should_use_leader", lambda: True)
+
+    async def fake_request(method, path, *, params=None, json_body=None):
+        if error is not None:
+            raise error
+        return {"success": True, "message": "forwarded"}
+
+    monkeypatch.setattr(distributed_service, "request_leader", fake_request)
+
+
+def test_delete_converted_file_forwards_to_leader(client, mounted, monkeypatch):
+    _forward_to_leader(monkeypatch)
+
+    response = client.delete(
+        "/api/files/converted", params={"path": "/videos/elsewhere_conv.mkv"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "message": "forwarded"}
+
+
+def test_delete_converted_file_maps_leader_error(client, mounted, monkeypatch):
+    from app.services.distributed import LeaderRequestError
+
+    _forward_to_leader(
+        monkeypatch, error=LeaderRequestError(503, "leader unreachable")
+    )
+
+    response = client.delete(
+        "/api/files/converted", params={"path": "/videos/elsewhere_conv.mkv"}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "leader unreachable"
+
+
+def test_delete_file_forwards_to_leader(client, mounted, monkeypatch):
+    _forward_to_leader(monkeypatch)
+
+    response = client.delete("/api/files", params={"path": "/videos/elsewhere.mkv"})
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "message": "forwarded"}
+
+
+def test_delete_file_maps_leader_error(client, mounted, monkeypatch):
+    from app.services.distributed import LeaderRequestError
+
+    _forward_to_leader(
+        monkeypatch, error=LeaderRequestError(409, "file is locked")
+    )
+
+    response = client.delete("/api/files", params={"path": "/videos/elsewhere.mkv"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "file is locked"

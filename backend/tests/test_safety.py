@@ -302,4 +302,18 @@ async def test_cancellation_terminates_process_group(videos, monkeypatch):
         await asyncio.wait_for(task, timeout=5)
     child = int(child_file.read_text())
     stat = Path(f"/proc/{child}/stat")
-    assert not stat.exists() or stat.read_text().split()[2] == "Z"
+    try:
+        state = stat.read_text().split()[2]
+    except (ProcessLookupError, FileNotFoundError):
+        return  # child already gone entirely
+    assert state == "Z"
+
+
+def test_converted_output_cannot_be_queued_as_source(videos):
+    from app.utils.file_safety import validate_source_path
+
+    converted = videos / "movie_conv.mkv"
+    converted.write_bytes(b"converted")
+
+    with pytest.raises(ValueError, match="Converted outputs cannot be queued as sources"):
+        validate_source_path(str(converted))

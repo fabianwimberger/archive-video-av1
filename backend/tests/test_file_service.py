@@ -89,3 +89,35 @@ async def test_delete_file_rejects_empty_converted_file(tmp_path):
         await service.delete_file(str(source))
 
     assert source.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_converted_file_requires_job_record(db_session, tmp_path):
+    converted = tmp_path / "movie_conv.mkv"
+    converted.write_bytes(b"converted")
+
+    service = FileService()
+    service.source_mount = tmp_path
+
+    with pytest.raises(ValueError, match="No conversion record found"):
+        await service.delete_converted_file(str(converted))
+
+    assert converted.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_file_rejects_symlink_converted_file(db_session, tmp_path):
+    source = tmp_path / "movie.mkv"
+    source.write_bytes(b"source")
+    real = tmp_path / "real.mkv"
+    real.write_bytes(b"converted")
+    converted = tmp_path / "movie_conv.mkv"
+    converted.symlink_to(real)
+
+    service = FileService()
+    service.source_mount = tmp_path
+
+    with pytest.raises(ValueError, match="Invalid converted file path"):
+        await service.delete_file(str(source))
+
+    assert source.exists()
