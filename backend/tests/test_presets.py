@@ -185,9 +185,14 @@ class TestExportPresets:
         data = response.json()
         assert len(data["presets"]) == 1
 
+
 class TestImportPresetsGuards:
     def test_import_rejects_non_list_presets(self, seeded_client):
-        document = {"format": "archive-video-av1.presets", "version": 1, "presets": "oops"}
+        document = {
+            "format": "archive-video-av1.presets",
+            "version": 1,
+            "presets": "oops",
+        }
 
         response = seeded_client.post(
             "/api/presets/import?on_conflict=skip",
@@ -201,9 +206,17 @@ class TestImportPresetsGuards:
         document = {
             "format": "archive-video-av1.presets",
             "version": 1,
-            "presets": ["not-a-dict", {"name": "Real", "crf": 26, "encoder_preset": 4,
-                                        "svt_params": "", "audio_bitrate": "96k",
-                                        "max_resolution": 1080}],
+            "presets": [
+                "not-a-dict",
+                {
+                    "name": "Real",
+                    "crf": 26,
+                    "encoder_preset": 4,
+                    "svt_params": "",
+                    "audio_bitrate": "96k",
+                    "max_resolution": 1080,
+                },
+            ],
         }
 
         response = seeded_client.post(
@@ -214,4 +227,6 @@ class TestImportPresetsGuards:
         assert response.status_code == 200
         data = response.json()
         assert data["imported"] == ["Real"]
-        assert data["errors"] == [{"entry": "(unnamed)", "reason": "Preset must be an object"}]
+        assert data["errors"] == [
+            {"entry": "(unnamed)", "reason": "Preset must be an object"}
+        ]

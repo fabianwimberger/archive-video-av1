@@ -315,5 +315,7 @@ def test_converted_output_cannot_be_queued_as_source(videos):
     converted = videos / "movie_conv.mkv"
     converted.write_bytes(b"converted")
 
-    with pytest.raises(ValueError, match="Converted outputs cannot be queued as sources"):
+    with pytest.raises(
+        ValueError, match="Converted outputs cannot be queued as sources"
+    ):
         validate_source_path(str(converted))

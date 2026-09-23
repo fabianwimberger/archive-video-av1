@@ -238,7 +238,9 @@ class TestBatchJobs:
             converted.unlink(missing_ok=True)
 
         assert response.status_code == 422
-        assert "Converted outputs cannot be queued as sources" in response.json()["detail"]
+        assert (
+            "Converted outputs cannot be queued as sources" in response.json()["detail"]
+        )
 
 
 class TestRetryJob:
@@ -433,9 +435,9 @@ class TestCreateJobDestinationGuards:
 
                 remaining = (
                     await db.execute(
-                        _select(func.count()).select_from(Job).where(
-                            Job.cluster_job_id == "node-a:88"
-                        )
+                        _select(func.count())
+                        .select_from(Job)
+                        .where(Job.cluster_job_id == "node-a:88")
                     )
                 ).scalar_one()
                 job = await db.get(Job, new_job_id)
@@ -477,9 +479,7 @@ class TestNodeForwarding:
 
         return FakeAsyncClient
 
-    def test_get_job_with_unknown_node_returns_503(
-        self, seeded_client, monkeypatch
-    ):
+    def test_get_job_with_unknown_node_returns_503(self, seeded_client, monkeypatch):
         from app.services.distributed import distributed_service
         import app.routes.jobs as jobs_routes
 
@@ -528,7 +528,9 @@ class TestNodeForwarding:
             jobs_routes.httpx, "AsyncClient", self.fake_node_client(handler)
         )
 
-        response = seeded_client.get(f"/api/jobs/{job_id}", params={"node_id": "node-b"})
+        response = seeded_client.get(
+            f"/api/jobs/{job_id}", params={"node_id": "node-b"}
+        )
 
         assert response.status_code == 200
         assert response.json()["id"] == job_id
@@ -568,9 +570,7 @@ class TestNodeForwarding:
         assert response.status_code == 404
         assert response.json()["detail"] == "Worker request failed"
 
-    def test_node_request_maps_transport_error_to_502(
-        self, seeded_client, monkeypatch
-    ):
+    def test_node_request_maps_transport_error_to_502(self, seeded_client, monkeypatch):
         import app.routes.jobs as jobs_routes
         from app.services.distributed import PeerNode, distributed_service
 
@@ -618,7 +618,9 @@ class TestNodeForwarding:
         )
 
         response = seeded_client.patch(
-            f"/api/jobs/{job_id}/position", json={"absolute": 1}, params={"node_id": "node-b"}
+            f"/api/jobs/{job_id}/position",
+            json={"absolute": 1},
+            params={"node_id": "node-b"},
         )
 
         assert response.status_code == 200
@@ -651,9 +653,7 @@ class TestNodeForwarding:
         assert captured["path"] == f"/api/jobs/{job_id}/position"
         assert captured["json_body"] == {"absolute": 1}
 
-    def test_delete_job_with_unknown_node_returns_503(
-        self, seeded_client, monkeypatch
-    ):
+    def test_delete_job_with_unknown_node_returns_503(self, seeded_client, monkeypatch):
         import app.routes.jobs as jobs_routes
         from app.services.distributed import distributed_service
 

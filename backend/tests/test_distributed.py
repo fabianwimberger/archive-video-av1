@@ -110,9 +110,7 @@ async def test_delegate_pending_jobs_marks_job_failed_on_rejection(
 
 
 @pytest.mark.asyncio
-async def test_cancel_remote_job_reports_unknown_after_retries(
-    db_session, monkeypatch
-):
+async def test_cancel_remote_job_reports_unknown_after_retries(db_session, monkeypatch):
     distributed = DistributedService()
     distributed._client = AsyncMock()
     distributed._client.delete = AsyncMock(side_effect=httpx.ConnectError("down"))

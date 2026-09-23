@@ -247,9 +247,7 @@ def test_delete_converted_file_forwards_to_leader(client, mounted, monkeypatch):
 def test_delete_converted_file_maps_leader_error(client, mounted, monkeypatch):
     from app.services.distributed import LeaderRequestError
 
-    _forward_to_leader(
-        monkeypatch, error=LeaderRequestError(503, "leader unreachable")
-    )
+    _forward_to_leader(monkeypatch, error=LeaderRequestError(503, "leader unreachable"))
 
     response = client.delete(
         "/api/files/converted", params={"path": "/videos/elsewhere_conv.mkv"}
@@ -271,9 +269,7 @@ def test_delete_file_forwards_to_leader(client, mounted, monkeypatch):
 def test_delete_file_maps_leader_error(client, mounted, monkeypatch):
     from app.services.distributed import LeaderRequestError
 
-    _forward_to_leader(
-        monkeypatch, error=LeaderRequestError(409, "file is locked")
-    )
+    _forward_to_leader(monkeypatch, error=LeaderRequestError(409, "file is locked"))
 
     response = client.delete("/api/files", params={"path": "/videos/elsewhere.mkv"})
 
