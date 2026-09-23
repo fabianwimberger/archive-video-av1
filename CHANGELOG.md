@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v1.8.2] - 2026-09-23
 
-A dependency refresh: FFmpeg 9.0.2 and Python backend bumps.
+Robustness fixes for conversions and cluster deployments, stricter PGO build verification, and a dependency refresh with FFmpeg 9.0.2.
+
+### Fixes
+
+- Outputs are published only after successful finalization; existing outputs are never overwritten, and files sharing a stem cannot be queued together
+- Deleting an original requires a matching successful conversion record whose file sizes still match, with deletion guarded against symlinks and locked outputs
+- Distributed queue preserves worker ownership across outages and deduplicates dispatch retries
+- Cancelling or retrying a running job requires known worker state; node-local job IDs are distinguished in the queue and history
+- Preset imports handle repeated names within one document safely
+- PGO Docker builds fail instead of silently building without matching profile data
 
 ### Dependencies
 
