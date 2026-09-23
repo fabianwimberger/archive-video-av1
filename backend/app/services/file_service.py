@@ -9,6 +9,7 @@ from app.database import AsyncSessionLocal
 from app.config import settings
 from app.utils.ffprobe import get_video_info, has_converted_file
 from app.models.job import Job
+from app.utils.file_safety import output_lock
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class FileService:
         """
         try:
             resolved = path.resolve()
-            return resolved.is_relative_to(self.source_mount)
+            return resolved.is_relative_to(self.source_mount.resolve())
         except (ValueError, RuntimeError):
             return False
 
@@ -264,8 +265,22 @@ class FileService:
             if not path.exists() or not path.is_file():
                 raise ValueError("File does not exist")
 
-            # Delete the file
-            path.unlink()
+            if (
+                path.is_symlink()
+                or path.suffix.lower() != ".mkv"
+                or not path.stem.endswith("_conv")
+            ):
+                raise ValueError("Not a conversion output")
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(Job.id)
+                    .where(Job.output_file == str(path.resolve()))
+                    .limit(1)
+                )
+                if result.scalar_one_or_none() is None:
+                    raise ValueError("No conversion record found for this output")
+            with output_lock(path):
+                path.unlink()
             logger.info(f"Deleted converted file: {converted_path}")
             return True
 
@@ -306,8 +321,27 @@ class FileService:
                     "Cannot delete source file: Converted file is empty or missing"
                 )
 
-            # Delete the file
-            path.unlink()
+            assert conv is not None
+            if conv.is_symlink() or not self._is_safe_path(conv):
+                raise ValueError("Invalid converted file path")
+            with output_lock(conv):
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(
+                        select(Job.id)
+                        .where(
+                            Job.source_file == str(path.resolve()),
+                            Job.output_file == str(conv.resolve()),
+                            Job.status == "completed",
+                            Job.source_size_bytes == path.stat().st_size,
+                            Job.output_size_bytes == conv.stat().st_size,
+                        )
+                        .limit(1)
+                    )
+                    if result.scalar_one_or_none() is None:
+                        raise ValueError(
+                            "Cannot delete source file: No matching successful conversion"
+                        )
+                path.unlink()
             logger.info(f"Deleted file: {file_path}")
             return True
 

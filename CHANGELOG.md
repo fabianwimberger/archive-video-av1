@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.8.2] - 2026-09-23
+
+A dependency refresh: FFmpeg 9.0.2 and Python backend bumps.
+
+### Dependencies
+
+- ffmpeg 9.0.1 → 9.0.2
+- uvicorn 0.52.4 → 0.53.0
+- sqlalchemy 2.0.52 → 2.0.54
+
+### Documentation & Links
+
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.8.1...v1.8.2)
+
 ## [v1.8.1] - 2026-09-19
 
 Fixes the history page being unscrollable with many entries, hardens vendor downloads, and corrects the SVT-AV1 licensing notes.

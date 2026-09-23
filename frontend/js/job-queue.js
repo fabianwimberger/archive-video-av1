@@ -20,7 +20,7 @@ class JobQueue {
 
         // Listen to WebSocket events
         wsClient.on('job_progress', (message) => {
-            this.updateJobProgress(message.job_id, message.data);
+            this.updateJobProgress(message.job_id, message.data, message);
         });
 
         wsClient.on('job_status', (message) => {
@@ -74,7 +74,7 @@ class JobQueue {
             try {
                 const cancelPromises = Array.from(this.jobs.values())
                     .filter(job => job.status === 'processing')
-                    .map(job => api.deleteOrCancelJob(job.id));
+                    .map(job => api.deleteOrCancelJob(job.id, job.cluster_node_id));
                 await Promise.all(cancelPromises);
                 await api.clearAllJobs();
                 this.jobs.clear();
@@ -184,13 +184,17 @@ class JobQueue {
             const data = await api.listJobs({ status: 'pending,processing', limit: 100, offset: 0, order: 'asc' });
             this.jobs.clear();
             data.jobs.forEach(job => {
-                this.jobs.set(job.id, job);
+                this.jobs.set(this.jobKey(job), job);
             });
             this.updateStats();
             this.render();
         } catch (error) {
             console.error('Error loading jobs:', error);
         }
+    }
+
+    jobKey(job) {
+        return job.cluster_job_id || `${job.cluster_node_id || 'local'}:${job.id}`;
     }
 
     updateStats() {
@@ -239,7 +243,9 @@ class JobQueue {
     createJobElement(job) {
         const element = document.createElement('div');
         element.className = 'border-bottom p-3 job-item';
-        element.dataset.jobId = job.id;
+        const key = this.jobKey(job);
+        const detailsId = `encode-details-${encodeURIComponent(key)}`;
+        element.dataset.jobId = key;
         if (job.status === 'pending') {
             element.draggable = true;
             element.classList.add('cursor-move');
@@ -276,8 +282,8 @@ class JobQueue {
             </div>
             <div class="small text-muted mb-1">${utils.escapeHtml(summary)}</div>
             <div>
-                <button class="btn btn-link btn-sm p-0 text-decoration-none" data-bs-toggle="collapse" data-bs-target="#encode-details-${job.id}">Encode details</button>
-                <div class="collapse mt-2" id="encode-details-${job.id}">
+                <button class="btn btn-link btn-sm p-0 text-decoration-none" data-bs-toggle="collapse" data-bs-target="#${utils.escapeHtml(CSS.escape(detailsId))}">Encode details</button>
+                <div class="collapse mt-2" id="${utils.escapeHtml(detailsId)}">
                     <div class="bg-body-tertiary p-2 rounded small font-monospace">
                         ${this.formatSettings(job.settings)}
                     </div>
@@ -289,17 +295,17 @@ class JobQueue {
         // Event listeners
         const cancelBtn = element.querySelector('.cancel-btn');
         if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => this.cancelJob(job.id));
+            cancelBtn.addEventListener('click', () => this.cancelJob(key));
         }
 
         const logBtn = element.querySelector('.log-btn');
         if (logBtn) {
-            logBtn.addEventListener('click', () => this.showLog(job.id));
+            logBtn.addEventListener('click', () => this.showLog(key));
         }
 
         if (isPending) {
             element.addEventListener('dragstart', (e) => {
-                this.dragJobId = job.id;
+                this.dragJobId = key;
                 e.dataTransfer.effectAllowed = 'move';
             });
             element.addEventListener('dragover', (e) => {
@@ -308,8 +314,8 @@ class JobQueue {
             });
             element.addEventListener('drop', (e) => {
                 e.preventDefault();
-                if (this.dragJobId && this.dragJobId !== job.id) {
-                    this.reorderJob(this.dragJobId, job.id);
+                if (this.dragJobId && this.dragJobId !== key) {
+                    this.reorderJob(this.dragJobId, key);
                 }
                 this.dragJobId = null;
             });
@@ -332,10 +338,11 @@ class JobQueue {
         const pending = Array.from(this.jobs.values())
             .filter(j => j.status === 'pending')
             .sort((a, b) => (a.queue_position ?? Infinity) - (b.queue_position ?? Infinity));
-        const targetIndex = pending.findIndex(j => j.id === targetId);
+        const targetIndex = pending.findIndex(j => this.jobKey(j) === targetId);
         if (targetIndex === -1) return;
         try {
-            await api.moveJobPosition(draggedId, targetIndex + 1);
+            const dragged = this.jobs.get(draggedId);
+            await api.moveJobPosition(dragged.id, targetIndex + 1, dragged.cluster_node_id);
             await this.loadJobs();
         } catch (error) {
             window.app.showNotification(`Reorder failed: ${error.message}`, 'danger');
@@ -371,21 +378,21 @@ class JobQueue {
         return '';
     }
 
-    resolveDisplayedJobId(jobId) {
-        const numericJobId = Number(jobId);
-        if (this.jobs.has(numericJobId)) return numericJobId;
-
+    resolveDisplayedJobId(jobId, message = {}) {
+        if (message.cluster_job_id && this.jobs.has(message.cluster_job_id)) return message.cluster_job_id;
         for (const job of this.jobs.values()) {
-            if (Number(job.remote_job_id) === numericJobId) {
-                return job.id;
+            if (message.node_id && (
+                (job.cluster_node_id === message.node_id && Number(job.id) === Number(jobId)) ||
+                (job.assigned_worker_id === message.node_id && Number(job.remote_job_id) === Number(jobId))
+            )) {
+                return this.jobKey(job);
             }
         }
-
-        return numericJobId;
+        return null;
     }
 
-    updateJobProgress(jobId, progressData) {
-        const displayedJobId = this.resolveDisplayedJobId(jobId);
+    updateJobProgress(jobId, progressData, message = {}) {
+        const displayedJobId = this.resolveDisplayedJobId(jobId, message);
         const job = this.jobs.get(displayedJobId);
         if (!job) return;
 
@@ -393,7 +400,7 @@ class JobQueue {
         job.current_fps = progressData.fps;
         job.eta_seconds = progressData.eta_seconds;
 
-        const element = document.querySelector(`[data-job-id="${displayedJobId}"]`);
+        const element = document.querySelector(`.job-item[data-job-id="${CSS.escape(displayedJobId)}"]`);
         if (element) {
             const progressContainer = element.querySelector('.job-progress');
             if (progressContainer) {
@@ -415,7 +422,7 @@ class JobQueue {
     }
 
     updateJobStatus(jobId, status, error, message = {}) {
-        const displayedJobId = this.resolveDisplayedJobId(jobId);
+        const displayedJobId = this.resolveDisplayedJobId(jobId, message);
         const job = this.jobs.get(displayedJobId);
         if (!job) {
             this.loadJobs();
@@ -433,7 +440,7 @@ class JobQueue {
             this.jobs.delete(displayedJobId);
             this.render();
             this.updateStats();
-            window.app.showNotification(`Job ${displayedJobId} completed. <a href="#/history" class="alert-link" onclick="app.switchView('history')">View in History</a>`, 'success');
+            window.app.showNotification(`Job ${job.id} completed. View it in History.`, 'success');
             return;
         }
 
@@ -445,7 +452,7 @@ class JobQueue {
         }
 
         this.updateStats();
-        const element = document.querySelector(`[data-job-id="${displayedJobId}"]`);
+        const element = document.querySelector(`.job-item[data-job-id="${CSS.escape(displayedJobId)}"]`);
         if (element) {
             element.replaceWith(this.createJobElement(job));
         }
@@ -460,7 +467,7 @@ class JobQueue {
         }
 
         try {
-            await api.deleteOrCancelJob(jobId);
+            await api.deleteOrCancelJob(job.id, job.cluster_node_id);
             this.jobs.delete(jobId);
             this.render();
             this.updateStats();
@@ -473,7 +480,8 @@ class JobQueue {
     async showLog(jobId) {
         try {
             this.openLogJobId = jobId;
-            const job = await api.getJob(jobId);
+            const displayed = this.jobs.get(jobId);
+            const job = await api.getJob(displayed.id, displayed.cluster_node_id);
             const modalElement = document.getElementById('log-modal');
             const logContent = document.getElementById('log-content');
 

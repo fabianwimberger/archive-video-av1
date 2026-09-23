@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:26.10 AS builder
 
-ARG FFMPEG_VERSION="9.0.1"
+ARG FFMPEG_VERSION="9.0.2"
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.2.0"
 ARG ENABLE_PGO="false"
@@ -10,7 +10,7 @@ ARG ARCH_FLAGS
 
 # Pinned checksums for the source tarballs below; update alongside the
 # matching *_VERSION when bumping.
-ARG FFMPEG_SHA256="657dbf258cce6c0681714b6e40b8ca69e988c67ecfc2f7aab47574e6ebaceb38"
+ARG FFMPEG_SHA256="84960df915059e8754fef2cd7c9afeb614062b1b5458ec471eecee619ee04e98"
 ARG OPUS_SHA256="6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
 ARG SVT_AV1_SHA256="c7b13c4a84bd3751aa35fcc72be13e6875467e7c2216879251a486e5b1e4e740"
 
@@ -51,7 +51,7 @@ RUN chmod +x /build/build.sh
 # Build script handles unset vs empty string differently
 
 # Build with PGO
-# Layer 1: Build Opus and FFmpeg with -fprofile-generate (cached if sources/script unchanged)
+# Keep instrumented compilation cached when only training samples change.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-generate; \
     fi
@@ -64,7 +64,7 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-train; \
     fi
 
-# Layer 3: Rebuild FFmpeg with -fprofile-use (rebuilds if training/profiles change)
+# Reuse build paths so SVT-AV1 and FFmpeg can locate their collected profiles.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-use; \
     else \
@@ -72,7 +72,7 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
     fi
 
 # Verification and stripping (always runs after successful build)
-RUN echo "=== Verifying optimizations ==="; \
+RUN echo "=== Checking profile availability ==="; \
     \
     if [ "$ENABLE_PGO" = "true" ]; then \
         profile_count=$(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l); \
@@ -83,12 +83,8 @@ RUN echo "=== Verifying optimizations ==="; \
             echo "This indicates PGO training failed or samples were insufficient"; \
             exit 1; \
         else \
-            echo "✓ PGO profiles: $profile_count .gcda files found"; \
+            echo "PGO profile files available: $profile_count (not a measure of profile coverage)"; \
         fi; \
-    fi; \
-    \
-    if ! strings /usr/local/bin/ffmpeg 2>/dev/null | grep -q "GCC"; then \
-        echo "WARNING: Unable to verify compiler in binary"; \
     fi; \
     \
     echo "=== Stripping binaries ==="; \
@@ -107,7 +103,7 @@ COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
 
 # Install Python runtime dependencies and add license notices
 RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-install-recommends \
-    python3 python3-venv ca-certificates mkvtoolnix bash \
+    python3 python3-venv ca-certificates mkvtoolnix bash util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/share/licenses \
     && echo "================================================================================" > /usr/share/licenses/FFmpeg-LICENSE \

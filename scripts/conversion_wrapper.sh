@@ -41,6 +41,15 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
+cleanup_files() {
+    for f in "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE" "$LOUDNORM_JSON" "$TAGS_XML" "$pending_output"; do
+        [[ -n "$f" ]] && rm -f -- "$f"
+    done
+    [[ -n "$work_dir" ]] && rmdir -- "$work_dir" 2>/dev/null
+    return 0
+}
+trap cleanup_files EXIT
+
 echo "STAGE:initializing"
 
 # --- HELPER FUNCTIONS (from original script) ---
@@ -115,11 +124,14 @@ find_preferred_stream() {
             stream_language = tolower($2)
             for (i = 1; i <= count; i++) {
                 if (stream_language == preferred[i]) {
-                    print $1
-                    exit
+                    if (!best_rank || i < best_rank) {
+                        best_rank = i
+                        best_stream = $1
+                    }
                 }
             }
         }
+        END { if (best_rank) print best_stream }
     ' <<< "$streams"
 }
 
@@ -142,15 +154,26 @@ probe_ordinal_for_index() {
 # Encode to TEMP_DIR (fast local storage) when available; mkvmerge remuxes
 # into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
 output_dir="$(dirname "$OUTPUT_FILE")"
+exec 9>>"${output_dir}/.$(basename "$OUTPUT_FILE").lock" || exit 1
+if ! flock -n 9; then
+    echo "ERROR:Conversion output is in use"
+    exit 1
+fi
+if [[ -e "$OUTPUT_FILE" || -L "$OUTPUT_FILE" ]]; then
+    echo "ERROR:Conversion output already exists"
+    exit 1
+fi
 if [[ -d "$TEMP_DIR" && -w "$TEMP_DIR" ]]; then
     temp_dir="$TEMP_DIR"
 else
     temp_dir="$output_dir"
 fi
-tmp_video="${temp_dir}/.$(basename "$OUTPUT_FILE").video.tmp"
-tmp_audio="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.tmp"
-audio_log="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.log"
-AUDIO_CMD_FILE="${temp_dir}/.$(basename "$OUTPUT_FILE").audio.cmd"
+work_dir=$(mktemp -d "${temp_dir}/conversion.XXXXXXXX") || exit 1
+tmp_video="${work_dir}/video.tmp"
+tmp_audio="${work_dir}/audio.tmp"
+audio_log="${work_dir}/audio.log"
+AUDIO_CMD_FILE="${work_dir}/audio.cmd"
+LOUDNORM_JSON="${work_dir}/loudnorm.json"
 
 # One ffprobe call for everything below, instead of once per field.
 PROBE=$(ffprobe -v error \
@@ -523,8 +546,6 @@ measure_and_encode_audio() {
     local af_filter="" filter_idx=0 idx
 
     for idx in "${audio_indices[@]}"; do
-        LOUDNORM_JSON=$(mktemp)
-
         nice -n 10 ffmpeg -hide_banner -i "$INPUT_FILE" -map 0:$idx \
             -af "aformat=channel_layouts=stereo,loudnorm=I=${TARGET_I}:TP=${TARGET_TP}:LRA=${TARGET_LRA}:linear=true:print_format=json" \
             -vn -sn -dn -f null - 2> "$LOUDNORM_JSON" > /dev/null
@@ -656,11 +677,15 @@ FFMPEG_CMD_XML_A=$(printf '%s' "$FFMPEG_CMD_A" | sed 's/&/\&amp;/g; s/</\&lt;/g;
 printf '<?xml version="1.0" encoding="UTF-8"?>\n<Tags>\n  <Tag>\n    <Simple>\n      <Name>ENCODER_SETTINGS</Name>\n      <String>%s\n%s</String>\n    </Simple>\n  </Tag>\n</Tags>\n' "$FFMPEG_CMD_XML_V" "$FFMPEG_CMD_XML_A" > "$TAGS_XML"
 
 # Use mkvmerge to join the two branches, calculate BPS tags, and embed encoding metadata
-mkvmerge -o "$OUTPUT_FILE" --global-tags "$TAGS_XML" "$tmp_video" "$tmp_audio" >/dev/null 2>&1
+pending_output=$(mktemp "${output_dir}/.$(basename "$OUTPUT_FILE").XXXXXXXX.tmp") || exit 1
+mkvmerge -o "$pending_output" --global-tags "$TAGS_XML" "$tmp_video" "$tmp_audio" >/dev/null 2>&1
 mkvmerge_status=$?
 rm -f "$TAGS_XML" "$tmp_video" "$tmp_audio"
 
-if [[ $mkvmerge_status -eq 0 && -f "$OUTPUT_FILE" ]]; then
+output_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$pending_output" 2>/dev/null)
+source_duration=$(probe_get 'format\.duration')
+duration_valid=$(awk -v source="$source_duration" -v output="$output_duration" 'BEGIN { delta=source-output; if (delta<0) delta=-delta; print (source>0 && output>0 && delta<=2) ? 1 : 0 }')
+if [[ $mkvmerge_status -le 1 && -s "$pending_output" && "$duration_valid" == 1 ]] && ln -- "$pending_output" "$OUTPUT_FILE"; then
     echo "STAGE:complete"
     echo "STATUS:Conversion complete"
     exit 0

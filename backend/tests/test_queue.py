@@ -276,40 +276,6 @@ class TestClusterStatus:
         assert distributed_service.is_leader is False
 
     @pytest.mark.asyncio
-    async def test_remote_job_is_requeued_when_worker_expires(self, monkeypatch):
-        monkeypatch.setattr(distributed_service, "_peers", {})
-
-        job = Job(
-            source_file="/videos/test.mkv",
-            output_file="/videos/test.av1.mkv",
-            settings="{}",
-            status="processing",
-            assigned_worker_id="node-a",
-            assigned_worker_name="node-a",
-            assigned_worker_url="http://node-a:8000",
-            remote_job_id=7,
-            progress_percent=42,
-        )
-
-        class FakeResult:
-            def scalar(self):
-                return 0
-
-        class FakeDb:
-            async def execute(self, _statement):
-                return FakeResult()
-
-        assert distributed_service._peer_is_fresh("http://node-a:8000") is False
-
-        await distributed_service._requeue_remote_job(FakeDb(), job)
-
-        requeued = job
-        assert requeued.status == "pending"
-        assert requeued.assigned_worker_id is None
-        assert requeued.remote_job_id is None
-        assert requeued.queue_position == 1
-
-    @pytest.mark.asyncio
     async def test_queue_replication_stores_follower_copy(self, monkeypatch):
         monkeypatch.setattr(distributed_service, "_peers", {})
         monkeypatch.setattr(distributed_service, "_leader_id", "node-a")

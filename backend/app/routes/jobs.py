@@ -2,7 +2,11 @@
 
 import json
 import logging
-from typing import Optional
+import asyncio
+import httpx
+from pathlib import Path
+from uuid import uuid4
+from typing import Optional, cast
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy import select, delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,10 +26,37 @@ from app.models.schemas import (
 from app.services.job_queue import job_queue
 from app.services.conversion_service import conversion_service
 from app.utils.validation import validate_conversion_settings
+from app.utils.file_safety import validate_source_path
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_submission_lock = asyncio.Lock()
+
+
+async def _serialize_submissions():
+    async with _submission_lock:
+        yield
+
+
+async def _validate_destination(db: AsyncSession, source_file: str) -> str:
+    output = Path(conversion_service.get_output_path(source_file))
+    if output.exists() or output.is_symlink():
+        raise HTTPException(status_code=409, detail="Conversion output already exists")
+    result = await db.execute(
+        select(Job.id)
+        .where(
+            Job.output_file == str(output),
+            Job.status.in_(["pending", "processing"]),
+            Job.is_cluster_replica.is_(False),
+        )
+        .limit(1)
+    )
+    if result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=409, detail="Conversion output is already queued"
+        )
+    return str(output)
 
 
 async def _resolve_job_settings(
@@ -101,7 +132,7 @@ def _assign_cluster_identity(job: Job) -> None:
         return
     job.cluster_origin_node_id = app_settings.DISTRIBUTED_NODE_ID  # type: ignore[assignment]
     job.cluster_origin_job_id = job.id  # type: ignore[assignment]
-    job.cluster_job_id = f"{app_settings.DISTRIBUTED_NODE_ID}:{job.id}"  # type: ignore[assignment]
+    job.cluster_job_id = str(uuid4())  # type: ignore[assignment]
     job.is_cluster_replica = False  # type: ignore[assignment]
 
 
@@ -130,6 +161,32 @@ def _should_forward_to_leader(cluster: bool = True) -> bool:
     return distributed_service.should_use_leader()
 
 
+async def _node_request(node_id: str, method: str, path: str, json_body=None):
+    from app.services.distributed import distributed_service
+
+    peer = next(
+        (peer for peer in distributed_service.peers() if peer.node_id == node_id), None
+    )
+    if peer is None:
+        raise HTTPException(status_code=503, detail="Worker is unavailable")
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.request(
+                method,
+                f"{peer.base_url}{path}",
+                params={"cluster": "false", "node_id": node_id},
+                json=json_body,
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code, detail="Worker request failed"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Worker is unavailable") from exc
+
+
 def _is_active_status_filter(status: Optional[str]) -> bool:
     if not status:
         return False
@@ -138,6 +195,8 @@ def _is_active_status_filter(status: Optional[str]) -> bool:
 
 
 def _cluster_job_key(job: dict) -> tuple[str, str, str, str]:
+    if job.get("cluster_job_id"):
+        return (str(job["cluster_job_id"]), "", "", "")
     return (
         str(job.get("source_file") or ""),
         str(job.get("output_file") or ""),
@@ -175,7 +234,9 @@ def _sort_job_dicts(jobs: list[dict], sort: str, order: str) -> list[dict]:
     return sorted(jobs, key=sort_value, reverse=reverse)
 
 
-@router.post("", response_model=JobCreateResponse)
+@router.post(
+    "", response_model=JobCreateResponse, dependencies=[Depends(_serialize_submissions)]
+)
 async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
     """Create a single conversion job."""
     try:
@@ -199,7 +260,32 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
                 )
             )
 
-        output_file = conversion_service.get_output_path(job_data.source_file)
+        if job_data.cluster_job_id:
+            if not job_data.local_only:
+                raise HTTPException(
+                    status_code=422, detail="Cluster identity requires local_only"
+                )
+            existing = (
+                await db.execute(
+                    select(Job).where(Job.cluster_job_id == job_data.cluster_job_id)
+                )
+            ).scalar_one_or_none()
+            if existing and not existing.is_cluster_replica:
+                if (
+                    existing.source_file != job_data.source_file
+                    or json.loads(cast(str, existing.settings)) != settings
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Cluster identity belongs to a different conversion",
+                    )
+                return JobCreateResponse(job_ids=[cast(int, existing.id)])
+            if existing:
+                await db.delete(existing)
+                await db.flush()
+
+        job_data.source_file = str(validate_source_path(job_data.source_file))
+        output_file = await _validate_destination(db, job_data.source_file)
         queue_position = await _assign_queue_position(db)
 
         job = Job(
@@ -211,6 +297,9 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
             notes=job_data.notes,
             queue_position=queue_position,
             status="pending",
+            cluster_job_id=job_data.cluster_job_id,
+            cluster_origin_node_id=job_data.cluster_origin_node_id,
+            cluster_origin_job_id=job_data.cluster_origin_job_id,
             assigned_worker_id=(
                 app_settings.DISTRIBUTED_NODE_ID if job_data.local_only else None
             ),
@@ -230,6 +319,8 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
         logger.info(f"Created job {job.id} for {job_data.source_file}")
         return JobCreateResponse(job_ids=[job.id])  # type: ignore
 
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -237,7 +328,11 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/batch", response_model=JobCreateResponse)
+@router.post(
+    "/batch",
+    response_model=JobCreateResponse,
+    dependencies=[Depends(_serialize_submissions)],
+)
 async def create_batch_jobs(
     batch_data: JobBatchCreate, db: AsyncSession = Depends(get_db)
 ):
@@ -276,10 +371,11 @@ async def create_batch_jobs(
             return JobCreateResponse(job_ids=leader_job_ids)
 
         for source_file in sorted_files:
+            source_file = str(validate_source_path(source_file))
             preset_id, preset_name_snapshot, settings = await _resolve_job_settings(
                 db, batch_data.preset_id, settings_override, source_file
             )
-            output_file = conversion_service.get_output_path(source_file)
+            output_file = await _validate_destination(db, source_file)
             queue_position = await _assign_queue_position(db)
 
             job = Job(
@@ -318,6 +414,8 @@ async def create_batch_jobs(
     except HTTPException:
         raise
     except Exception as e:
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=422, detail=str(e)) from e
         logger.error(f"Error creating batch jobs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -482,12 +580,17 @@ async def list_jobs(
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: int,
+    node_id: Optional[str] = Query(None),
     cluster: bool = Query(True, description="Read from the selected leader"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get job details by ID."""
     try:
-        if _should_forward_to_leader(cluster):
+        if node_id and node_id != app_settings.DISTRIBUTED_NODE_ID:
+            return JobResponse(
+                **await _node_request(node_id, "GET", f"/api/jobs/{job_id}")
+            )
+        if not node_id and _should_forward_to_leader(cluster):
             return JobResponse(**await _leader_request("GET", f"/api/jobs/{job_id}"))
 
         result = await db.execute(
@@ -542,11 +645,18 @@ async def patch_job(
 
 @router.patch("/{job_id}/position")
 async def patch_job_position(
-    job_id: int, data: JobPositionPatchRequest, db: AsyncSession = Depends(get_db)
+    job_id: int,
+    data: JobPositionPatchRequest,
+    node_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """Reorder a pending job."""
     try:
-        if _should_forward_to_leader():
+        if node_id and node_id != app_settings.DISTRIBUTED_NODE_ID:
+            return await _node_request(
+                node_id, "PATCH", f"/api/jobs/{job_id}/position", data.model_dump()
+            )
+        if not node_id and _should_forward_to_leader():
             return await _leader_request(
                 "PATCH", f"/api/jobs/{job_id}/position", json_body=data.model_dump()
             )
@@ -595,7 +705,11 @@ async def patch_job_position(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{job_id}/retry", response_model=JobCreateResponse)
+@router.post(
+    "/{job_id}/retry",
+    response_model=JobCreateResponse,
+    dependencies=[Depends(_serialize_submissions)],
+)
 async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
     """Retry a finished job with the same settings."""
     try:
@@ -622,11 +736,13 @@ async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
             if preset_result.scalar_one_or_none() is None:
                 preset_id = None  # type: ignore[assignment]
 
+        source_file = str(validate_source_path(cast(str, job.source_file)))
+        output_file = await _validate_destination(db, source_file)
         queue_position = await _assign_queue_position(db)
 
         new_job = Job(
             source_file=job.source_file,
-            output_file=job.output_file,
+            output_file=output_file,
             preset_id=preset_id,
             preset_name_snapshot=job.preset_name_snapshot or "Custom",
             settings=json.dumps(settings),
@@ -645,6 +761,8 @@ async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=422, detail=str(e)) from e
         logger.error(f"Error retrying job {job_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -825,12 +943,15 @@ async def delete_history_older_than(
 @router.delete("/{job_id}")
 async def delete_or_cancel_job(
     job_id: int,
+    node_id: Optional[str] = Query(None),
     cluster: bool = Query(True, description="Cancel/delete through the leader"),
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel a pending/processing job, or delete a finished job from history."""
     try:
-        if _should_forward_to_leader(cluster):
+        if node_id and node_id != app_settings.DISTRIBUTED_NODE_ID:
+            return await _node_request(node_id, "DELETE", f"/api/jobs/{job_id}")
+        if not node_id and _should_forward_to_leader(cluster):
             return await _leader_request("DELETE", f"/api/jobs/{job_id}")
 
         result = await db.execute(select(Job).where(Job.id == job_id))
@@ -860,6 +981,11 @@ async def delete_or_cancel_job(
                     job.status = "cancelled"  # type: ignore[assignment]
                     job.error_message = "Cancelled by user"  # type: ignore[assignment]
                     await db.commit()
+                else:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Worker state is unknown; cancellation cannot be confirmed",
+                    )
                 # Worker will handle the status update
             else:  # pending
                 await db.delete(job)

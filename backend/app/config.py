@@ -4,6 +4,9 @@ import os
 import socket
 from pathlib import Path
 
+APP_ROOT = Path(__file__).resolve().parent.parent
+ASSET_ROOT = APP_ROOT if (APP_ROOT / "frontend").is_dir() else APP_ROOT.parent
+
 
 def _env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
@@ -26,7 +29,9 @@ class Settings:
         return f"sqlite+aiosqlite:///{self.DATABASE_PATH}"
 
     # Scripts
-    CONVERSION_WRAPPER_SCRIPT: str = "/app/scripts/conversion_wrapper.sh"
+    CONVERSION_WRAPPER_SCRIPT: str = str(
+        ASSET_ROOT / "scripts" / "conversion_wrapper.sh"
+    )
 
     # History retention
     JOB_HISTORY_RETENTION_DAYS: int = int(os.getenv("JOB_HISTORY_RETENTION_DAYS", "0"))

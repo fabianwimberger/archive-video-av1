@@ -151,6 +151,10 @@ Open `http://localhost:8000` after starting the container.
 5. **Real-time updates** are pushed to the browser via WebSocket
 6. **Output** is saved alongside the source as Matroska (`_conv.mkv`), regardless of source container
 
+Outputs are published only after successful finalization and a duration check. Existing outputs are never overwritten; delete the previous conversion before encoding again. Files with the same stem, such as `movie.mp4` and `movie.mkv`, share an output name and cannot be queued together.
+
+Deleting an original requires a completed conversion record whose source and output sizes still match the files. Keep that history until you finish removing originals. Unrecorded outputs and files changed since conversion require manual review outside the app.
+
 ## Presets
 
 Presets are stored in the SQLite database and survive restarts.
@@ -195,10 +199,13 @@ Distributed mode lets several trusted LAN devices run the container and share AV
 
 Cluster state is shown in the Active Queue panel and is also available at `/api/cluster/status`. Active job listings include peer jobs by default; pass `cluster=false` to `/api/jobs` when a node-local view is needed. The leader replicates pending and active queue rows to followers every coordination interval so a newly elected leader can continue scheduling visible queue work.
 
+An unreachable worker keeps its assigned jobs until contact is restored. Lost dispatch responses are retried on that worker using the same job identity. This avoids starting a second encoder when the original may still be running. Outputs use persistent hidden `.lock` files; do not remove those files while any node is running.
+
 Requirements:
 
 - `docker-compose.cluster.yml` is not shipped in this repo - it's your own node-specific compose file (ports, hostnames, `DISTRIBUTED_*` env vars per node). Create it yourself before running the commands below.
 - All participating nodes must mount the same media library at the same in-container `SOURCE_MOUNT` path.
+- All nodes must run the same version, and the shared filesystem must support cross-host advisory file locks and hard links.
 - Every node must be reachable from every other node through `DISTRIBUTED_PUBLIC_URL`.
 - For automatic leader election, leave `DISTRIBUTED_LEADER_URL` empty on every node and use stable, unique `DISTRIBUTED_NODE_ID` values.
 - The network must allow UDP multicast on `DISTRIBUTED_DISCOVERY_PORT`, or `DISTRIBUTED_PEERS` must list peer URLs explicitly.

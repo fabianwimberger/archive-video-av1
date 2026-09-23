@@ -48,11 +48,14 @@ find_preferred_stream() {
             stream_language = tolower($2)
             for (i = 1; i <= count; i++) {
                 if (stream_language == preferred[i]) {
-                    print $1
-                    exit
+                    if (!best_rank || i < best_rank) {
+                        best_rank = i
+                        best_stream = $1
+                    }
                 }
             }
         }
+        END { if (best_rank) print best_stream }
     ' <<< "$streams"
 }
 
@@ -312,7 +315,7 @@ case "$BUILD_TYPE" in
         ;;
     "pgo-use")
         if ls "$PGO_DIR"/*.gcda >/dev/null 2>&1; then
-            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training -Wno-error=coverage-mismatch"
+            build_all "-fprofile-use=$PGO_DIR -fprofile-partial-training -Werror=coverage-mismatch"
         else
             echo "WARNING: No PGO profile data found in $PGO_DIR, falling back to standard build"
             build_all ""

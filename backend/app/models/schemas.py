@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.config import settings
 
 
 class ConversionSettings(BaseModel):
@@ -86,6 +87,9 @@ class JobCreate(BaseModel):
     settings: Optional[ConversionSettings] = None
     notes: Optional[str] = None
     local_only: bool = False
+    cluster_job_id: Optional[str] = Field(default=None, max_length=128)
+    cluster_origin_node_id: Optional[str] = None
+    cluster_origin_job_id: Optional[int] = None
 
     @model_validator(mode="after")
     def check_preset_or_settings(self):
@@ -114,6 +118,7 @@ class JobResponse(BaseModel):
     """Schema for job response."""
 
     id: int
+    cluster_job_id: Optional[str] = None
     source_file: str
     output_file: str
     preset_id: Optional[int] = None
@@ -147,6 +152,7 @@ class JobResponse(BaseModel):
         # Convert JSON settings string to dict
         data = {
             "id": getattr(obj, "id", None),
+            "cluster_job_id": getattr(obj, "cluster_job_id", None),
             "source_file": getattr(obj, "source_file", None),
             "output_file": getattr(obj, "output_file", None),
             "preset_id": getattr(obj, "preset_id", None),
@@ -159,8 +165,10 @@ class JobResponse(BaseModel):
             "assigned_worker_name": getattr(obj, "assigned_worker_name", None),
             "assigned_worker_url": getattr(obj, "assigned_worker_url", None),
             "remote_job_id": getattr(obj, "remote_job_id", None),
-            "cluster_node_id": getattr(obj, "cluster_node_id", None),
-            "cluster_node_name": getattr(obj, "cluster_node_name", None),
+            "cluster_node_id": getattr(obj, "cluster_node_id", None)
+            or settings.DISTRIBUTED_NODE_ID,
+            "cluster_node_name": getattr(obj, "cluster_node_name", None)
+            or settings.DISTRIBUTED_NODE_NAME,
             "cluster_node_url": getattr(obj, "cluster_node_url", None),
             "progress_percent": getattr(obj, "progress_percent", None),
             "eta_seconds": getattr(obj, "eta_seconds", None),

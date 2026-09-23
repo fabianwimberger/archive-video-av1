@@ -301,7 +301,7 @@ async def import_presets(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
-    if doc.get("format") != "archive-video-av1.presets":
+    if not isinstance(doc, dict) or doc.get("format") != "archive-video-av1.presets":
         raise HTTPException(status_code=400, detail="Invalid format identifier")
     if doc.get("version") != 1:
         raise HTTPException(status_code=400, detail="Unsupported version")
@@ -311,7 +311,13 @@ async def import_presets(
     renamed = []
     errors = []
 
-    for entry in doc.get("presets", []):
+    entries = doc.get("presets", [])
+    if not isinstance(entries, list):
+        raise HTTPException(status_code=400, detail="Presets must be a list")
+    for entry in entries:
+        if not isinstance(entry, dict):
+            errors.append({"entry": "(unnamed)", "reason": "Preset must be an object"})
+            continue
         name = entry.get("name", "")
         try:
             validate_preset_name(name)
@@ -347,7 +353,7 @@ async def import_presets(
                     )
                     continue
                 if existing:
-                    existing.description = entry.get("description")
+                    existing.description = entry.get("description")  # type: ignore[assignment]
                     existing.crf = entry["crf"]
                     existing.encoder_preset = entry["encoder_preset"]
                     existing.svt_params = entry.get("svt_params", "")
@@ -370,6 +376,7 @@ async def import_presets(
             max_resolution=entry["max_resolution"],
         )
         db.add(preset)
+        await db.flush()
         imported.append(target_name)
 
     await db.commit()

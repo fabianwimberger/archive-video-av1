@@ -13,7 +13,7 @@ from typing import Optional, cast
 
 import httpx
 from httpx._types import QueryParamTypes
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -220,34 +220,38 @@ class DistributedService:
             result = await db.execute(
                 select(Job).where(
                     Job.status == "processing",
-                    Job.remote_job_id.is_not(None),
+                    Job.assigned_worker_url.is_not(None),
+                    Job.assigned_worker_id != self.node_id,
                     Job.is_cluster_replica.is_(False),
                 )
             )
             jobs = list(result.scalars().all())
 
             for job in jobs:
-                if not job.assigned_worker_url or not job.remote_job_id:
+                if not job.assigned_worker_url:
                     continue
 
                 assigned_worker_url = cast(str, job.assigned_worker_url)
+                if job.remote_job_id is None:
+                    peer = PeerNode(
+                        str(job.assigned_worker_id),
+                        str(job.assigned_worker_name),
+                        assigned_worker_url,
+                        0,
+                    )
+                    try:
+                        job.remote_job_id = await self._create_remote_job(peer, job)
+                    except ValueError as exc:
+                        job.status = "failed"
+                        job.error_message = str(exc)
+                        job.completed_at = datetime.now(timezone.utc)
+                    continue
                 remote_job_id = cast(int, job.remote_job_id)
                 remote_job = await self._get_remote_job(
                     assigned_worker_url, remote_job_id
                 )
                 if remote_job is None:
-                    if self._peer_is_fresh(assigned_worker_url):
-                        continue
-                    await self._requeue_remote_job(db, job)
-                    if websocket_manager:
-                        await websocket_manager.broadcast(
-                            {
-                                "type": "job_status",
-                                "job_id": job.id,
-                                "status": "pending",
-                                "error": None,
-                            }
-                        )
+                    # A network outage does not establish that the encoder stopped.
                     continue
 
                 job.progress_percent = remote_job.get(  # type: ignore[assignment]
@@ -377,6 +381,8 @@ class DistributedService:
         applied = 0
         for replica in payload.jobs:
             job = existing.get(replica.cluster_job_id)
+            if job is not None and not job.is_cluster_replica:
+                continue
             if job is None:
                 job = Job()
                 db.add(job)
@@ -417,7 +423,8 @@ class DistributedService:
         jobs = list(result.scalars().all())
         for job in jobs:
             if job.status == "processing" and job.remote_job_id is None:
-                await self._requeue_remote_job(db, job)
+                # Older replicas may lack an address for their original worker.
+                job.error_message = "Worker state unknown; confirm it has stopped before cancelling or retrying"
             job.is_cluster_replica = False  # type: ignore[assignment]
         return jobs
 
@@ -436,8 +443,16 @@ class DistributedService:
             "status": job.status,
             "assigned_worker_id": job.assigned_worker_id,
             "assigned_worker_name": job.assigned_worker_name,
-            "assigned_worker_url": job.assigned_worker_url,
-            "remote_job_id": job.remote_job_id,
+            "assigned_worker_url": (
+                self.public_url
+                if job.assigned_worker_id == self.node_id
+                else job.assigned_worker_url
+            ),
+            "remote_job_id": (
+                job.id
+                if job.status == "processing" and job.assigned_worker_id == self.node_id
+                else job.remote_job_id
+            ),
             "progress_percent": job.progress_percent or 0.0,
             "eta_seconds": job.eta_seconds,
             "current_fps": job.current_fps,
@@ -483,31 +498,6 @@ class DistributedService:
         job.completed_at = replica.completed_at  # type: ignore[assignment]
         job.is_cluster_replica = True  # type: ignore[assignment]
 
-    async def _requeue_remote_job(self, db, job: Job) -> None:
-        result = await db.execute(
-            select(func.max(Job.queue_position)).where(
-                Job.status == "pending",
-                Job.is_cluster_replica.is_(False),
-            )
-        )
-        max_pos = result.scalar() or 0
-        logger.warning(
-            "Requeued job %s after worker %s disappeared",
-            job.id,
-            job.assigned_worker_name or job.assigned_worker_url,
-        )
-        job.status = "pending"  # type: ignore[assignment]
-        job.assigned_worker_id = None  # type: ignore[assignment]
-        job.assigned_worker_name = None  # type: ignore[assignment]
-        job.assigned_worker_url = None  # type: ignore[assignment]
-        job.remote_job_id = None  # type: ignore[assignment]
-        job.is_cluster_replica = False  # type: ignore[assignment]
-        job.started_at = None  # type: ignore[assignment]
-        job.queue_position = max_pos + 1  # type: ignore[assignment]
-        job.progress_percent = 0.0  # type: ignore[assignment]
-        job.eta_seconds = None  # type: ignore[assignment]
-        job.current_fps = None  # type: ignore[assignment]
-
     async def delegate_pending_jobs(self, websocket_manager) -> int:
         if not settings.DISTRIBUTED_ENABLED:
             return 0
@@ -531,16 +521,20 @@ class DistributedService:
             jobs = list(result.scalars().all())
 
             for job, peer in zip(jobs, available_peers):
-                remote_job_id = await self._create_remote_job(peer, job)
-                if remote_job_id is None:
-                    continue
-
                 job.status = "processing"  # type: ignore[assignment]
                 job.started_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 job.assigned_worker_id = peer.node_id  # type: ignore[assignment]
                 job.assigned_worker_name = peer.node_name  # type: ignore[assignment]
                 job.assigned_worker_url = peer.base_url  # type: ignore[assignment]
-                job.remote_job_id = remote_job_id  # type: ignore[assignment]
+                await db.commit()
+                await self.replicate_queue()
+                try:
+                    job.remote_job_id = await self._create_remote_job(peer, job)  # type: ignore[assignment]
+                except ValueError as exc:
+                    job.status = "failed"  # type: ignore[assignment]
+                    job.error_message = str(exc)  # type: ignore[assignment]
+                    job.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                await db.commit()
                 delegated += 1
 
                 if websocket_manager:
@@ -548,8 +542,8 @@ class DistributedService:
                         {
                             "type": "job_status",
                             "job_id": job.id,
-                            "status": "processing",
-                            "error": None,
+                            "status": job.status,
+                            "error": job.error_message,
                         }
                     )
 
@@ -581,7 +575,7 @@ class DistributedService:
             remote_job_id = cast(int, job.remote_job_id)
             remote_job = await self._get_remote_job(assigned_worker_url, remote_job_id)
             if remote_job is None:
-                return True
+                continue
             if remote_job.get("status") in {"completed", "failed", "cancelled"}:
                 return True
 
@@ -740,6 +734,9 @@ class DistributedService:
             "settings": json.loads(cast(str, job.settings)) if job.settings else {},
             "notes": job.notes,
             "local_only": True,
+            "cluster_job_id": job.cluster_job_id,
+            "cluster_origin_node_id": job.cluster_origin_node_id,
+            "cluster_origin_job_id": job.cluster_origin_job_id,
         }
 
         try:
@@ -748,6 +745,10 @@ class DistributedService:
             )
             response.raise_for_status()
             job_ids = response.json().get("job_ids", [])
+        except httpx.HTTPStatusError as exc:
+            if 400 <= exc.response.status_code < 500:
+                raise ValueError(_response_detail(exc.response)) from exc
+            return None
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning(
                 "Failed to delegate job %s to %s: %s", job.id, peer.base_url, exc
