@@ -63,6 +63,12 @@ class Settings:
     DISTRIBUTED_PEER_TTL_SECONDS: float = float(
         os.getenv("DISTRIBUTED_PEER_TTL_SECONDS", "20")
     )
+    DISTRIBUTED_WORKER_TIMEOUT_SECONDS: float = float(
+        os.getenv("DISTRIBUTED_WORKER_TIMEOUT_SECONDS", "120")
+    )
+    DISTRIBUTED_MAX_REQUEUES: int = int(os.getenv("DISTRIBUTED_MAX_REQUEUES", "3"))
+    # Must be the same shared storage on every node; defaults inside SOURCE_MOUNT.
+    DISTRIBUTED_STATE_DIR: str = os.getenv("DISTRIBUTED_STATE_DIR", "")
 
     # CORS
     CORS_ORIGINS: list = os.getenv(
