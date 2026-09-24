@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.9.1] - 2026-09-24
+
+Cluster ledger fix for nodes that reach the shared storage under different user IDs.
+
+### Fixes
+
+- Nodes whose root user is mapped to another user on the share (e.g. NFS `root_squash`) can read the cluster ledger and take over the queue instead of failing with "Permission denied"
+
+### Upgrading
+
+- If a v1.9.0 leader already created `.archive-video-av1`, delete that folder or make it writable for every node (`chmod 777` on the folder, `chmod 666` on `queue.json`); v1.9.1 only opens up the folder when it creates it
+
+### Documentation & Links
+
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.9.0...v1.9.1)
+
 ## [v1.9.0] - 2026-09-24
 
 Cluster queue that survives node failures: the leader keeps the queue on shared storage, and jobs from stopped or crashed nodes move to another node.
