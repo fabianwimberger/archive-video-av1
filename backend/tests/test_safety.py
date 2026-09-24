@@ -8,7 +8,6 @@ import pytest
 
 from app.config import settings
 from app.models.job import Job
-from app.models.schemas import QueueReplicationRequest, ReplicatedJob
 from app.services.conversion_service import ConversionService
 from app.services.distributed import DistributedService, PeerNode
 from app.services.file_service import file_service
@@ -155,7 +154,8 @@ async def test_uncertain_dispatch_stays_on_same_worker(db_session, monkeypatch):
     service = DistributedService()
     peer = PeerNode("node-b", "Worker", "http://worker.example:8000", 0)
     service._available_peers = AsyncMock(return_value=[peer])
-    service.replicate_queue = AsyncMock()
+    service._term = 1
+    service.publish_queue = AsyncMock()
     service._create_remote_job = AsyncMock(side_effect=[None, 77])
     service._get_remote_job = AsyncMock(return_value=None)
     job = Job(
@@ -181,41 +181,6 @@ async def test_uncertain_dispatch_stays_on_same_worker(db_session, monkeypatch):
     assert job.status == "processing"
     assert job.assigned_worker_id == "node-b"
     assert service._create_remote_job.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_replication_preserves_worker_execution(db_session, monkeypatch):
-    service = DistributedService()
-    monkeypatch.setattr(type(service), "is_leader", property(lambda self: False))
-    job = Job(
-        source_file="/videos/source.mkv",
-        output_file="/videos/source_conv.mkv",
-        settings="{}",
-        status="processing",
-        cluster_job_id="node-a:123",
-        is_cluster_replica=False,
-    )
-    db_session.add(job)
-    await db_session.commit()
-    payload = QueueReplicationRequest(
-        leader_node_id="node-a",
-        leader_url="http://leader.example:8000",
-        leader_age_seconds=30,
-        jobs=[
-            ReplicatedJob(
-                cluster_job_id="node-a:123",
-                cluster_origin_node_id="node-a",
-                cluster_origin_job_id=123,
-                source_file=job.source_file,
-                output_file=job.output_file,
-                settings="{}",
-                status="pending",
-            )
-        ],
-    )
-    await service.apply_queue_replication(db_session, payload)
-    await db_session.refresh(job)
-    assert job.status == "processing" and not job.is_cluster_replica
 
 
 @pytest.mark.parametrize(

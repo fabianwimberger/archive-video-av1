@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models.schemas import ClusterStatusResponse, QueueReplicationRequest
+from app.models.schemas import (
+    ClusterStatusResponse,
+    PeerLeaveRequest,
+    ReconcileRequest,
+)
 from app.services.distributed import LeaderRequestError, distributed_service
 from app.services.job_queue import job_queue
 
@@ -57,11 +61,29 @@ async def get_cluster_status(
     }
 
 
-@router.post("/replication")
-async def apply_queue_replication(
-    payload: QueueReplicationRequest, db: AsyncSession = Depends(get_db)
+@router.post("/leave")
+async def peer_leave(payload: PeerLeaveRequest):
+    if not settings.DISTRIBUTED_ENABLED:
+        raise HTTPException(status_code=409, detail="Distributed mode is disabled")
+    requeued = await distributed_service.handle_peer_leave(
+        payload.node_id, job_queue.websocket_manager
+    )
+    # A departed queue owner lets the next leader take over without waiting.
+    job_queue.wake()
+    return {"success": True, "requeued": requeued}
+
+
+@router.post("/reconcile")
+async def reconcile_follower_jobs(
+    payload: ReconcileRequest, db: AsyncSession = Depends(get_db)
 ):
     if not settings.DISTRIBUTED_ENABLED:
         raise HTTPException(status_code=409, detail="Distributed mode is disabled")
-    applied = await distributed_service.apply_queue_replication(db, payload)
-    return {"success": True, "applied": applied}
+    verdicts = await distributed_service.reconcile_follower_jobs(
+        db, payload.cluster_job_ids
+    )
+    if verdicts is None:
+        raise HTTPException(
+            status_code=409, detail="This node does not hold the cluster queue"
+        )
+    return {"jobs": verdicts}

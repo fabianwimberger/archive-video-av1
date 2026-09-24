@@ -13,14 +13,21 @@ from typing import Optional, cast
 
 import httpx
 from httpx._types import QueryParamTypes
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.job import Job
+from app.models.schemas import LedgerJob
+from app.services.cluster_ledger import read_ledger, write_ledger
+from app.services.lifecycle import INTERRUPTED_ERROR_PREFIX
 
 logger = logging.getLogger(__name__)
+
+ACTIVE_STATUSES = ("pending", "processing")
+TERMINAL_STATUSES = ("completed", "failed", "cancelled")
+REASSIGNED_ERROR = "No longer assigned to this node by the cluster leader"
 
 
 @dataclass
@@ -42,6 +49,13 @@ class DistributedService:
         self._running = False
         self._leader_id: Optional[str] = None
         self._leader_since = time.monotonic()
+        self._unreachable_since: dict[int, float] = {}
+        self._log_synced_at: dict[int, float] = {}
+        self._departed: set[str] = set()
+        self._last_heard: dict[str, float] = {}
+        self._term: Optional[int] = None
+        self._ledger_key: Optional[tuple] = None
+        self._ledger_changed_at = time.monotonic()
 
     @property
     def node_id(self) -> str:
@@ -111,6 +125,9 @@ class DistributedService:
         if self._socket:
             self._socket.close()
             self._socket = None
+
+        # Heartbeats have stopped, so peers cannot re-add this node after the notice.
+        await self._announce_leave()
 
         if self._client:
             await self._client.aclose()
@@ -196,14 +213,13 @@ class DistributedService:
     def _peer_is_fresh(self, base_url: str) -> bool:
         return any(peer.base_url == base_url for peer in self.peers())
 
+    @property
+    def holds_queue(self) -> bool:
+        return self._term is not None and self.is_leader
+
     async def ensure_local_cluster_job_ids(self) -> None:
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Job).where(
-                    Job.cluster_job_id.is_(None),
-                    Job.is_cluster_replica.is_(False),
-                )
-            )
+            result = await db.execute(select(Job).where(Job.cluster_job_id.is_(None)))
             jobs = list(result.scalars().all())
             for job in jobs:
                 job.cluster_origin_node_id = self.node_id  # type: ignore[assignment]
@@ -212,9 +228,164 @@ class DistributedService:
             if jobs:
                 await db.commit()
 
-    async def sync_remote_jobs(self, websocket_manager) -> None:
-        if not settings.DISTRIBUTED_ENABLED:
+    async def own_queue(self, websocket_manager) -> bool:
+        """Take over or keep the cluster queue; False while another node owns it."""
+        try:
+            ledger = await read_ledger()
+        except (OSError, ValueError) as exc:
+            logger.error("Cluster ledger unreadable: %s", exc)
+            return False
+        self._observe_ledger(ledger)
+        if not self.leader_is_stable():
+            return False
+
+        if self._term is not None:
+            if self._superseded(ledger):
+                return False
+            return True
+        if not self._may_take_over(ledger):
+            return False
+
+        if ledger is not None and not await self._load_ledger(ledger):
+            return False
+        self._term = int((ledger or {}).get("term", 0)) + 1
+        logger.info("Took over the cluster queue (term %s)", self._term)
+        await self.publish_queue()
+        if websocket_manager:
+            await websocket_manager.broadcast({"type": "queue_update"})
+        return True
+
+    def _observe_ledger(self, ledger: Optional[dict]) -> None:
+        key = (ledger or {}).get("term"), (ledger or {}).get("updated_at")
+        if key != self._ledger_key:
+            self._ledger_key = key
+            self._ledger_changed_at = time.monotonic()
+
+    def _may_take_over(self, ledger: Optional[dict]) -> bool:
+        if ledger is None:
+            return True
+        owner = ledger.get("leader_node_id")
+        if owner == self.node_id or owner in self._departed:
+            return True
+        # The owner rewrites the ledger every heartbeat; silence means it is gone.
+        return (
+            time.monotonic() - self._ledger_changed_at
+            >= settings.DISTRIBUTED_PEER_TTL_SECONDS
+        )
+
+    def _superseded(self, ledger: Optional[dict]) -> bool:
+        if ledger is None or self._term is None:
+            return False
+        term = int(ledger.get("term", 0))
+        if term > self._term or (
+            term == self._term and ledger.get("leader_node_id") != self.node_id
+        ):
+            logger.warning(
+                "%s took over the cluster queue; stepping down",
+                ledger.get("leader_node_id"),
+            )
+            self._term = None
+            return True
+        return False
+
+    async def _load_ledger(self, ledger: dict) -> bool:
+        from app.services.job_queue import job_queue
+
+        entries = {
+            entry.cluster_job_id: entry
+            for entry in (LedgerJob.model_validate(raw) for raw in ledger["jobs"])
+        }
+
+        # A local encode the cluster queue does not assign to this node must
+        # finish cancelling before its row can take the queue's state.
+        running_id = job_queue.current_job_id
+        if running_id is not None:
+            async with AsyncSessionLocal() as db:
+                running = await db.get(Job, running_id)
+            entry = entries.get(cast(str, running.cluster_job_id)) if running else None
+            if running is not None and (
+                entry is None or entry.assigned_worker_id != self.node_id
+            ):
+                await job_queue.cancel_current_job(REASSIGNED_ERROR)
+                for _ in range(50):
+                    if job_queue.current_job_id != running_id:
+                        break
+                    await asyncio.sleep(0.2)
+                else:
+                    return False
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Job).where(
+                    or_(
+                        Job.cluster_job_id.in_(entries),
+                        Job.status.in_(ACTIVE_STATUSES),
+                    )
+                )
+            )
+            local = {
+                cast(str, job.cluster_job_id): job for job in result.scalars().all()
+            }
+
+            for cluster_job_id, job in local.items():
+                if cluster_job_id not in entries and job.status in ACTIVE_STATUSES:
+                    await db.delete(job)
+
+            for entry in entries.values():
+                existing = local.get(entry.cluster_job_id)
+                if entry.assigned_worker_id == self.node_id and existing is not None:
+                    if existing.status == "completed" or (
+                        job_queue.current_job_id == existing.id
+                    ):
+                        continue
+                job = existing if existing is not None else Job()
+                if existing is None:
+                    db.add(job)
+                self._apply_entry(job, entry)
+                if entry.assigned_worker_id == self.node_id:
+                    # Its encode on this node did not survive the restart.
+                    self._requeue_job(job, "node restart")
+            await db.commit()
+        return True
+
+    async def publish_queue(self) -> None:
+        if not self.holds_queue:
             return
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Job)
+                .where(Job.status.in_(ACTIVE_STATUSES))
+                .order_by(Job.queue_position.asc().nullslast(), Job.created_at.asc())
+            )
+            jobs = []
+            for job in result.scalars().all():
+                if not job.cluster_job_id:
+                    job.cluster_origin_node_id = self.node_id  # type: ignore[assignment]
+                    job.cluster_origin_job_id = job.id  # type: ignore[assignment]
+                    job.cluster_job_id = f"{self.node_id}:{job.id}"  # type: ignore[assignment]
+                jobs.append(self._serialize_job(job))
+            await db.commit()
+
+        try:
+            if self._superseded(await read_ledger()):
+                return
+            ledger = {
+                "term": self._term,
+                "leader_node_id": self.node_id,
+                "leader_url": self.public_url,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "jobs": jobs,
+            }
+            await write_ledger(ledger)
+        except (OSError, ValueError) as exc:
+            logger.error("Cluster ledger write failed: %s", exc)
+            return
+        self._observe_ledger(ledger)
+
+    async def sync_remote_jobs(self, websocket_manager) -> int:
+        """Pull state of delegated jobs; returns how many left the active queue."""
+        if not settings.DISTRIBUTED_ENABLED or not self.holds_queue:
+            return 0
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -222,11 +393,15 @@ class DistributedService:
                     Job.status == "processing",
                     Job.assigned_worker_url.is_not(None),
                     Job.assigned_worker_id != self.node_id,
-                    Job.is_cluster_replica.is_(False),
                 )
             )
             jobs = list(result.scalars().all())
+            active_ids = {cast(int, job.id) for job in jobs}
+            for tracked in (self._unreachable_since, self._log_synced_at):
+                for stale_id in tracked.keys() - active_ids:
+                    del tracked[stale_id]
 
+            changed = 0
             for job in jobs:
                 if not job.assigned_worker_url:
                     continue
@@ -245,24 +420,57 @@ class DistributedService:
                         job.status = "failed"
                         job.error_message = str(exc)
                         job.completed_at = datetime.now(timezone.utc)
+                        changed += 1
+                        continue
+                    if job.remote_job_id is None and self._worker_lost(job):
+                        self._requeue_job(job, "worker unreachable")
+                        changed += 1
                     continue
                 remote_job_id = cast(int, job.remote_job_id)
+                now = time.monotonic()
+                include_log = (
+                    now - self._log_synced_at.get(cast(int, job.id), 0.0)
+                    >= settings.DISTRIBUTED_HEARTBEAT_SECONDS
+                )
                 remote_job = await self._get_remote_job(
-                    assigned_worker_url, remote_job_id
+                    assigned_worker_url, remote_job_id, include_log
                 )
                 if remote_job is None:
-                    # A network outage does not establish that the encoder stopped.
+                    # A network outage alone does not establish that the encoder
+                    # stopped; only a worker that also stopped heartbeating is lost.
+                    if self._worker_lost(job):
+                        self._requeue_job(job, "worker unreachable")
+                        changed += 1
                     continue
+                self._unreachable_since.pop(cast(int, job.id), None)
+
+                remote_status = remote_job.get("status")
+                if remote_status == "failed" and str(
+                    remote_job.get("error_message") or ""
+                ).startswith(INTERRUPTED_ERROR_PREFIX):
+                    self._requeue_job(job, "worker restarted")
+                    changed += 1
+                    continue
+                if remote_status in TERMINAL_STATUSES and not include_log:
+                    remote_job = (
+                        await self._get_remote_job(
+                            assigned_worker_url, remote_job_id, True
+                        )
+                        or remote_job
+                    )
+                    include_log = True
+                if include_log:
+                    self._log_synced_at[cast(int, job.id)] = now
+                    job.log = remote_job.get("log", job.log)  # type: ignore[assignment]
 
                 job.progress_percent = remote_job.get(  # type: ignore[assignment]
                     "progress_percent", job.progress_percent
                 )
                 job.eta_seconds = remote_job.get("eta_seconds")  # type: ignore[assignment]
                 job.current_fps = remote_job.get("current_fps")  # type: ignore[assignment]
-                job.log = remote_job.get("log", job.log)  # type: ignore[assignment]
 
-                remote_status = remote_job.get("status")
-                if remote_status in {"completed", "failed", "cancelled"}:
+                if remote_status in TERMINAL_STATUSES:
+                    changed += 1
                     job.status = remote_status  # type: ignore[assignment]
                     job.completed_at = _parse_datetime(  # type: ignore[assignment]
                         remote_job.get("completed_at")
@@ -295,7 +503,7 @@ class DistributedService:
                                 "percent": job.progress_percent,
                                 "fps": job.current_fps,
                                 "eta_seconds": job.eta_seconds,
-                                "current_log": job.log,
+                                "current_log": job.log if include_log else None,
                                 "stage": "remote",
                                 "status": f"Processing on {job.assigned_worker_name}",
                             },
@@ -304,108 +512,72 @@ class DistributedService:
 
             await db.commit()
 
-    async def replicate_queue(self) -> int:
-        if not settings.DISTRIBUTED_ENABLED or not self.is_leader:
+        if changed and websocket_manager:
+            await websocket_manager.broadcast({"type": "queue_update"})
+        return changed
+
+    def _worker_lost(self, job: Job) -> bool:
+        if any(
+            peer.node_id == job.assigned_worker_id
+            or peer.base_url == job.assigned_worker_url
+            for peer in self.peers()
+        ):
+            self._unreachable_since.pop(cast(int, job.id), None)
+            return False
+        now = time.monotonic()
+        since = self._last_heard.get(
+            str(job.assigned_worker_id),
+            self._unreachable_since.setdefault(cast(int, job.id), now),
+        )
+        return now - since >= settings.DISTRIBUTED_WORKER_TIMEOUT_SECONDS
+
+    def _requeue_job(self, job: Job, reason: str) -> None:
+        worker = job.assigned_worker_name or job.assigned_worker_id or self.node_name
+        if job.id is not None:
+            self._unreachable_since.pop(cast(int, job.id), None)
+        attempts = (job.requeue_count or 0) + 1
+        if attempts > settings.DISTRIBUTED_MAX_REQUEUES:
+            logger.warning(
+                "Giving up on job %s after %s interrupted attempts", job.id, attempts
+            )
+            job.status = "failed"  # type: ignore[assignment]
+            job.error_message = f"Gave up after {attempts} interrupted attempts (last: {reason} on {worker})"  # type: ignore[assignment]
+            job.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            return
+
+        logger.warning("Requeueing job %s from %s: %s", job.id, worker, reason)
+        job.requeue_count = attempts  # type: ignore[assignment]
+        job.log = f"Requeued after {reason} on {worker}\n"  # type: ignore[assignment]
+        job.status = "pending"  # type: ignore[assignment]
+        job.completed_at = None  # type: ignore[assignment]
+        job.assigned_worker_id = None  # type: ignore[assignment]
+        job.assigned_worker_name = None  # type: ignore[assignment]
+        job.assigned_worker_url = None  # type: ignore[assignment]
+        job.remote_job_id = None  # type: ignore[assignment]
+        job.started_at = None  # type: ignore[assignment]
+        job.progress_percent = 0.0  # type: ignore[assignment]
+        job.eta_seconds = None  # type: ignore[assignment]
+        job.current_fps = None  # type: ignore[assignment]
+        job.error_message = None  # type: ignore[assignment]
+
+    async def handle_peer_leave(self, node_id: str, websocket_manager) -> int:
+        self._peers.pop(node_id, None)
+        self._departed.add(node_id)
+        if self._leader_id == node_id:
+            self._leader_id = None
+        if not self.holds_queue:
             return 0
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=5.0)
 
-        payload = await self._replication_payload()
-        replicated = 0
-        for peer in self.peers():
-            try:
-                response = await self._client.post(
-                    f"{peer.base_url}/api/cluster/replication",
-                    json=payload,
-                )
-                response.raise_for_status()
-            except httpx.HTTPError as exc:
-                logger.debug("Queue replication failed for %s: %s", peer.base_url, exc)
-                continue
-            replicated += 1
-        return replicated
-
-    async def _replication_payload(self) -> dict:
         async with AsyncSessionLocal() as db:
             result = await db.execute(
-                select(Job)
-                .where(
-                    Job.status.in_(["pending", "processing"]),
-                    Job.is_cluster_replica.is_(False),
+                select(Job).where(
+                    Job.status == "processing",
+                    Job.assigned_worker_id == node_id,
                 )
-                .order_by(Job.queue_position.asc().nullslast(), Job.created_at.asc())
             )
-            jobs = []
-            for job in result.scalars().all():
-                if not job.cluster_job_id:
-                    job.cluster_origin_node_id = self.node_id  # type: ignore[assignment]
-                    job.cluster_origin_job_id = job.id  # type: ignore[assignment]
-                    job.cluster_job_id = f"{self.node_id}:{job.id}"  # type: ignore[assignment]
-                jobs.append(self._serialize_job(job))
-            await db.commit()
-
-        return {
-            "leader_node_id": self.node_id,
-            "leader_url": self.public_url,
-            "leader_age_seconds": self.leader_age_seconds(),
-            "jobs": jobs,
-        }
-
-    async def apply_queue_replication(self, db: AsyncSession, payload) -> int:
-        leader_node_id = payload.leader_node_id
-        if leader_node_id == self.node_id:
-            return 0
-
-        self._remember_reported_leader(
-            {
-                "node_id": leader_node_id,
-                "leader_url": payload.leader_url,
-                "is_leader": True,
-                "leader_age_seconds": payload.leader_age_seconds,
-            }
-        )
-        if self.is_leader:
-            return 0
-
-        incoming_ids = {job.cluster_job_id for job in payload.jobs}
-        if incoming_ids:
-            existing_result = await db.execute(
-                select(Job).where(Job.cluster_job_id.in_(incoming_ids))
-            )
-            existing = {
-                job.cluster_job_id: job for job in existing_result.scalars().all()
-            }
-        else:
-            existing = {}
-
-        applied = 0
-        for replica in payload.jobs:
-            job = existing.get(replica.cluster_job_id)
-            if job is not None and not job.is_cluster_replica:
-                continue
-            if job is None:
-                job = Job()
-                db.add(job)
-            self._apply_replica(job, replica)
-            applied += 1
-
-        stale_query = delete(Job).where(Job.is_cluster_replica.is_(True))
-        if incoming_ids:
-            stale_query = stale_query.where(~Job.cluster_job_id.in_(incoming_ids))
-        await db.execute(stale_query)
-        await db.commit()
-        return applied
-
-    async def promote_replicated_jobs(self, websocket_manager) -> int:
-        if (
-            not settings.DISTRIBUTED_ENABLED
-            or not self.is_leader
-            or not self.leader_is_stable()
-        ):
-            return 0
-
-        async with AsyncSessionLocal() as db:
-            jobs = await self._promote_replicated_jobs(db)
+            jobs = list(result.scalars().all())
+            for job in jobs:
+                self._requeue_job(job, "worker shut down")
             if jobs:
                 await db.commit()
 
@@ -413,20 +585,127 @@ class DistributedService:
             await websocket_manager.broadcast({"type": "queue_update"})
         return len(jobs)
 
-    async def _promote_replicated_jobs(self, db: AsyncSession) -> list[Job]:
-        result = await db.execute(
-            select(Job).where(
-                Job.is_cluster_replica.is_(True),
-                Job.status.in_(["pending", "processing"]),
-            )
+    async def _announce_leave(self) -> None:
+        if self._client is None:
+            return
+        await asyncio.gather(
+            *(self._send_leave(peer) for peer in self._peer_candidates())
         )
-        jobs = list(result.scalars().all())
-        for job in jobs:
-            if job.status == "processing" and job.remote_job_id is None:
-                # Older replicas may lack an address for their original worker.
-                job.error_message = "Worker state unknown; confirm it has stopped before cancelling or retrying"
-            job.is_cluster_replica = False  # type: ignore[assignment]
-        return jobs
+
+    async def _send_leave(self, peer: PeerNode) -> None:
+        assert self._client is not None
+        try:
+            response = await self._client.post(
+                f"{peer.base_url}/api/cluster/leave",
+                json={"node_id": self.node_id},
+                timeout=2.0,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning("Leave notice failed for %s: %s", peer.base_url, exc)
+
+    async def reconcile_with_leader(self) -> None:
+        """Keep only local work the leader's queue still assigns to this node.
+
+        Stops encodes the leader requeued, finished elsewhere or removed while
+        this node was unreachable, and drops queue rows left over from when
+        this node led.
+        """
+        if (
+            not settings.DISTRIBUTED_ENABLED
+            or self.is_leader
+            or not self.leader_is_stable()
+        ):
+            return
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Job).where(Job.status.in_(ACTIVE_STATUSES))
+            )
+            jobs = list(result.scalars().all())
+        if not jobs:
+            return
+
+        own = [job for job in jobs if job.assigned_worker_id == self.node_id]
+        try:
+            data = await self.request_leader(
+                "POST",
+                "/api/cluster/reconcile",
+                json_body={"cluster_job_ids": [job.cluster_job_id for job in own]},
+            )
+        except LeaderRequestError as exc:
+            logger.debug("Reconcile with leader failed: %s", exc)
+            return
+
+        verdicts = data.get("jobs", {})
+        stop_ids = [
+            cast(int, job.id)
+            for job in own
+            if verdicts.get(job.cluster_job_id)
+            != {"status": "processing", "assigned_worker_id": self.node_id}
+        ]
+        leftover_ids = [
+            cast(int, job.id) for job in jobs if job.assigned_worker_id != self.node_id
+        ]
+        if leftover_ids:
+            await self._drop_leftover_jobs(leftover_ids)
+        if stop_ids:
+            await self._stop_reassigned_jobs(stop_ids)
+
+    async def _drop_leftover_jobs(self, job_ids: list[int]) -> None:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                delete(Job).where(
+                    Job.id.in_(job_ids),
+                    Job.status.in_(ACTIVE_STATUSES),
+                    or_(
+                        Job.assigned_worker_id.is_(None),
+                        Job.assigned_worker_id != self.node_id,
+                    ),
+                )
+            )
+            await db.commit()
+        logger.info("Dropped %s leftover queue row(s)", len(job_ids))
+
+    async def _stop_reassigned_jobs(self, job_ids: list[int]) -> None:
+        # Running this work here would duplicate or resurrect an encode.
+        from app.services.job_queue import job_queue
+
+        async with AsyncSessionLocal() as db:
+            for job_id in job_ids:
+                logger.warning("Stopping job %s: %s", job_id, REASSIGNED_ERROR)
+                if job_queue.current_job_id == job_id:
+                    await job_queue.cancel_current_job(REASSIGNED_ERROR)
+                    continue
+                await db.execute(
+                    update(Job)
+                    .where(
+                        Job.id == job_id,
+                        Job.status.in_(ACTIVE_STATUSES),
+                    )
+                    .values(
+                        status="cancelled",
+                        error_message=REASSIGNED_ERROR,
+                        completed_at=datetime.now(timezone.utc),
+                    )
+                )
+            await db.commit()
+
+    async def reconcile_follower_jobs(
+        self, db: AsyncSession, cluster_job_ids: list[str]
+    ) -> Optional[dict[str, dict]]:
+        if not self.holds_queue:
+            return None
+        result = await db.execute(
+            select(Job).where(Job.cluster_job_id.in_(cluster_job_ids))
+        )
+        return {
+            cast(str, job.cluster_job_id): {
+                "status": job.status,
+                "assigned_worker_id": job.assigned_worker_id,
+            }
+            for job in result.scalars().all()
+        }
 
     def _serialize_job(self, job: Job) -> dict:
         return {
@@ -453,6 +732,7 @@ class DistributedService:
                 if job.status == "processing" and job.assigned_worker_id == self.node_id
                 else job.remote_job_id
             ),
+            "requeue_count": job.requeue_count or 0,
             "progress_percent": job.progress_percent or 0.0,
             "eta_seconds": job.eta_seconds,
             "current_fps": job.current_fps,
@@ -462,12 +742,11 @@ class DistributedService:
                 cast(Optional[datetime], job.completed_at)
             ),
             "error_message": job.error_message,
-            "log": job.log or "",
             "source_size_bytes": job.source_size_bytes,
             "output_size_bytes": job.output_size_bytes,
         }
 
-    def _apply_replica(self, job: Job, replica) -> None:
+    def _apply_entry(self, job: Job, entry: LedgerJob) -> None:
         for field in (
             "cluster_job_id",
             "cluster_origin_node_id",
@@ -484,22 +763,21 @@ class DistributedService:
             "assigned_worker_name",
             "assigned_worker_url",
             "remote_job_id",
+            "requeue_count",
             "progress_percent",
             "eta_seconds",
             "current_fps",
             "error_message",
-            "log",
             "source_size_bytes",
             "output_size_bytes",
         ):
-            setattr(job, field, getattr(replica, field))
-        job.created_at = replica.created_at or datetime.now(timezone.utc)  # type: ignore[assignment]
-        job.started_at = replica.started_at  # type: ignore[assignment]
-        job.completed_at = replica.completed_at  # type: ignore[assignment]
-        job.is_cluster_replica = True  # type: ignore[assignment]
+            setattr(job, field, getattr(entry, field))
+        job.created_at = entry.created_at or datetime.now(timezone.utc)  # type: ignore[assignment]
+        job.started_at = entry.started_at  # type: ignore[assignment]
+        job.completed_at = entry.completed_at  # type: ignore[assignment]
 
     async def delegate_pending_jobs(self, websocket_manager) -> int:
-        if not settings.DISTRIBUTED_ENABLED:
+        if not settings.DISTRIBUTED_ENABLED or not self.holds_queue:
             return 0
 
         available_peers = await self._available_peers()
@@ -513,7 +791,6 @@ class DistributedService:
                 .where(
                     Job.status == "pending",
                     Job.assigned_worker_id.is_(None),
-                    Job.is_cluster_replica.is_(False),
                 )
                 .order_by(Job.queue_position.asc().nullslast(), Job.created_at.asc())
                 .limit(len(available_peers))
@@ -527,7 +804,7 @@ class DistributedService:
                 job.assigned_worker_name = peer.node_name  # type: ignore[assignment]
                 job.assigned_worker_url = peer.base_url  # type: ignore[assignment]
                 await db.commit()
-                await self.replicate_queue()
+                await self.publish_queue()
                 try:
                     job.remote_job_id = await self._create_remote_job(peer, job)  # type: ignore[assignment]
                 except ValueError as exc:
@@ -704,7 +981,7 @@ class DistributedService:
         return deleted
 
     async def _get_remote_job(
-        self, base_url: str, remote_job_id: int
+        self, base_url: str, remote_job_id: int, include_log: bool = True
     ) -> Optional[dict]:
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=5.0)
@@ -712,7 +989,10 @@ class DistributedService:
         try:
             response = await self._client.get(
                 f"{base_url}/api/jobs/{remote_job_id}",
-                params={"cluster": "false"},
+                params={
+                    "cluster": "false",
+                    "include_log": "true" if include_log else "false",
+                },
             )
             response.raise_for_status()
             return response.json()
@@ -837,6 +1117,8 @@ class DistributedService:
     def _remember_peer(self, peer: PeerNode) -> None:
         if peer.node_id == self.node_id:
             return
+        self._departed.discard(peer.node_id)
+        self._last_heard[peer.node_id] = peer.last_seen
         existing_key = peer.node_id
         if existing_key not in self._peers:
             existing_key = next(

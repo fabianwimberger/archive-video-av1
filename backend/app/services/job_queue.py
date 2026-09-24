@@ -30,8 +30,9 @@ class JobQueue:
         self.worker_task: Optional[asyncio.Task] = None
         self.distributed_task: Optional[asyncio.Task] = None
         self.websocket_manager = None
-        self.cancelled_job_ids: set[int] = set()
+        self.cancelled_job_ids: dict[int, str] = {}
         self._wake_event: Optional[asyncio.Event] = None
+        self._queue_changed_event = asyncio.Event()
         self._paused_event: Optional[asyncio.Event] = None
         self._dispatch_lock = asyncio.Lock()
 
@@ -53,18 +54,12 @@ class JobQueue:
             self._wake_event.set()
         logger.info("Queue resumed")
 
-    async def cancel_current_job(self) -> bool:
-        """
-        Cancel the currently processing job.
-
-        Returns:
-            True if job was cancelled, False if no job running
-        """
+    async def cancel_current_job(self, reason: str = "Cancelled by user") -> bool:
         if self.current_process:
             logger.info(f"Cancelling job {self.current_job_id}")
             # Mark as cancelled
             if self.current_job_id:
-                self.cancelled_job_ids.add(self.current_job_id)
+                self.cancelled_job_ids[self.current_job_id] = reason
 
             try:
                 # Kill the entire process group
@@ -89,14 +84,7 @@ class JobQueue:
         return False
 
     async def add_job(self, job_id: int):
-        """
-        Signal worker that a new job is available.
-
-        Args:
-            job_id: Database job ID (unused, wake only)
-        """
-        if self._wake_event:
-            self._wake_event.set()
+        self.wake()
         logger.info(f"Job {job_id} signaled worker")
 
         # Broadcast queue update
@@ -177,11 +165,7 @@ class JobQueue:
 
         from app.services.distributed import distributed_service
 
-        return (
-            distributed_service.is_leader
-            and distributed_service.leader_age_seconds()
-            >= settings.DISTRIBUTED_PEER_TTL_SECONDS
-        )
+        return distributed_service.holds_queue
 
     def _can_process_assigned_jobs_while_paused(self) -> bool:
         if not settings.DISTRIBUTED_ENABLED:
@@ -200,7 +184,6 @@ class JobQueue:
             select(Job.id)
             .where(
                 Job.status == "pending",
-                Job.is_cluster_replica.is_(False),
                 worker_filter,
             )
             .order_by(
@@ -218,7 +201,6 @@ class JobQueue:
             .where(
                 Job.id == job_id,
                 Job.status == "pending",
-                Job.is_cluster_replica.is_(False),
                 worker_filter,
             )
             .values(
@@ -269,11 +251,13 @@ class JobQueue:
 
                 self.current_job_id = job.id
                 logger.info(f"Processing job {job.id}")
+                self.wake()
 
                 # Process the job
                 await self._process_job(job.id)
 
                 self.current_job_id = None
+                self.wake()
 
                 # Broadcast queue update
                 if self.websocket_manager:
@@ -307,17 +291,20 @@ class JobQueue:
                 coordination_interval = max(1.0, settings.DISTRIBUTED_HEARTBEAT_SECONDS)
 
                 if now - last_progress_sync >= progress_interval:
-                    await distributed_service.sync_remote_jobs(self.websocket_manager)
+                    if await distributed_service.sync_remote_jobs(
+                        self.websocket_manager
+                    ):
+                        self.wake()
                     last_progress_sync = now
 
                 if (
-                    distributed_service.is_leader
-                    and now - last_coordination >= coordination_interval
+                    self._queue_changed_event.is_set()
+                    or now - last_coordination >= coordination_interval
                 ):
-                    if distributed_service.leader_is_stable():
-                        await distributed_service.promote_replicated_jobs(
-                            self.websocket_manager
-                        )
+                    self._queue_changed_event.clear()
+                    if not distributed_service.is_leader:
+                        await distributed_service.reconcile_with_leader()
+                    elif await distributed_service.own_queue(self.websocket_manager):
                         if self._paused_event is None or self._paused_event.is_set():
                             async with self._dispatch_lock:
                                 delegated = (
@@ -327,19 +314,21 @@ class JobQueue:
                                 )
                             if delegated and self._wake_event:
                                 self._wake_event.set()
-                        await distributed_service.replicate_queue()
+                        # Also renews this node's hold on the shared ledger.
+                        await distributed_service.publish_queue()
                     last_coordination = now
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error("Error in distributed loop: %s", e, exc_info=True)
 
-            await asyncio.sleep(
-                min(
-                    max(0.5, settings.DISTRIBUTED_PROGRESS_SECONDS),
-                    max(1.0, settings.DISTRIBUTED_HEARTBEAT_SECONDS),
+            try:
+                await asyncio.wait_for(
+                    self._queue_changed_event.wait(),
+                    timeout=min(progress_interval, coordination_interval),
                 )
-            )
+            except asyncio.TimeoutError:
+                pass
 
     async def _process_job(self, job_id: int):
         """
@@ -436,8 +425,7 @@ class JobQueue:
                 # Check if job was explicitly cancelled
                 if job_id in self.cancelled_job_ids:
                     job.status = "cancelled"  # type: ignore[assignment]
-                    job.error_message = "Cancelled by user"  # type: ignore[assignment]
-                    self.cancelled_job_ids.remove(job_id)
+                    job.error_message = self.cancelled_job_ids.pop(job_id)  # type: ignore[assignment]
                     success = False
                 else:
                     # Update final status
@@ -531,6 +519,7 @@ class JobQueue:
         """Signal the worker to re-evaluate the queue."""
         if self._wake_event:
             self._wake_event.set()
+        self._queue_changed_event.set()
 
     async def get_queue_status_async(self) -> dict:
         """Get current queue status asynchronously."""
@@ -539,12 +528,7 @@ class JobQueue:
 
             result = await db.execute(
                 select(func.count()).select_from(
-                    select(Job)
-                    .where(
-                        Job.status == "pending",
-                        Job.is_cluster_replica.is_(False),
-                    )
-                    .subquery()
+                    select(Job).where(Job.status == "pending").subquery()
                 )
             )
             pending_count = result.scalar() or 0

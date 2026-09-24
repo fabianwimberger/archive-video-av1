@@ -17,7 +17,6 @@ def make_job(**overrides):
         output_file="/videos/movie_conv.mkv",
         status="processing",
         settings="{}",
-        is_cluster_replica=False,
     )
     defaults.update(overrides)
     return Job(**defaults)
@@ -116,26 +115,34 @@ async def test_recover_interrupted_jobs_marks_local_processing_jobs_failed(
 
 
 @pytest.mark.asyncio
-async def test_recover_interrupted_jobs_skips_remote_delegated_jobs(
-    db_session, original_lifecycle_functions
+async def test_recover_interrupted_jobs_holds_delegated_pending_jobs_in_cluster(
+    db_session, original_lifecycle_functions, monkeypatch
 ):
-    job = make_job(remote_job_id=7)
-    db_session.add(job)
+    monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
+    delegated = make_job(
+        status="pending", assigned_worker_id=settings.DISTRIBUTED_NODE_ID
+    )
+    queued = make_job(status="pending", source_file="/videos/queued.mkv")
+    running = make_job()
+    db_session.add_all([delegated, queued, running])
     await db_session.commit()
-    job_id = job.id
+    expected = sorted([delegated.id, running.id])
+    queued_id = queued.id
 
     await original_lifecycle_functions["recover_interrupted_jobs"]()
     db_session.expire_all()
 
-    result = await db_session.execute(select(Job).where(Job.id == job_id))
-    assert result.scalar_one().status == "processing"
+    result = await db_session.execute(select(Job.id).where(Job.status == "failed"))
+    assert sorted(result.scalars().all()) == expected
+    result = await db_session.execute(select(Job).where(Job.id == queued_id))
+    assert result.scalar_one().status == "pending"
 
 
 @pytest.mark.asyncio
-async def test_recover_interrupted_jobs_skips_cluster_replica_jobs(
+async def test_recover_interrupted_jobs_skips_remote_delegated_jobs(
     db_session, original_lifecycle_functions
 ):
-    job = make_job(is_cluster_replica=True)
+    job = make_job(remote_job_id=7)
     db_session.add(job)
     await db_session.commit()
     job_id = job.id

@@ -161,59 +161,38 @@ class TestListJobs:
         assert captured["path"] == "/api/jobs"
         assert captured["params"]["cluster"] == "true"
 
-    def test_node_local_list_excludes_replicas(self, seeded_client):
-        async def add_replica():
+    def test_leader_without_queue_rejects_changes(self, seeded_client, monkeypatch):
+        from app.services.distributed import distributed_service
+
+        monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
+        monkeypatch.setattr(distributed_service, "should_use_leader", lambda: False)
+        monkeypatch.setattr(distributed_service, "_term", None)
+
+        response = seeded_client.post(
+            "/api/jobs",
+            json={"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1},
+        )
+
+        assert response.status_code == 503
+
+    def test_get_job_can_omit_log(self, seeded_client):
+        job_id = seeded_client.post(
+            "/api/jobs",
+            json={"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1},
+        ).json()["job_ids"][0]
+
+        async def set_log():
             async with AsyncSessionLocal() as db:
-                db.add(
-                    Job(
-                        source_file=str(VIDEO_ROOT / "replica.mkv"),
-                        output_file=str(VIDEO_ROOT / "replica_conv.mkv"),
-                        settings="{}",
-                        status="pending",
-                        queue_position=1,
-                        cluster_job_id="leader:1",
-                        cluster_origin_node_id="leader",
-                        cluster_origin_job_id=1,
-                        is_cluster_replica=True,
-                    )
-                )
+                job = await db.get(Job, job_id)
+                job.log = "encoder output"
                 await db.commit()
 
-        asyncio.run(add_replica())
+        asyncio.run(set_log())
 
-        response = seeded_client.get(
-            "/api/jobs?status=pending&cluster=false&limit=100&offset=0"
-        )
+        response = seeded_client.get(f"/api/jobs/{job_id}?include_log=false")
 
         assert response.status_code == 200
-        assert all(
-            job["source_file"] != str(VIDEO_ROOT / "replica.mkv")
-            for job in response.json()["jobs"]
-        )
-
-    def test_node_local_get_replica_returns_404(self, seeded_client):
-        async def add_replica():
-            async with AsyncSessionLocal() as db:
-                replica = Job(
-                    source_file=str(VIDEO_ROOT / "replica.mkv"),
-                    output_file=str(VIDEO_ROOT / "replica_conv.mkv"),
-                    settings="{}",
-                    status="pending",
-                    cluster_job_id="leader:1",
-                    cluster_origin_node_id="leader",
-                    cluster_origin_job_id=1,
-                    is_cluster_replica=True,
-                )
-                db.add(replica)
-                await db.commit()
-                await db.refresh(replica)
-                return replica.id
-
-        job_id = asyncio.run(add_replica())
-
-        response = seeded_client.get(f"/api/jobs/{job_id}?cluster=false")
-
-        assert response.status_code == 404
+        assert response.json()["log"] == ""
 
 
 class TestBatchJobs:
@@ -319,6 +298,7 @@ class TestClearJobs:
 
         monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
         monkeypatch.setattr(distributed_service, "should_use_leader", lambda: False)
+        monkeypatch.setattr(distributed_service, "_term", 1)
         monkeypatch.setattr(
             distributed_service, "clear_peer_jobs", fake_clear_peer_jobs
         )
@@ -393,61 +373,33 @@ class TestCreateJobDestinationGuards:
             "Cluster identity belongs to a different conversion"
         )
 
-    def test_cluster_identity_replaces_stale_replica(self, seeded_client):
-        async def add_replica():
+    def test_cluster_identity_redispatch_replaces_failed_attempt(self, seeded_client):
+        payload = {
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
+            "preset_id": 1,
+            "local_only": True,
+            "cluster_job_id": "node-a:78",
+            "cluster_origin_node_id": "node-a",
+            "cluster_origin_job_id": 78,
+        }
+        first_id = seeded_client.post("/api/jobs", json=payload).json()["job_ids"][0]
+
+        async def fail_job():
             async with AsyncSessionLocal() as db:
-                replica = Job(
-                    source_file=str(VIDEO_ROOT / "replica.mkv"),
-                    output_file=str(VIDEO_ROOT / "replica_conv.mkv"),
-                    settings="{}",
-                    status="pending",
-                    queue_position=1,
-                    cluster_job_id="node-a:88",
-                    cluster_origin_node_id="node-a",
-                    cluster_origin_job_id=88,
-                    is_cluster_replica=True,
-                )
-                db.add(replica)
+                job = await db.get(Job, first_id)
+                job.status = "failed"
+                job.error_message = "Interrupted by node shutdown"
                 await db.commit()
-                await db.refresh(replica)
-                return replica.id
 
-        asyncio.run(add_replica())
+        asyncio.run(fail_job())
 
-        response = seeded_client.post(
-            "/api/jobs",
-            json={
-                "source_file": str(VIDEO_ROOT / "test.mkv"),
-                "preset_id": 1,
-                "local_only": True,
-                "cluster_job_id": "node-a:88",
-                "cluster_origin_node_id": "node-a",
-                "cluster_origin_job_id": 88,
-            },
-        )
+        second = seeded_client.post("/api/jobs", json=payload)
 
-        assert response.status_code == 200
-        new_job_id = response.json()["job_ids"][0]
-
-        async def count_replicas():
-            async with AsyncSessionLocal() as db:
-                from sqlalchemy import func, select as _select
-
-                remaining = (
-                    await db.execute(
-                        _select(func.count())
-                        .select_from(Job)
-                        .where(Job.cluster_job_id == "node-a:88")
-                    )
-                ).scalar_one()
-                job = await db.get(Job, new_job_id)
-                return remaining, job.is_cluster_replica, job.source_file
-
-        remaining, is_replica, source_file = asyncio.run(count_replicas())
-
-        assert remaining == 1
-        assert is_replica is False
-        assert source_file == str(VIDEO_ROOT / "test.mkv")
+        assert second.status_code == 200
+        second_id = second.json()["job_ids"][0]
+        job = seeded_client.get(f"/api/jobs/{second_id}?cluster=false").json()
+        assert job["status"] == "pending"
+        assert job["error_message"] is None
 
 
 class TestNodeForwarding:
