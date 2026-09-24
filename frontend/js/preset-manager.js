@@ -1,6 +1,3 @@
-/**
- * Preset manager modal component
- */
 class PresetManager {
     constructor() {
         this.presets = [];

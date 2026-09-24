@@ -23,7 +23,6 @@ _config_module.settings.DATABASE_PATH = TEST_DB_FILE.name
 _config_module.settings.SOURCE_MOUNT = str(VIDEO_ROOT)
 _config_module.settings.TEMP_DIR = str(Path(TEST_FILES.name) / "temp")
 
-# Patch other things
 import starlette.staticfiles  # noqa: E402
 import alembic.command  # noqa: E402
 import app.services.lifecycle as _lifecycle_module  # noqa: E402

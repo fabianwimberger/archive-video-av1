@@ -13,31 +13,23 @@ def _env_bool(name: str, default: str = "false") -> bool:
 
 
 class Settings:
-    """Application settings loaded from environment variables."""
-
-    # Paths
     SOURCE_MOUNT: str = os.getenv("SOURCE_MOUNT", "/videos")
     TEMP_DIR: str = os.getenv("TEMP_DIR", "/app/temp")
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "/app/data/app.db")
 
-    # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
-    # Database
     @property
     def DATABASE_URL(self) -> str:
         return f"sqlite+aiosqlite:///{self.DATABASE_PATH}"
 
-    # Scripts
     CONVERSION_WRAPPER_SCRIPT: str = str(
         ASSET_ROOT / "scripts" / "conversion_wrapper.sh"
     )
 
-    # History retention
     JOB_HISTORY_RETENTION_DAYS: int = int(os.getenv("JOB_HISTORY_RETENTION_DAYS", "0"))
     JOB_HISTORY_MAX_ROWS: int = int(os.getenv("JOB_HISTORY_MAX_ROWS", "0"))
 
-    # Distributed processing
     DISTRIBUTED_ENABLED: bool = _env_bool("DISTRIBUTED_ENABLED")
     DISTRIBUTED_NODE_ID: str = os.getenv("DISTRIBUTED_NODE_ID", socket.gethostname())
     DISTRIBUTED_NODE_NAME: str = os.getenv("DISTRIBUTED_NODE_NAME", DISTRIBUTED_NODE_ID)
@@ -70,7 +62,6 @@ class Settings:
     # Must be the same shared storage on every node; defaults inside SOURCE_MOUNT.
     DISTRIBUTED_STATE_DIR: str = os.getenv("DISTRIBUTED_STATE_DIR", "")
 
-    # CORS
     CORS_ORIGINS: list = os.getenv(
         "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
     ).split(",")
@@ -83,11 +74,10 @@ class Settings:
 
         logger = logging.getLogger(__name__)
 
-        # Clean temp directory on startup (remove orphaned files from previous runs)
+        # Files left by an interrupted run are never reused.
         temp_path = Path(cls.TEMP_DIR)
         if temp_path.exists():
             try:
-                # Remove all files in temp directory
                 for item in temp_path.iterdir():
                     if item.is_file():
                         item.unlink()
@@ -99,7 +89,6 @@ class Settings:
             except Exception as e:
                 logger.error(f"Error cleaning temp directory: {e}")
 
-        # Ensure directories exist
         temp_path.mkdir(parents=True, exist_ok=True)
         Path(cls.DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
 

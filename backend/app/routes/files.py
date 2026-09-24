@@ -15,15 +15,7 @@ router = APIRouter()
 async def browse_files(
     path: str = Query(None, description="Relative path from source mount"),
 ):
-    """
-    Browse directory and list video files.
-
-    Args:
-        path: Relative path from source mount (optional)
-
-    Returns:
-        Dictionary with directories and files
-    """
+    """Browse directory and list video files."""
     try:
         result = await file_service.browse_directory(path)
         return result
@@ -36,15 +28,7 @@ async def browse_files(
 
 @router.get("/info")
 async def get_file_info(path: str = Query(..., description="Absolute path to file")):
-    """
-    Get detailed information about a video file.
-
-    Args:
-        path: Absolute path to file
-
-    Returns:
-        File metadata including codec, duration, size, etc.
-    """
+    """Get detailed information about a video file."""
     try:
         result = await file_service.get_file_info(path)
         return result
@@ -60,16 +44,7 @@ async def analyze_file(
     path: str = Query(..., description="Absolute path to file"),
     suggest_preset: bool = Query(False, description="Include preset suggestion"),
 ):
-    """
-    Analyze a video file to estimate optimal film grain and denoise settings.
-
-    Args:
-        path: Absolute path to file
-        suggest_preset: Whether to include preset suggestion
-
-    Returns:
-        Estimated film_grain, denoise, and optional suggested_preset_id
-    """
+    """Analyze a video file to estimate optimal film grain and denoise settings."""
     try:
         from pathlib import Path
 
@@ -101,15 +76,7 @@ async def analyze_file(
 async def delete_converted_file(
     path: str = Query(..., description="Path to converted file"),
 ):
-    """
-    Delete a converted video file.
-
-    Args:
-        path: Absolute path to converted file
-
-    Returns:
-        Success status
-    """
+    """Delete a converted video file."""
     try:
         if distributed_service.should_use_leader():
             try:
@@ -133,15 +100,7 @@ async def delete_converted_file(
 
 @router.delete("")
 async def delete_file(path: str = Query(..., description="Path to file")):
-    """
-    Delete a file.
-
-    Args:
-        path: Absolute path to file
-
-    Returns:
-        Success status
-    """
+    """Delete a file."""
     try:
         if distributed_service.should_use_leader():
             try:

@@ -1,14 +1,9 @@
-/**
- * Main application
- */
 class ConversionApp {
     async init() {
         console.log('Initializing Conversion App...');
 
-        // Initialize theme first
         this.initTheme();
 
-        // Initialize components
         await presetManager.init();
         await settingsPanel.init();
         window.settingsPanel = settingsPanel;
@@ -21,10 +16,8 @@ class ConversionApp {
         this.setupQueueResizer();
         this.initTooltips();
 
-        // Connect WebSocket
         wsClient.connect();
 
-        // Handle initial hash
         this.handleHash();
 
         console.log('Conversion App initialized');
@@ -35,7 +28,6 @@ class ConversionApp {
         const html = document.documentElement;
         const icon = themeToggle.querySelector('i');
 
-        // Load saved theme or default to light
         const savedTheme = localStorage.getItem('theme') || 'light';
         html.setAttribute('data-bs-theme', savedTheme);
         this.updateThemeIcon(savedTheme, icon);
@@ -208,12 +200,10 @@ class ConversionApp {
     }
 }
 
-// Initialize app when DOM is ready
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ConversionApp();
     app.init();
-    // Expose globally for other components
     window.app = app;
     window.jobQueue = jobQueue;
     window.fileBrowser = fileBrowser;

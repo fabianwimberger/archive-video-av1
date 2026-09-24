@@ -73,7 +73,6 @@ async def _resolve_job_settings(
             raise HTTPException(status_code=404, detail="Preset not found")
 
     if preset and not settings_override:
-        # Use preset exactly
         settings = {
             "crf": preset.crf,
             "encoder_preset": preset.encoder_preset,
@@ -85,13 +84,11 @@ async def _resolve_job_settings(
         return preset.id, preset.name, settings
 
     if settings_override and not preset:
-        # Ad-hoc custom settings
         settings = settings_override
         validate_conversion_settings(settings)
         return None, "Custom", settings
 
     if preset and settings_override:
-        # Override preset with user tweaks
         settings = {
             "crf": settings_override.get("crf", preset.crf),
             "encoder_preset": settings_override.get(
@@ -115,7 +112,6 @@ async def _resolve_job_settings(
 
 
 async def _assign_queue_position(db: AsyncSession) -> int:
-    """Assign the next queue position for pending jobs."""
     result = await db.execute(
         select(func.max(Job.queue_position)).where(Job.status == "pending")
     )
@@ -499,7 +495,6 @@ async def list_jobs(
         if date_to:
             query = query.where(Job.created_at <= date_to)
 
-        # Sorting
         sort_col = getattr(Job, sort, Job.created_at)
         if order.lower() == "desc":
             query = query.order_by(sort_col.desc())
@@ -555,7 +550,6 @@ async def list_jobs(
                 total=total,
             )
 
-        # Count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
@@ -679,7 +673,6 @@ async def patch_job_position(
                 status_code=409, detail="Cannot reorder non-pending job"
             )
 
-        # Load all pending job ids ordered by queue_position
         pending_result = await db.execute(
             select(Job)
             .where(Job.status == "pending")
@@ -735,7 +728,6 @@ async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
         settings = json.loads(job.settings) if job.settings else {}  # type: ignore
         validate_conversion_settings(settings)
 
-        # Verify preset still exists
         preset_id = job.preset_id
         if preset_id is not None:
             preset_result = await db.execute(
@@ -851,7 +843,6 @@ async def clear_queued_jobs(
                 "/api/jobs/queued"
             )
 
-        # Wake worker so it re-evaluates
         job_queue.wake()
 
         logger.info(f"Cleared {deleted_count} queued jobs")
@@ -901,16 +892,13 @@ async def clear_all_jobs(
 
             peer_deleted = await distributed_service.clear_peer_jobs("/api/jobs/all")
 
-        # Cancel any currently processing job first
         if job_queue.current_job_id:
             await job_queue.cancel_current_job()
 
-        # Delete all jobs from database
         result = await db.execute(delete(Job))
         deleted_count = (result.rowcount or 0) + peer_deleted  # type: ignore
         await db.commit()
 
-        # Wake worker
         job_queue.wake()
 
         logger.info(f"Cleared all {deleted_count} jobs (force clear)")

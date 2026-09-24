@@ -9,17 +9,11 @@ logger = logging.getLogger(__name__)
 
 
 async def estimate_grain(file_path: str) -> Dict[str, Any]:
-    """
-    Estimate film grain and denoise requirements for a video file.
+    """Estimate film grain and denoise requirements for a video file.
 
     Samples frames at multiple timestamps and analyzes luma/chroma
     standard deviation using ffmpeg's showinfo filter.
-
-    Returns:
-        Dict with film_grain (int), denoise (int), confidence (str),
-        and diagnostic values.
     """
-    # Get duration
     duration_proc = await asyncio.create_subprocess_exec(
         "ffprobe",
         "-v",
@@ -41,7 +35,6 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
     if duration <= 0:
         return _fallback("Could not determine video duration")
 
-    # Get resolution and bitrate
     res_proc = await asyncio.create_subprocess_exec(
         "ffprobe",
         "-v",
@@ -135,7 +128,6 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
     avg_u = sum(u_values) / len(u_values) if u_values else 0
     avg_v = sum(v_values) / len(v_values) if v_values else 0
 
-    # Resolution normalization factor
     megapixels = (width * height) / 1_000_000
     if megapixels >= 7.0:  # 4K+
         norm_factor = 3.0
@@ -149,7 +141,6 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
         bitrate / megapixels / 1000 if megapixels > 0 and bitrate > 0 else 0
     )
 
-    # Estimation logic
     # Animation detection: high chroma variation with LOW luma (flat colors)
     # Grainy film has high chroma too, but also high luma from texture
     if avg_u > 8.0 and avg_v > 8.0 and y_norm < 20.0:

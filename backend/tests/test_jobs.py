@@ -77,7 +77,6 @@ class TestCreateJob:
         assert response.status_code == 200
         job_id = response.json()["job_ids"][0]
 
-        # Verify snapshot name includes "modified"
         get_resp = seeded_client.get(f"/api/jobs/{job_id}")
         assert get_resp.status_code == 200
         assert "modified" in get_resp.json()["preset_name_snapshot"]
@@ -129,7 +128,6 @@ class TestGetJob:
 
 class TestListJobs:
     def test_list_jobs_with_status_filter(self, seeded_client):
-        # Create a job
         payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         seeded_client.post("/api/jobs", json=payload)
 
@@ -224,12 +222,10 @@ class TestBatchJobs:
 
 class TestRetryJob:
     def test_retry_job(self, seeded_client):
-        # Create and complete a job manually
         payload = {"source_file": str(VIDEO_ROOT / "test.mkv"), "preset_id": 1}
         create_resp = seeded_client.post("/api/jobs", json=payload)
         job_id = create_resp.json()["job_ids"][0]
 
-        # Mark as completed
         async def complete_job():
             async with AsyncSessionLocal() as db:
                 from datetime import datetime, timezone

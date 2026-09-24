@@ -49,7 +49,6 @@ BOOTSTRAP_ICONS_FONTS = {
     "bootstrap-icons.woff2": "6c75710364a1ca5604267716f6d28997b26319fdb078cf11e0b42ab66ff2ea61",
 }
 
-# Define paths relative to /app (container) or project root
 BASE_DIR = Path.cwd()
 if (BASE_DIR / "frontend").exists():
     VENDOR_DIR = BASE_DIR / "frontend" / "vendor"
@@ -80,7 +79,6 @@ def download_file(url: str, dest: Path, expected_sha256: str) -> None:
 
 
 def download_bootstrap() -> None:
-    """Download Bootstrap."""
     for dest_rel, (remote, sha256) in BOOTSTRAP_FILES.items():
         url = f"{CDN}/bootstrap@{BOOTSTRAP_VERSION}/{remote}"
         download_file(url, VENDOR_DIR / dest_rel, sha256)
@@ -98,12 +96,10 @@ def download_bootstrap_icons() -> None:
 
     content = css_dest.read_text(encoding="utf-8")
 
-    # Find font files in the CSS: url("..."), url('...'), url(...)
     matches = re.findall(r'url\s*\((?:["\']?)([^"\'\)]+)(?:["\']?)\)', content)
 
     downloaded_fonts = set()
     for relative_url in matches:
-        # Strip query params like ?52484601
         clean_url = relative_url.split("?")[0].split("#")[0]
 
         if not clean_url.endswith((".woff", ".woff2", ".ttf")):

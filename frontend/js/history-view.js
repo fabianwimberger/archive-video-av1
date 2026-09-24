@@ -1,6 +1,3 @@
-/**
- * History view component
- */
 class HistoryView {
     constructor() {
         this.jobs = [];

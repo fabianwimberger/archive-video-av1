@@ -92,7 +92,6 @@ class TestDeletePreset:
 
 class TestDeleteAllPresets:
     def test_delete_all_user_presets(self, seeded_client):
-        # Create a couple user presets
         for name in ("UserA", "UserB"):
             seeded_client.post(
                 "/api/presets",
@@ -110,7 +109,6 @@ class TestDeleteAllPresets:
         response = seeded_client.delete("/api/presets/all")
         assert response.status_code == 204
 
-        # Should only have built-ins left
         list_resp = seeded_client.get("/api/presets")
         assert list_resp.status_code == 200
         data = list_resp.json()

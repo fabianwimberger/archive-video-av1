@@ -8,8 +8,6 @@ from app.config import settings
 
 
 class ConversionSettings(BaseModel):
-    """Settings for video conversion."""
-
     crf: int = Field(default=26, ge=0, le=51, description="Constant Rate Factor (0-51)")
     encoder_preset: int = Field(
         default=4, ge=0, le=13, description="Encoding preset (0=slowest, 13=fastest)"
@@ -28,8 +26,6 @@ class ConversionSettings(BaseModel):
 
 
 class PresetBase(BaseModel):
-    """Base preset schema."""
-
     name: str = Field(..., min_length=1, max_length=64)
     description: Optional[str] = None
     crf: int = Field(..., ge=0, le=51)
@@ -41,14 +37,10 @@ class PresetBase(BaseModel):
 
 
 class PresetCreate(PresetBase):
-    """Schema for creating a preset."""
-
     pass
 
 
 class PresetUpdate(BaseModel):
-    """Schema for updating a preset."""
-
     name: Optional[str] = Field(default=None, min_length=1, max_length=64)
     description: Optional[str] = None
     crf: Optional[int] = Field(default=None, ge=0, le=51)
@@ -60,8 +52,6 @@ class PresetUpdate(BaseModel):
 
 
 class PresetResponse(BaseModel):
-    """Schema for preset response."""
-
     id: int
     name: str
     description: Optional[str] = None
@@ -80,8 +70,6 @@ class PresetResponse(BaseModel):
 
 
 class JobCreate(BaseModel):
-    """Schema for creating a single job."""
-
     source_file: str
     preset_id: Optional[int] = None
     settings: Optional[ConversionSettings] = None
@@ -99,8 +87,6 @@ class JobCreate(BaseModel):
 
 
 class JobBatchCreate(BaseModel):
-    """Schema for creating multiple jobs."""
-
     files: list[str]
     preset_id: Optional[int] = None
     settings: Optional[ConversionSettings] = None
@@ -115,8 +101,6 @@ class JobBatchCreate(BaseModel):
 
 
 class JobResponse(BaseModel):
-    """Schema for job response."""
-
     id: int
     cluster_job_id: Optional[str] = None
     source_file: str
@@ -149,7 +133,6 @@ class JobResponse(BaseModel):
 
     @classmethod
     def model_validate(cls, obj, **kwargs):
-        # Convert JSON settings string to dict
         data = {
             "id": getattr(obj, "id", None),
             "cluster_job_id": getattr(obj, "cluster_job_id", None),
@@ -192,41 +175,29 @@ class JobResponse(BaseModel):
 
 
 class JobListResponse(BaseModel):
-    """Schema for job list response."""
-
     jobs: list[JobResponse]
     total: int
 
 
 class JobCreateResponse(BaseModel):
-    """Schema for job creation response."""
-
     job_ids: list[int]
 
 
 class JobPatchRequest(BaseModel):
-    """Schema for patching a job."""
-
     notes: Optional[str] = None
 
 
 class JobPositionPatchRequest(BaseModel):
-    """Schema for patching job position."""
-
     absolute: int = Field(..., ge=1, description="Target queue position (1-indexed)")
 
 
 class QueueStatusResponse(BaseModel):
-    """Schema for queue status."""
-
     paused: bool
     active_job_id: Optional[int] = None
     pending_count: int
 
 
 class ClusterPeerResponse(BaseModel):
-    """Schema for discovered cluster peers."""
-
     node_id: str
     node_name: str
     base_url: str
@@ -234,8 +205,6 @@ class ClusterPeerResponse(BaseModel):
 
 
 class ClusterStatusResponse(BaseModel):
-    """Schema for cluster status."""
-
     enabled: bool
     node_id: str
     node_name: str
@@ -285,8 +254,6 @@ class ReconcileRequest(BaseModel):
 
 
 class PresetExportDocument(BaseModel):
-    """Schema for preset export document."""
-
     format: str
     version: int
     exported_at: str
@@ -294,8 +261,6 @@ class PresetExportDocument(BaseModel):
 
 
 class PresetImportResponse(BaseModel):
-    """Schema for preset import response."""
-
     imported: list[str]
     skipped: list[str]
     renamed: list[dict]

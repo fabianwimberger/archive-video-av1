@@ -23,15 +23,7 @@ def _natural_sort_key(path: Path) -> list:
 
 
 def _directory_has_videos(directory: Path) -> bool:
-    """
-    Check if directory contains any video files (recursively).
-
-    Args:
-        directory: Directory path to check
-
-    Returns:
-        True if any video files found, False otherwise
-    """
+    """Check if directory contains any video files (recursively)."""
     try:
         return any(
             any(directory.rglob(f"*{ext}")) for ext in FileService.VIDEO_EXTENSIONS
@@ -41,23 +33,13 @@ def _directory_has_videos(directory: Path) -> bool:
 
 
 class FileService:
-    """Service for file system operations."""
-
     VIDEO_EXTENSIONS = {".mkv", ".mp4"}
 
     def __init__(self):
         self.source_mount = Path(settings.SOURCE_MOUNT)
 
     def _is_safe_path(self, path: Path) -> bool:
-        """
-        Check if path is within source mount (security check).
-
-        Args:
-            path: Path to check
-
-        Returns:
-            True if safe, False otherwise
-        """
+        """Check if path is within source mount (security check)."""
         try:
             resolved = path.resolve()
             return resolved.is_relative_to(self.source_mount.resolve())
@@ -65,22 +47,13 @@ class FileService:
             return False
 
     async def browse_directory(self, path: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Browse directory and return files and subdirectories.
-
-        Args:
-            path: Relative path from source mount, or None for root
-
-        Returns:
-            Dictionary with directories and files lists
-        """
+        """Browse directory and return files and subdirectories."""
         try:
             if path:
                 target_path = (self.source_mount / path).resolve()
             else:
                 target_path = self.source_mount
 
-            # Security check
             if not self._is_safe_path(target_path):
                 raise ValueError("Invalid path")
 
@@ -90,7 +63,7 @@ class FileService:
             directories = []
             files = []
 
-            # Pre-load last jobs for all source files in this directory
+            # One query for the whole directory instead of one per file.
             file_paths = []
             for item in sorted(target_path.iterdir(), key=_natural_sort_key):
                 if item.is_file() and item.suffix.lower() in self.VIDEO_EXTENSIONS:
@@ -101,7 +74,6 @@ class FileService:
                 async with AsyncSessionLocal() as db:
                     from sqlalchemy import func
 
-                    # Single query: latest job per source_file using ROW_NUMBER
                     from sqlalchemy.orm import aliased
 
                     subq = (
@@ -135,10 +107,8 @@ class FileService:
                             "output_size_bytes": job.output_size_bytes,
                         }
 
-            # Scan directory
             for item in sorted(target_path.iterdir(), key=_natural_sort_key):
                 if item.is_dir():
-                    # Only show directories that contain video files
                     if _directory_has_videos(item):
                         directories.append(
                             {
@@ -147,10 +117,8 @@ class FileService:
                             }
                         )
                 elif item.is_file() and item.suffix.lower() in self.VIDEO_EXTENSIONS:
-                    # Check if this is a converted file or a source file
                     is_conv_file = item.stem.endswith("_conv")
 
-                    # For source files, check if converted version exists
                     has_conv = False
                     conv_path = None
                     if not is_conv_file:
@@ -182,29 +150,18 @@ class FileService:
             raise
 
     async def get_file_info(self, file_path: str) -> Dict[str, Any]:
-        """
-        Get detailed information about a video file.
-
-        Args:
-            file_path: Absolute path to file
-
-        Returns:
-            Dictionary with file metadata
-        """
+        """Get detailed information about a video file."""
         try:
             path = Path(file_path)
 
-            # Security check
             if not self._is_safe_path(path):
                 raise ValueError("Invalid path")
 
             if not path.exists() or not path.is_file():
                 raise ValueError("File does not exist")
 
-            # Get video info from ffprobe
             video_info = await get_video_info(str(path))
 
-            # Check for converted file
             has_conv, conv_path = await has_converted_file(str(path))
 
             return {
@@ -221,12 +178,7 @@ class FileService:
             raise
 
     async def suggest_preset(self, film_grain: float) -> tuple:
-        """
-        Suggest a preset based on film grain estimate.
-
-        Returns:
-            (suggested_preset_id, reason)
-        """
+        """Suggest a preset based on film grain estimate."""
         from app.models.preset import Preset
 
         async with AsyncSessionLocal() as db:
@@ -245,23 +197,13 @@ class FileService:
             return (preset.id if preset else None, reason)
 
     async def delete_converted_file(self, converted_path: str) -> bool:
-        """
-        Delete a converted video file.
-
-        Args:
-            converted_path: Absolute path to converted file
-
-        Returns:
-            True if deleted successfully
-        """
+        """Delete a converted video file."""
         try:
             path = Path(converted_path)
 
-            # Security check
             if not self._is_safe_path(path):
                 raise ValueError("Invalid path (outside source mount)")
 
-            # Check file exists
             if not path.exists() or not path.is_file():
                 raise ValueError("File does not exist")
 
@@ -289,23 +231,13 @@ class FileService:
             raise
 
     async def delete_file(self, file_path: str) -> bool:
-        """
-        Delete a file (source or other).
-
-        Args:
-            file_path: Absolute path to file
-
-        Returns:
-            True if deleted successfully
-        """
+        """Delete a file (source or other)."""
         try:
             path = Path(file_path)
 
-            # Security check
             if not self._is_safe_path(path):
                 raise ValueError("Invalid path (outside source mount)")
 
-            # Check file exists
             if not path.exists() or not path.is_file():
                 raise ValueError("File does not exist")
 
@@ -350,5 +282,4 @@ class FileService:
             raise
 
 
-# Global file service instance
 file_service = FileService()
