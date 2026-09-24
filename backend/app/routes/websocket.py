@@ -22,7 +22,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket_manager.connect(websocket)
 
     try:
-        # Send initial connection message
         await websocket_manager.send_to(
             websocket,
             {
@@ -31,12 +30,10 @@ async def websocket_endpoint(websocket: WebSocket):
             },
         )
 
-        # Keep connection alive and handle incoming messages
         while True:
             try:
                 data = await websocket.receive_json()
 
-                # Handle ping/pong for keep-alive
                 if data.get("type") == "ping":
                     await websocket_manager.send_to(
                         websocket,

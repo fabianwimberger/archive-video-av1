@@ -2,13 +2,16 @@
 
 import logging
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import and_, delete, func, or_, select, update
 from app.database import AsyncSessionLocal
 from app.models.preset import Preset
 from app.models.job import Job
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# The leader requeues remote jobs whose error starts with this prefix.
+INTERRUPTED_ERROR_PREFIX = "Interrupted by"
 
 BASE_SVT_PARAMS = (
     "tune=1:enable-variance-boost=1:tf-strength=1:sharpness=1:enable-restoration=1"
@@ -82,7 +85,6 @@ async def sync_builtin_presets():
                 db.add(preset)
                 logger.info(f"Created built-in preset: {builtin['name']}")
             elif preset.is_builtin:
-                # Update fields to match code
                 preset.crf = builtin["crf"]
                 preset.encoder_preset = builtin["encoder_preset"]
                 preset.svt_params = builtin["svt_params"]
@@ -95,19 +97,30 @@ async def sync_builtin_presets():
 
 
 async def recover_interrupted_jobs():
-    """Mark any processing jobs as failed due to restart."""
+    """Mark jobs this node was running as failed due to restart."""
+    interrupted = Job.status == "processing"
+    if settings.DISTRIBUTED_ENABLED:
+        # Work delegated to this node may already have been requeued by the
+        # leader, so it must not start before the leader confirms it.
+        interrupted = or_(
+            interrupted,
+            and_(
+                Job.status == "pending",
+                Job.assigned_worker_id == settings.DISTRIBUTED_NODE_ID,
+            ),
+        )
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             update(Job)
             .where(
-                Job.status == "processing",
+                interrupted,
                 Job.remote_job_id.is_(None),
                 Job.assigned_worker_url.is_(None),
-                Job.is_cluster_replica.is_(False),
             )
             .values(
                 status="failed",
-                error_message="Interrupted by service restart",
+                error_message=f"{INTERRUPTED_ERROR_PREFIX} service restart",
                 completed_at=datetime.now(timezone.utc),
             )
         )
@@ -138,7 +151,6 @@ async def prune_history():
             deleted_total += result.rowcount
 
         if max_rows > 0:
-            # Count finished rows
             count_result = await db.execute(
                 select(func.count()).select_from(
                     select(Job)
@@ -150,7 +162,6 @@ async def prune_history():
 
             excess = finished_count - max_rows
             if excess > 0:
-                # Find IDs of oldest excess rows
                 subq = (
                     select(Job.id)
                     .where(Job.status.in_(["completed", "failed", "cancelled"]))

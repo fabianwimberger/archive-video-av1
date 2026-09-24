@@ -1,6 +1,3 @@
-/**
- * API client wrapper for backend communication
- */
 class ApiClient {
     constructor(baseURL = '/api') {
         this.baseURL = baseURL;
@@ -40,7 +37,6 @@ class ApiClient {
         }
     }
 
-    // File endpoints
     async browseFiles(path = null) {
         const params = path ? `?path=${encodeURIComponent(path)}` : '';
         return this.request(`/files${params}`);
@@ -68,7 +64,6 @@ class ApiClient {
         return this.request(`/files/analyze?${params}`);
     }
 
-    // Job endpoints
     async createJob(sourceFile, presetId, settings, notes = null) {
         const body = { source_file: sourceFile };
         if (presetId !== null && presetId !== undefined) body.preset_id = presetId;
@@ -163,7 +158,6 @@ class ApiClient {
         });
     }
 
-    // Preset endpoints
     async listPresets() {
         return this.request('/presets');
     }
@@ -238,7 +232,6 @@ class ApiClient {
         return response.json();
     }
 
-    // Queue endpoints
     async getQueueState() {
         return this.request('/queue');
     }
@@ -255,16 +248,13 @@ class ApiClient {
         return this.request('/cluster/status');
     }
 
-    // System endpoints
     async getHealth() {
         return this.request('/health');
     }
 }
 
-// Global API client instance
 const api = new ApiClient();
 
-// Shared utility functions
 const utils = {
     escapeHtml(text) {
         const div = document.createElement('div');

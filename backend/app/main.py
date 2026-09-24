@@ -12,14 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from app.config import APP_ROOT, ASSET_ROOT, settings
 from app.database import init_db
 
-# Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# Ensure logging output if Uvicorn hijacked the root logger but didn't set level/handlers as expected
+# Uvicorn may configure the root logger without a handler or level.
 if not logging.getLogger().handlers:
     console = logging.StreamHandler()
     console.setFormatter(
@@ -30,13 +29,10 @@ if not logging.getLogger().handlers:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
-    # Startup
     logger.info("Starting conversion service...")
 
     settings.ensure_directories()
 
-    # Run Alembic migrations
     from alembic import command
     from alembic.config import Config
 
@@ -48,7 +44,6 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
-    # Sync built-in presets and recover jobs
     from app.services.lifecycle import (
         sync_builtin_presets,
         recover_interrupted_jobs,
@@ -59,23 +54,18 @@ async def lifespan(app: FastAPI):
     await recover_interrupted_jobs()
     await prune_history()
 
-    # Import and set up WebSocket manager
     from app.services.websocket_manager import websocket_manager
     from app.services.job_queue import job_queue
 
-    # Connect WebSocket manager to job queue
     job_queue.set_websocket_manager(websocket_manager)
 
-    # Start job queue worker
     await job_queue.start_worker()
 
     yield
 
-    # Shutdown
     logger.info("Shutting down conversion service...")
     await job_queue.stop_worker()
 
-    # Clean up temp directory on shutdown
     import shutil
 
     temp_path = Path(settings.TEMP_DIR)
@@ -93,18 +83,15 @@ async def lifespan(app: FastAPI):
             logger.error(f"Error cleaning temp directory on shutdown: {e}")
 
 
-# Create FastAPI app
 app = FastAPI(
     title="Video Conversion Service",
     description="Web-based video conversion service with real-time progress tracking",
-    version="1.8.2",
+    version="1.9.0",
     lifespan=lifespan,
 )
 
-# Add GZip Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -113,7 +100,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 from app.routes import cluster, files, jobs, websocket, presets, queue  # noqa: E402
 
 app.include_router(files.router, prefix="/api/files", tags=["files"])
@@ -145,7 +131,7 @@ async def health_check():
     }
 
 
-# Mount static files for frontend (must be last!)
+# Mounted last so the catch-all path does not shadow the API routes.
 app.mount(
     "/", StaticFiles(directory=str(ASSET_ROOT / "frontend"), html=True), name="frontend"
 )

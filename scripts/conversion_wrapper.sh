@@ -32,7 +32,6 @@ cleanup() {
     echo "STATUS:Stopping conversion..."
     kill_all
 
-    # Clean up temp files
     for f in "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE" "$LOUDNORM_JSON" "$TAGS_XML"; do
         [[ -n "$f" && -f "$f" ]] && rm -f "$f"
     done
@@ -52,7 +51,7 @@ trap cleanup_files EXIT
 
 echo "STAGE:initializing"
 
-# --- HELPER FUNCTIONS (from original script) ---
+# --- HELPER FUNCTIONS ---
 
 # Helpers read from $PROBE (one ffprobe -of flat dump) instead of re-probing
 # the container per field.
@@ -191,11 +190,9 @@ if [[ -z "$video_ord" ]]; then
     exit 1
 fi
 
-# Get total frames for progress calculation
 TOTAL_FRAMES=$(get_total_frames "$video_ord")
 echo "total_frames=$TOTAL_FRAMES"
 
-# Detect video codec
 video_codec=$(probe_field "$video_ord" codec_name)
 is_av1=0
 [[ "$video_codec" == "av1" ]] && is_av1=1
@@ -284,17 +281,14 @@ if [[ $is_hdr -eq 1 && "$color_transfer" == "smpte2084" ]]; then
     fi
 fi
 
-# Detect crop
 crop=""
 if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
     echo "STAGE:crop_detect"
     echo "STATUS:Detecting crop parameters..."
 
-    # Get video duration for percentage-based sampling
     duration=$(probe_get 'format\.duration')
 
     if [[ -n "$duration" && "$duration" != "N/A" ]]; then
-        # Get original resolution
         orig_width=$(probe_field "$video_ord" width)
         orig_height=$(probe_field "$video_ord" height)
 
@@ -303,7 +297,6 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
         for percent in 10 20 30 40 50 60 70 80; do
             time=$(awk -v d="$duration" -v p="$percent" 'BEGIN { printf "%.0f", d * p / 100 }')
 
-            # Run cropdetect - filter analysis to null output
             crop_value=$(ffmpeg -hide_banner -ss $time -i "$INPUT_FILE" -t 3 -vf cropdetect=round=4 -an -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)
 
             if [[ -n "$crop_value" ]]; then
@@ -353,7 +346,6 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
 fi
 
 # --- VIDEO FILTER CHAIN ---
-# Determine if downscaling is needed
 # Map MAX_HEIGHT to bounding box (long edge x short edge)
 case "$MAX_HEIGHT" in
     720)  MAX_WIDTH=1280 ;;
@@ -364,7 +356,6 @@ esac
 
 scale_filter=""
 if [[ $is_av1 -eq 0 ]]; then
-    # Get source dimensions (use post-crop if crop is applied)
     if [[ -n "$crop" ]]; then
         source_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
         source_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
@@ -391,7 +382,6 @@ fi
 vf=""
 [[ -n "$vf_parts" ]] && vf="-vf $vf_parts"
 
-# Detect audio/subs
 audio_streams=$(probe_stream_list audio)
 preferred_audio=$(find_preferred_stream "$audio_streams" "$PREFERRED_AUDIO_LANGUAGES")
 first_audio=$(first_stream "$audio_streams")
@@ -473,7 +463,6 @@ elif [[ -n "$sub_ord" ]]; then
     fi
 fi
 
-# Determine video encoding parameters
 # Only copy if input is AV1 AND no crop/scale needed
 needs_filter=0
 [[ -n "$crop" || -n "$scale_filter" ]] && needs_filter=1
@@ -487,7 +476,6 @@ else
         echo "STATUS:Video is AV1 but filtering required (crop/scale), re-encoding"
     fi
 
-    # Append HDR params to SVT-AV1 params if HDR is detected
     if [[ $is_hdr -eq 1 ]]; then
         hdr_svt="color-primaries=9:transfer-characteristics=${tc_value}:matrix-coefficients=9"
 
@@ -496,12 +484,10 @@ else
             hdr_svt="${hdr_svt}:mastering-display=${mastering_display}"
         fi
 
-        # Add content light level if available
         if [[ -n "$content_light" ]]; then
             hdr_svt="${hdr_svt}:content-light=${content_light}"
         fi
 
-        # Append to user SVT params
         if [[ -n "$SVT_PARAMS" ]]; then
             SVT_PARAMS="${SVT_PARAMS}:${hdr_svt}"
         else

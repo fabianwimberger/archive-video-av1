@@ -48,7 +48,6 @@ async def _validate_destination(db: AsyncSession, source_file: str) -> str:
         .where(
             Job.output_file == str(output),
             Job.status.in_(["pending", "processing"]),
-            Job.is_cluster_replica.is_(False),
         )
         .limit(1)
     )
@@ -74,7 +73,6 @@ async def _resolve_job_settings(
             raise HTTPException(status_code=404, detail="Preset not found")
 
     if preset and not settings_override:
-        # Use preset exactly
         settings = {
             "crf": preset.crf,
             "encoder_preset": preset.encoder_preset,
@@ -86,13 +84,11 @@ async def _resolve_job_settings(
         return preset.id, preset.name, settings
 
     if settings_override and not preset:
-        # Ad-hoc custom settings
         settings = settings_override
         validate_conversion_settings(settings)
         return None, "Custom", settings
 
     if preset and settings_override:
-        # Override preset with user tweaks
         settings = {
             "crf": settings_override.get("crf", preset.crf),
             "encoder_preset": settings_override.get(
@@ -116,12 +112,8 @@ async def _resolve_job_settings(
 
 
 async def _assign_queue_position(db: AsyncSession) -> int:
-    """Assign the next queue position for pending jobs."""
     result = await db.execute(
-        select(func.max(Job.queue_position)).where(
-            Job.status == "pending",
-            Job.is_cluster_replica.is_(False),
-        )
+        select(func.max(Job.queue_position)).where(Job.status == "pending")
     )
     max_pos = result.scalar() or 0
     return max_pos + 1
@@ -133,7 +125,6 @@ def _assign_cluster_identity(job: Job) -> None:
     job.cluster_origin_node_id = app_settings.DISTRIBUTED_NODE_ID  # type: ignore[assignment]
     job.cluster_origin_job_id = job.id  # type: ignore[assignment]
     job.cluster_job_id = str(uuid4())  # type: ignore[assignment]
-    job.is_cluster_replica = False  # type: ignore[assignment]
 
 
 async def _leader_request(
@@ -153,12 +144,24 @@ async def _leader_request(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-def _should_forward_to_leader(cluster: bool = True) -> bool:
+def _should_forward_to_leader(cluster: bool = True, mutation: bool = False) -> bool:
     if not cluster:
         return False
     from app.services.distributed import distributed_service
 
-    return distributed_service.should_use_leader()
+    if distributed_service.should_use_leader():
+        return True
+    if (
+        mutation
+        and app_settings.DISTRIBUTED_ENABLED
+        and not distributed_service.holds_queue
+    ):
+        # Changes made before the takeover would be replaced by the shared queue.
+        raise HTTPException(
+            status_code=503,
+            detail="The cluster leader is still taking over the queue; try again shortly",
+        )
+    return False
 
 
 async def _node_request(node_id: str, method: str, path: str, json_body=None):
@@ -247,7 +250,7 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
             db, job_data.preset_id, settings_override, job_data.source_file
         )
 
-        if _should_forward_to_leader() and not job_data.local_only:
+        if not job_data.local_only and _should_forward_to_leader(mutation=True):
             return JobCreateResponse(
                 **await _leader_request(
                     "POST",
@@ -270,7 +273,9 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
                     select(Job).where(Job.cluster_job_id == job_data.cluster_job_id)
                 )
             ).scalar_one_or_none()
-            if existing and not existing.is_cluster_replica:
+            # A failed or cancelled copy is from an earlier attempt that the
+            # leader has since requeued; only live or completed work is reused.
+            if existing and existing.status not in ("failed", "cancelled"):
                 if (
                     existing.source_file != job_data.source_file
                     or json.loads(cast(str, existing.settings)) != settings
@@ -344,7 +349,7 @@ async def create_batch_jobs(
         sorted_files = sorted(batch_data.files)
         job_ids = []
 
-        if _should_forward_to_leader() and not batch_data.local_only:
+        if not batch_data.local_only and _should_forward_to_leader(mutation=True):
             files_payload = []
             for source_file in sorted_files:
                 (
@@ -468,7 +473,7 @@ async def list_jobs(
                 **await _leader_request("GET", "/api/jobs", params=params)
             )
 
-        query = select(Job).where(Job.is_cluster_replica.is_(False))
+        query = select(Job)
 
         if status:
             statuses = [s.strip() for s in status.split(",") if s.strip()]
@@ -490,7 +495,6 @@ async def list_jobs(
         if date_to:
             query = query.where(Job.created_at <= date_to)
 
-        # Sorting
         sort_col = getattr(Job, sort, Job.created_at)
         if order.lower() == "desc":
             query = query.order_by(sort_col.desc())
@@ -546,7 +550,6 @@ async def list_jobs(
                 total=total,
             )
 
-        # Count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
@@ -582,6 +585,7 @@ async def get_job(
     job_id: int,
     node_id: Optional[str] = Query(None),
     cluster: bool = Query(True, description="Read from the selected leader"),
+    include_log: bool = Query(True, description="Include the conversion log"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get job details by ID."""
@@ -593,18 +597,16 @@ async def get_job(
         if not node_id and _should_forward_to_leader(cluster):
             return JobResponse(**await _leader_request("GET", f"/api/jobs/{job_id}"))
 
-        result = await db.execute(
-            select(Job).where(
-                Job.id == job_id,
-                Job.is_cluster_replica.is_(False),
-            )
-        )
+        result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one_or_none()
 
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        return JobResponse.model_validate(job)
+        response = JobResponse.model_validate(job)
+        if not include_log:
+            response.log = ""
+        return response
 
     except HTTPException:
         raise
@@ -619,7 +621,7 @@ async def patch_job(
 ):
     """Update user-editable job fields."""
     try:
-        if _should_forward_to_leader():
+        if _should_forward_to_leader(mutation=True):
             return await _leader_request(
                 "PATCH", f"/api/jobs/{job_id}", json_body=data.model_dump()
             )
@@ -656,7 +658,7 @@ async def patch_job_position(
             return await _node_request(
                 node_id, "PATCH", f"/api/jobs/{job_id}/position", data.model_dump()
             )
-        if not node_id and _should_forward_to_leader():
+        if not node_id and _should_forward_to_leader(mutation=True):
             return await _leader_request(
                 "PATCH", f"/api/jobs/{job_id}/position", json_body=data.model_dump()
             )
@@ -671,7 +673,6 @@ async def patch_job_position(
                 status_code=409, detail="Cannot reorder non-pending job"
             )
 
-        # Load all pending job ids ordered by queue_position
         pending_result = await db.execute(
             select(Job)
             .where(Job.status == "pending")
@@ -713,7 +714,7 @@ async def patch_job_position(
 async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
     """Retry a finished job with the same settings."""
     try:
-        if _should_forward_to_leader():
+        if _should_forward_to_leader(mutation=True):
             return JobCreateResponse(
                 **await _leader_request("POST", f"/api/jobs/{job_id}/retry")
             )
@@ -727,7 +728,6 @@ async def retry_job(job_id: int, db: AsyncSession = Depends(get_db)):
         settings = json.loads(job.settings) if job.settings else {}  # type: ignore
         validate_conversion_settings(settings)
 
-        # Verify preset still exists
         preset_id = job.preset_id
         if preset_id is not None:
             preset_result = await db.execute(
@@ -829,7 +829,7 @@ async def clear_queued_jobs(
 ):
     """Clear all pending jobs."""
     try:
-        if _should_forward_to_leader(cluster):
+        if _should_forward_to_leader(cluster, mutation=True):
             return await _leader_request("DELETE", "/api/jobs/queued")
 
         result = await db.execute(delete(Job).where(Job.status == "pending"))
@@ -843,12 +843,13 @@ async def clear_queued_jobs(
                 "/api/jobs/queued"
             )
 
-        # Wake worker so it re-evaluates
         job_queue.wake()
 
         logger.info(f"Cleared {deleted_count} queued jobs")
         return {"deleted_count": deleted_count}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error clearing queued jobs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -882,7 +883,7 @@ async def clear_all_jobs(
 ):
     """Clear ALL jobs (including pending and processing)."""
     try:
-        if _should_forward_to_leader(cluster):
+        if _should_forward_to_leader(cluster, mutation=True):
             return await _leader_request("DELETE", "/api/jobs/all")
 
         peer_deleted = 0
@@ -891,21 +892,20 @@ async def clear_all_jobs(
 
             peer_deleted = await distributed_service.clear_peer_jobs("/api/jobs/all")
 
-        # Cancel any currently processing job first
         if job_queue.current_job_id:
             await job_queue.cancel_current_job()
 
-        # Delete all jobs from database
         result = await db.execute(delete(Job))
         deleted_count = (result.rowcount or 0) + peer_deleted  # type: ignore
         await db.commit()
 
-        # Wake worker
         job_queue.wake()
 
         logger.info(f"Cleared all {deleted_count} jobs (force clear)")
         return {"deleted_count": deleted_count}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error clearing all jobs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -951,7 +951,7 @@ async def delete_or_cancel_job(
     try:
         if node_id and node_id != app_settings.DISTRIBUTED_NODE_ID:
             return await _node_request(node_id, "DELETE", f"/api/jobs/{job_id}")
-        if not node_id and _should_forward_to_leader(cluster):
+        if not node_id and _should_forward_to_leader(cluster, mutation=True):
             return await _leader_request("DELETE", f"/api/jobs/{job_id}")
 
         result = await db.execute(select(Job).where(Job.id == job_id))
@@ -972,15 +972,13 @@ async def delete_or_cancel_job(
                 elif job.remote_job_id:
                     from app.services.distributed import distributed_service
 
-                    cancelled = await distributed_service.cancel_remote_job(job)
-                    if not cancelled:
-                        raise HTTPException(
-                            status_code=500,
-                            detail="Failed to cancel remote job",
-                        )
+                    # An unreachable worker stops the encode once it reconciles
+                    # with the leader and finds the job cancelled.
+                    await distributed_service.cancel_remote_job(job)
                     job.status = "cancelled"  # type: ignore[assignment]
                     job.error_message = "Cancelled by user"  # type: ignore[assignment]
                     await db.commit()
+                    job_queue.wake()
                 else:
                     raise HTTPException(
                         status_code=409,
