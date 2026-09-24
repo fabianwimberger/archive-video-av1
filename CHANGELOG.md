@@ -5,6 +5,31 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.9.0] - 2026-09-24
+
+Cluster queue that survives node failures: the leader keeps the queue on shared storage, and jobs from stopped or crashed nodes move to another node.
+
+### Features
+
+- Only the leader changes the queue, and it mirrors every change to a ledger in `DISTRIBUTED_STATE_DIR` (default `<SOURCE_MOUNT>/.archive-video-av1`); a node that rejoins after being offline cannot bring back deleted jobs or rerun finished ones
+- A node that stops cleanly tells its peers, so its running job is requeued right away; a node that dies is requeued after `DISTRIBUTED_WORKER_TIMEOUT_SECONDS`, up to `DISTRIBUTED_MAX_REQUEUES` times
+- Queue changes reach workers immediately instead of on the next poll
+- Queue changes return 503 while a new leader is still taking over the queue
+
+### Fixes
+
+- A job running on a leader that shuts down no longer stays "processing" forever on the new leader
+- Clearing the queue during a leader takeover no longer returns a 500 error
+
+### Upgrading
+
+- Stop all nodes, upgrade them together, and start the previous leader first; wait for `queue.json` to appear before starting the others, or let the queue run empty before upgrading
+- `DISTRIBUTED_STATE_DIR` must resolve to the same shared, writable directory on every node
+
+### Documentation & Links
+
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.8.2...v1.9.0)
+
 ## [v1.8.2] - 2026-09-23
 
 Robustness fixes for conversions and cluster deployments, stricter PGO build verification, and a dependency refresh with FFmpeg 9.0.2.
