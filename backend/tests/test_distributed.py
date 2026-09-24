@@ -356,6 +356,14 @@ async def seed_ledger(owner: str, term: int, jobs: list[dict]) -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_ledger_is_shared_with_nodes_under_other_uids(ledger_dir):
+    await seed_ledger("node-a", 1, [])
+
+    assert ledger_dir.stat().st_mode & 0o777 == 0o777
+    assert (ledger_dir / "queue.json").stat().st_mode & 0o777 == 0o666
+
+
 def candidate_service(monkeypatch) -> DistributedService:
     """The only live node, elected leader but not yet holding the queue."""
     monkeypatch.setattr(settings, "DISTRIBUTED_ENABLED", True)
