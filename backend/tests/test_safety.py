@@ -265,12 +265,18 @@ async def test_cancellation_terminates_process_group(videos, monkeypatch):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=5)
-    child = int(child_file.read_text())
-    stat = Path(f"/proc/{child}/stat")
-    try:
-        state = stat.read_text().split()[2]
-    except (ProcessLookupError, FileNotFoundError):
-        return  # child already gone entirely
+    stat = Path(f"/proc/{int(child_file.read_text())}/stat")
+    # SIGTERM delivery is asynchronous, so a loaded machine may still show the
+    # child as running for a moment.
+    state = None
+    for _ in range(200):
+        try:
+            state = stat.read_text().split()[2]
+        except (ProcessLookupError, FileNotFoundError):
+            return
+        if state == "Z":
+            return
+        await asyncio.sleep(0.01)
     assert state == "Z"
 
 
