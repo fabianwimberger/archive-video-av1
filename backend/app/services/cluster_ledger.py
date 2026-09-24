@@ -37,9 +37,17 @@ def _read() -> Optional[dict]:
 
 def _write(ledger: dict) -> None:
     path = ledger_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Nodes reach the share under different uids (root locally, squashed over
+    # NFS), so whichever node leads must leave the ledger readable and
+    # replaceable by the others.
+    try:
+        path.parent.mkdir(parents=True)
+        os.chmod(path.parent, 0o777)
+    except FileExistsError:
+        pass
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
+        os.fchmod(fd, 0o666)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(ledger, handle)
             handle.flush()
