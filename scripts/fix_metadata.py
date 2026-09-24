@@ -38,10 +38,8 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
         if duration == 0:
             return None
 
-        # Get actual file size
         actual_file_size = file_path.stat().st_size
 
-        # Sum up all stream bitrates from BPS tags
         total_stream_bitrate = 0
         stream_details = []
 
@@ -57,14 +55,11 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
 
             total_stream_bitrate += bps_tag
 
-        # Calculate expected file size from metadata
-        # Formula: (sum of all stream bitrates) * duration / 8 = file size in bytes
         if total_stream_bitrate > 0:
             expected_file_size = int((total_stream_bitrate * duration) / 8)
         else:
             expected_file_size = 0
 
-        # Check if metadata matches actual file size (allow 5% tolerance for container overhead)
         has_issue = False
         issues = []
 
@@ -76,6 +71,7 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
                 abs(expected_file_size - actual_file_size) / actual_file_size * 100
             )
 
+            # The 5% tolerance covers container overhead.
             if diff_percent > 5.0:
                 has_issue = True
                 issues.append(
@@ -98,7 +94,6 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
 
 
 def format_bitrate(bitrate: int) -> str:
-    """Format bitrate for human-readable output."""
     if bitrate >= 1_000_000:
         return f"{bitrate / 1_000_000:.2f}Mbps"
     else:
@@ -106,7 +101,6 @@ def format_bitrate(bitrate: int) -> str:
 
 
 def format_size(size: int) -> str:
-    """Format file size for human-readable output."""
     if size >= 1_073_741_824:  # 1 GiB
         return f"{size / 1_073_741_824:.2f} GiB"
     elif size >= 1_048_576:  # 1 MiB
@@ -128,8 +122,7 @@ def remux_file(file_path: Path, dry_run: bool = False) -> bool:
     try:
         print("    Remuxing to fix metadata...")
 
-        # Use mkvmerge for MKV files (properly calculates BPS tags)
-        # Use ffmpeg for other formats
+        # mkvmerge recomputes the BPS statistics tags; other containers go through ffmpeg.
         if file_path.suffix.lower() == ".mkv":
             result = subprocess.run(
                 ["mkvmerge", "-o", str(temp_file), str(file_path)],
@@ -155,18 +148,17 @@ def remux_file(file_path: Path, dry_run: bool = False) -> bool:
 
         if result.returncode != 0:
             error_msg = result.stderr if result.stderr else result.stdout
-            print(f"    ✗ Remux failed: {error_msg[:200]}")
+            print(f"    Remux failed: {error_msg[:200]}")
             if temp_file.exists():
                 temp_file.unlink()
             return False
 
-        # Replace original with remuxed file
         temp_file.replace(file_path)
-        print("    ✓ Fixed")
+        print("    Fixed")
         return True
 
     except Exception as e:
-        print(f"    ✗ Error: {e}")
+        print(f"    Error: {e}")
         if temp_file.exists():
             temp_file.unlink()
         return False
@@ -201,7 +193,6 @@ def scan_and_fix(
     for file_path in sorted(video_files):
         files_checked += 1
 
-        # Show relative path for readability
         try:
             display_path = file_path.relative_to(root_dir)
         except ValueError:
@@ -210,13 +201,13 @@ def scan_and_fix(
         info = get_file_info(file_path)
         if info is None:
             print(f"[{files_checked}/{len(video_files)}] {display_path}")
-            print("  ⚠ Could not read file info")
+            print("  Could not read file info")
             continue
 
         if info["has_issue"]:
             files_with_issues += 1
             print(f"\n[{files_checked}/{len(video_files)}] {display_path}")
-            print("  ⚠ Metadata issues detected:")
+            print("  Metadata issues detected:")
             for issue in info["issues"]:
                 print(f"    - {issue}")
 

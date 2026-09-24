@@ -160,7 +160,6 @@ class FileBrowser {
         const container = document.getElementById('file-browser');
         container.innerHTML = '';
 
-        // Parent directory button
         if (this.currentPath) {
             const parentButton = document.createElement('div');
             parentButton.className = 'list-group-item list-group-item-action cursor-pointer bg-body-tertiary text-secondary';
@@ -179,7 +178,6 @@ class FileBrowser {
             container.appendChild(parentButton);
         }
 
-        // Directories
         data.directories.forEach(dir => {
             const dirElement = document.createElement('div');
             dirElement.className = 'list-group-item list-group-item-action cursor-pointer';
@@ -196,17 +194,14 @@ class FileBrowser {
             container.appendChild(dirElement);
         });
 
-        // Files
         this.renderFiles();
     }
 
     renderFiles() {
         const container = document.getElementById('file-browser');
 
-        // Remove existing file items
         container.querySelectorAll('.file-item').forEach(el => el.remove());
 
-        // Add filtered files
         this.filteredFiles.forEach(file => {
             const fileElement = document.createElement('div');
             fileElement.className = 'list-group-item list-group-item-action file-item';
@@ -288,7 +283,6 @@ class FileBrowser {
                 }
             });
 
-            // Click last job badge to jump to history
             const lastJobDiv = fileElement.querySelector('.small.text-success, .small.text-warning');
             if (lastJobDiv && file.last_job) {
                 lastJobDiv.style.cursor = 'pointer';
@@ -424,5 +418,4 @@ class FileBrowser {
     }
 }
 
-// Global file browser instance
 const fileBrowser = new FileBrowser();

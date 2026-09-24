@@ -85,7 +85,6 @@ async def sync_builtin_presets():
                 db.add(preset)
                 logger.info(f"Created built-in preset: {builtin['name']}")
             elif preset.is_builtin:
-                # Update fields to match code
                 preset.crf = builtin["crf"]
                 preset.encoder_preset = builtin["encoder_preset"]
                 preset.svt_params = builtin["svt_params"]
@@ -152,7 +151,6 @@ async def prune_history():
             deleted_total += result.rowcount
 
         if max_rows > 0:
-            # Count finished rows
             count_result = await db.execute(
                 select(func.count()).select_from(
                     select(Job)
@@ -164,7 +162,6 @@ async def prune_history():
 
             excess = finished_count - max_rows
             if excess > 0:
-                # Find IDs of oldest excess rows
                 subq = (
                     select(Job.id)
                     .where(Job.status.in_(["completed", "failed", "cancelled"]))

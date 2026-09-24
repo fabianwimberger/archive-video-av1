@@ -13,10 +13,8 @@ PREFERRED_AUDIO_LANGUAGES="${PREFERRED_AUDIO_LANGUAGES:-ger,deu,de,eng,en}"
 #   - set to empty string: don't use any -march (multi-arch builds)
 #   - set to specific value: use that value
 if [ -z "${ARCH_FLAGS+x}" ]; then
-    # ARCH_FLAGS is unset, default to native
     ARCH_FLAGS="-march=native"
 fi
-# If ARCH_FLAGS is set to empty string, we use no arch flags (generic build)
 # Allow disabling LTO for faster CI builds (ENABLE_LTO=false)
 ENABLE_LTO="${ENABLE_LTO:-true}"
 echo "=== ENABLE_LTO=${ENABLE_LTO} ==="
@@ -65,7 +63,6 @@ first_stream() {
 
 # Build Opus (only once, no PGO flags)
 build_opus() {
-    # Skip if already built
     if [ -f /usr/local/lib/libopus.a ]; then
         echo "=== Opus already built, skipping ==="
         return
@@ -304,7 +301,6 @@ train_pgo() {
     echo "Profiles: $(find "$PGO_DIR" -name '*.gcda' 2>/dev/null | wc -l)"
 }
 
-# Main logic
 case "$BUILD_TYPE" in
     "pgo-generate")
         build_opus

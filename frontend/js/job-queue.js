@@ -18,7 +18,6 @@ class JobQueue {
         await this.loadClusterStatus();
         this.startClusterRefresh();
 
-        // Listen to WebSocket events
         wsClient.on('job_progress', (message) => {
             this.updateJobProgress(message.job_id, message.data, message);
         });
@@ -40,7 +39,6 @@ class JobQueue {
             this.startRefresh();
         });
 
-        // Modal events
         const logModal = document.getElementById('log-modal');
         if (logModal) {
             logModal.addEventListener('hidden.bs.modal', () => {
@@ -292,7 +290,6 @@ class JobQueue {
             ${this.createProgressElement(job)}
         `;
 
-        // Event listeners
         const cancelBtn = element.querySelector('.cancel-btn');
         if (cancelBtn) {
             cancelBtn.addEventListener('click', () => this.cancelJob(key));
@@ -334,7 +331,6 @@ class JobQueue {
     }
 
     async reorderJob(draggedId, targetId) {
-        // Find target position among pending jobs
         const pending = Array.from(this.jobs.values())
             .filter(j => j.status === 'pending')
             .sort((a, b) => (a.queue_position ?? Infinity) - (b.queue_position ?? Infinity));
@@ -436,7 +432,6 @@ class JobQueue {
             job.progress_percent = 100;
             if (message.source_size_bytes != null) job.source_size_bytes = message.source_size_bytes;
             if (message.output_size_bytes != null) job.output_size_bytes = message.output_size_bytes;
-            // Show toast and remove from active queue
             this.jobs.delete(displayedJobId);
             this.render();
             this.updateStats();
@@ -535,5 +530,4 @@ class JobQueue {
     }
 }
 
-// Global job queue instance
 const jobQueue = new JobQueue();

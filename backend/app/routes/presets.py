@@ -117,7 +117,6 @@ async def update_preset(
         if await _check_name_collision(db, updates["name"], exclude_id=preset_id):
             raise HTTPException(status_code=409, detail="Preset name already exists")
 
-    # Merge current settings with updates for validation
     current = {
         "crf": preset.crf,
         "encoder_preset": preset.encoder_preset,
@@ -292,7 +291,6 @@ async def import_presets(
     """Import presets from uploaded JSON file."""
 
     if file is None:
-        # Allow calling without the typed default by using File() marker
         raise HTTPException(status_code=400, detail="Missing uploaded file")
 
     try:
@@ -342,7 +340,6 @@ async def import_presets(
                     counter += 1
                 renamed.append({"from": name, "to": target_name})
             elif on_conflict == "overwrite":
-                # Can only overwrite user presets
                 existing_result = await db.execute(
                     select(Preset).where(func.lower(Preset.name) == func.lower(name))
                 )

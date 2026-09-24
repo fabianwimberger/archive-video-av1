@@ -1,6 +1,3 @@
-/**
- * WebSocket client for real-time updates
- */
 class WebSocketClient {
     constructor() {
         this.ws = null;
@@ -31,7 +28,6 @@ class WebSocketClient {
         this.ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
-                // console.log('WebSocket message:', message);
                 this.handleMessage(message);
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error);
@@ -128,5 +124,4 @@ class WebSocketClient {
     }
 }
 
-// Global WebSocket client instance
 const wsClient = new WebSocketClient();

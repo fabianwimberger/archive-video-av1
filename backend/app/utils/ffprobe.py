@@ -9,17 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
-    """
-    Get video metadata using ffprobe.
-
-    Args:
-        file_path: Path to video file
-
-    Returns:
-        Dictionary with video metadata or None if failed
-    """
+    """Get video metadata using ffprobe."""
     try:
-        # Run ffprobe to get JSON output
         process = await asyncio.create_subprocess_exec(
             "ffprobe",
             "-v",
@@ -41,7 +32,6 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
 
         data = json.loads(stdout.decode())
 
-        # Extract relevant info
         video_stream = next(
             (s for s in data.get("streams", []) if s.get("codec_type") == "video"), None
         )
@@ -91,15 +81,7 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
 
 
 def parse_fps(fps_string: str) -> float:
-    """
-    Parse FPS from fraction string (e.g., "30000/1001").
-
-    Args:
-        fps_string: FPS as fraction string
-
-    Returns:
-        FPS as float
-    """
+    """Parse FPS from fraction string (e.g., "30000/1001")."""
     try:
         if "/" in fps_string:
             num, den = fps_string.split("/")
@@ -110,16 +92,9 @@ def parse_fps(fps_string: str) -> float:
 
 
 async def has_converted_file(source_file: str) -> tuple[bool, Optional[str]]:
-    """
-    Check if a converted version of the file exists.
+    """Check if a converted version of the file exists.
 
     Output is always Matroska (.mkv), regardless of source container.
-
-    Args:
-        source_file: Path to source file
-
-    Returns:
-        Tuple of (exists, converted_file_path)
     """
     from pathlib import Path
 

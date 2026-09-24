@@ -5,11 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Conversion Service</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <!-- Bootstrap 5 CSS -->
     <link href="/vendor/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="/vendor/css/bootstrap-icons.css">
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
@@ -31,7 +28,6 @@
         </div>
     </nav>
 
-    <!-- Convert View -->
     <div id="view-convert" class="view-container container-fluid px-3 px-lg-4 main-content py-3">
         <div class="card shadow-sm section-files">
             <div class="card-header py-3 d-flex justify-content-between align-items-center flex-wrap">
@@ -335,7 +331,6 @@
         </div>
     </div>
 
-    <!-- Job Log Modal -->
     <div class="modal fade" id="log-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
             <div class="modal-content">
@@ -350,7 +345,6 @@
         </div>
     </div>
 
-    <!-- Preset Manager Modal -->
     <div class="modal fade" id="preset-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-fullscreen-sm-down">
             <div class="modal-content">
@@ -368,7 +362,6 @@
                         </div>
                     </div>
                     <div id="preset-list" class="list-group list-group-flush border"></div>
-                    <!-- Import form (hidden) -->
                     <div id="preset-import-form" class="d-none mt-3 border p-3 rounded">
                         <label class="form-label small fw-bold">Import Presets</label>
                         <div class="mb-2">
@@ -387,7 +380,6 @@
                         </div>
                         <pre id="preset-import-result" class="mt-2 small text-muted mb-0"></pre>
                     </div>
-                    <!-- Edit form (hidden) -->
                     <div id="preset-edit-form" class="d-none mt-3 border p-3 rounded">
                         <input type="hidden" id="preset-edit-id">
                         <div class="row g-2">
@@ -487,7 +479,6 @@
         </div>
     </div>
 
-    <!-- History Detail Modal -->
     <div class="modal fade" id="history-detail-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
             <div class="modal-content">
@@ -505,7 +496,6 @@
         </div>
     </div>
 
-    <!-- Clear Older Than Modal -->
     <div class="modal fade" id="clear-older-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
@@ -524,10 +514,8 @@
         </div>
     </div>
 
-    <!-- Bootstrap JS Bundle -->
     <script src="/vendor/js/bootstrap.bundle.min.js"></script>
 
-    <!-- App Scripts -->
     <script src="/js/api.js"></script>
     <script src="/js/websocket-client.js"></script>
     <script src="/js/preset-manager.js"></script>

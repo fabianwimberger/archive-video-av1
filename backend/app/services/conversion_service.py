@@ -12,8 +12,6 @@ from app.utils.file_safety import validate_source_path
 
 
 class ProgressData(TypedDict):
-    """Progress data structure for conversion jobs."""
-
     frame: int
     total_frames: int
     fps: float
@@ -28,8 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 class ConversionService:
-    """Service for managing video conversions."""
-
     def __init__(self):
         self.wrapper_script = settings.CONVERSION_WRAPPER_SCRIPT
 
@@ -42,21 +38,7 @@ class ConversionService:
         progress_callback: Callable,
         process_callback: Optional[Callable] = None,
     ) -> tuple[bool, str]:
-        """
-        Execute video conversion with real-time progress tracking.
-
-        Args:
-            job_id: Database job ID
-            source_file: Absolute path to source file
-            output_file: Absolute path to output file
-            conversion_settings: Dict with CRF, preset, etc.
-            progress_callback: Async function called with progress updates
-            process_callback: Optional async function called with process object
-
-        Returns:
-            Tuple of (success, log)
-        """
-        # Validate conversion settings before building command
+        """Execute video conversion with real-time progress tracking."""
         validate_conversion_settings(conversion_settings)
         source_file = str(validate_source_path(source_file))
         expected_output = Path(self.get_output_path(source_file))
@@ -68,7 +50,6 @@ class ConversionService:
             "encoder_preset", conversion_settings.get("preset", 4)
         )
 
-        # Build command arguments
         cmd = [
             self.wrapper_script,
             source_file,
@@ -83,7 +64,6 @@ class ConversionService:
 
         logger.info(f"Starting conversion job {job_id}: {source_file} -> {output_file}")
 
-        # Initialize progress data
         progress_data: ProgressData = {
             "frame": 0,
             "total_frames": 0,
@@ -99,7 +79,6 @@ class ConversionService:
         process = None
 
         try:
-            # Execute process
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -123,11 +102,9 @@ class ConversionService:
                 },
             )
 
-            # Store process reference for cancellation
             if process_callback:
                 await process_callback(process)
 
-            # Parse stdout line-by-line
             last_progress_emit = 0.0
             last_log_append = 0.0
             progress_buffer = {}
@@ -137,7 +114,6 @@ class ConversionService:
             async for line in process.stdout:
                 line_str = line.decode().strip()
 
-                # Check if this is a progress line (key=value)
                 is_progress_line = (
                     "=" in line_str
                     and not line_str.startswith("STAGE:")
@@ -166,7 +142,6 @@ class ConversionService:
                         except ValueError:
                             pass
                     elif key == "progress":
-                        # Calculate percentage and ETA
                         total_frames = progress_data["total_frames"]
                         frame = progress_data["frame"]
                         if total_frames > 0 and frame > 0:
@@ -175,7 +150,6 @@ class ConversionService:
                                 100.0,
                             )
 
-                            # Calculate ETA
                             fps = progress_data["fps"]
                             if fps > 0:
                                 remaining_frames = total_frames - frame
@@ -183,21 +157,19 @@ class ConversionService:
                                     remaining_frames / fps
                                 )
 
-                        # Emit progress update (throttle to every 1 second)
+                        # Throttled so the database and websocket clients see one update per second.
                         current_time = asyncio.get_running_loop().time()
                         if current_time - last_progress_emit >= 1.0:
-                            # Add current log to progress data
                             progress_data["current_log"] = "\n".join(log_lines)
                             await progress_callback(job_id, progress_data.copy())
                             last_progress_emit = current_time
 
-                        # Compact log entry every 5 seconds
+                        # A summary line every 5 seconds keeps the stored log small.
                         if current_time - last_log_append >= 5.0:
                             summary = f"Frame: {progress_buffer.get('frame', 'N/A')} | FPS: {progress_buffer.get('fps', 'N/A')} | Size: {progress_buffer.get('total_size', 'N/A')} | Bitrate: {progress_buffer.get('bitrate', 'N/A')}"
                             log_lines.append(summary)
                             last_log_append = current_time
 
-                # Parse stage markers
                 elif line_str.startswith("STAGE:"):
                     log_lines.append(line_str)
                     stage = line_str.split(":", 1)[1]
@@ -206,7 +178,6 @@ class ConversionService:
                     await progress_callback(job_id, progress_data.copy())
                     logger.info(f"Job {job_id} stage: {stage}")
 
-                # Parse status messages
                 elif line_str.startswith("STATUS:"):
                     log_lines.append(line_str)
                     status = line_str.split(":", 1)[1]
@@ -214,13 +185,12 @@ class ConversionService:
                     progress_data["current_log"] = "\n".join(log_lines)
                     await progress_callback(job_id, progress_data.copy())
 
-                # Parse error messages
                 elif line_str.startswith("ERROR:"):
                     log_lines.append(line_str)
                     error = line_str.split(":", 1)[1]
                     logger.error(f"Job {job_id} error: {error}")
 
-                # Parse ffmpeg command - display immediately
+                # Shown right away so the command is visible before the first progress line.
                 elif line_str.startswith("CMD:"):
                     cmd_line = line_str.split(":", 1)[1]
                     log_lines.append(line_str)
@@ -228,19 +198,15 @@ class ConversionService:
                     await progress_callback(job_id, progress_data.copy())
                     logger.info(f"Job {job_id} executing: {cmd_line}")
 
-                # Other lines (ffmpeg init logs etc)
                 else:
                     log_lines.append(line_str)
 
-            # Wait for process to complete
             await process.wait()
 
-            # Check exit code
             success = process.returncode == 0
 
             if success:
                 logger.info(f"Job {job_id} completed successfully")
-                # Emit final 100% progress
                 progress_data["percent"] = 100.0
                 progress_data["stage"] = "complete"
                 progress_data["status"] = "Conversion complete"
@@ -270,17 +236,7 @@ class ConversionService:
                     await process.communicate()
 
     def get_output_path(self, source_file: str) -> str:
-        """
-        Calculate output file path based on source file.
-
-        Output is always Matroska (.mkv), regardless of source container.
-
-        Args:
-            source_file: Path to source file
-
-        Returns:
-            Path to output file
-        """
+        """Output is always Matroska (.mkv), regardless of source container."""
         source_path = Path(source_file)
         stem = source_path.stem
         parent = source_path.parent
@@ -288,5 +244,4 @@ class ConversionService:
         return str(parent / f"{stem}_conv.mkv")
 
 
-# Global conversion service instance
 conversion_service = ConversionService()

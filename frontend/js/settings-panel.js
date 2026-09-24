@@ -1,6 +1,3 @@
-/**
- * Settings panel component
- */
 class SettingsPanel {
     constructor() {
         this.presets = [];
@@ -69,7 +66,6 @@ class SettingsPanel {
             select.appendChild(option);
         });
 
-        // If no default found, select first
         if (!this.selectedPresetId && this.presets.length > 0) {
             select.value = this.presets[0].id;
             this.selectedPresetId = this.presets[0].id;
@@ -78,14 +74,12 @@ class SettingsPanel {
     }
 
     setupEventListeners() {
-        // Preset selector
         document.getElementById('preset-select').addEventListener('change', (e) => {
             this.selectedPresetId = parseInt(e.target.value);
             this.applyPreset(this.selectedPresetId);
             this.checkModified();
         });
 
-        // Auto-estimate buttons
         document.getElementById('btn-auto-estimate').addEventListener('click', () => {
             this.autoEstimate();
         });
@@ -94,7 +88,6 @@ class SettingsPanel {
             this.autoPreset();
         });
 
-        // CRF slider
         const crfSlider = document.getElementById('crf-slider');
         const crfValue = document.getElementById('crf-value');
         crfSlider.addEventListener('input', (e) => {
@@ -102,7 +95,6 @@ class SettingsPanel {
             this.checkModified();
         });
 
-        // Preset slider
         const presetSlider = document.getElementById('preset-slider');
         const presetValue = document.getElementById('preset-value');
         presetSlider.addEventListener('input', (e) => {
@@ -110,7 +102,6 @@ class SettingsPanel {
             this.checkModified();
         });
 
-        // Other inputs
         document.getElementById('audio-bitrate').addEventListener('input', () => this.checkModified());
         ['svt-film-grain', 'svt-tf-strength', 'svt-sharpness', 'svt-extra-params'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => {
@@ -129,7 +120,6 @@ class SettingsPanel {
             el.addEventListener('change', () => this.checkModified());
         });
 
-        // Convert selected button
         document.getElementById('btn-convert-selected').addEventListener('click', () => {
             window.fileBrowser.convertSelected();
         });
@@ -315,7 +305,6 @@ class SettingsPanel {
         const settings = this.getCurrentSettings();
         const preset = this.presets.find(p => p.id === this.selectedPresetId);
 
-        // Determine if we should send preset_id, settings, or both
         const isModified = !document.getElementById('preset-modified-badge').classList.contains('d-none');
         const presetId = this.selectedPresetId;
         const settingsToSend = isModified ? settings : null;
@@ -339,10 +328,8 @@ class SettingsPanel {
     }
 }
 
-// Global settings panel instance
 const settingsPanel = new SettingsPanel();
 
-// Global function for single file conversion trigger
 window.triggerSingleFileConversion = async function(filePath) {
     await settingsPanel.convertSingleFile(filePath);
 };

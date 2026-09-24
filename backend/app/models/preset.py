@@ -6,8 +6,6 @@ from app.database import Base
 
 
 class Preset(Base):
-    """Conversion preset model."""
-
     __tablename__ = "presets"
 
     id = Column(Integer, primary_key=True)

@@ -27,7 +27,6 @@ class TestQueueStatus:
         assert response.status_code == 200
         assert response.json()["paused"] is True
 
-        # Verify it persisted
         status = seeded_client.get("/api/queue")
         assert status.json()["paused"] is True
 
