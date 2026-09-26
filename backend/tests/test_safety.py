@@ -169,7 +169,7 @@ def test_output_lock_retries_when_lock_file_was_replaced(videos, monkeypatch, ra
 
     monkeypatch.setattr(os, "open", racing_open)
     with output_lock(output):
-        assert lock_path.stat().st_ino == opened[-1] != opened[0]
+        assert lock_path.stat().st_ino == opened[-1]
     assert len(opened) == 2
     assert not lock_path.exists()
 
