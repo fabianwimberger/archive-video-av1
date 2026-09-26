@@ -11,7 +11,6 @@ from typing import Sequence, Union
 from alembic import op  # type: ignore
 import sqlalchemy as sa
 
-# revision identifiers, used by Alembic.
 revision: str = "0001_initial"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
@@ -19,7 +18,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create presets table
     presets_table = op.create_table(
         "presets",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -41,14 +39,12 @@ def upgrade() -> None:
     )
     op.create_index("idx_presets_name", "presets", ["name"], unique=True)
 
-    # Create app_state table
     op.create_table(
         "app_state",
         sa.Column("key", sa.String(), primary_key=True),
         sa.Column("value", sa.Text(), nullable=False),
     )
 
-    # Create jobs table
     op.create_table(
         "jobs",
         sa.Column("id", sa.Integer(), primary_key=True, index=True),
@@ -84,7 +80,6 @@ def upgrade() -> None:
         "idx_jobs_status_queue_position", "jobs", ["status", "queue_position"]
     )
 
-    # Insert built-in presets
     op.bulk_insert(
         presets_table,
         [
@@ -124,7 +119,7 @@ def upgrade() -> None:
         ],
     )
 
-    # Set default_preset_id to Default preset (id=1 because it's first)
+    # Default is inserted first, so it gets id 1.
     op.execute("INSERT INTO app_state (key, value) VALUES ('default_preset_id', '1')")
     op.execute("INSERT INTO app_state (key, value) VALUES ('queue_paused', 'false')")
 

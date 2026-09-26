@@ -1,5 +1,3 @@
-"""Lifecycle helpers for startup/shutdown."""
-
 import logging
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import and_, delete, func, or_, select, update

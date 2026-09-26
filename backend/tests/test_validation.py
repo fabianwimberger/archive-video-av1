@@ -1,5 +1,3 @@
-"""Tests for validation utilities."""
-
 import pytest
 from app.utils.validation import validate_conversion_settings, validate_preset_name
 

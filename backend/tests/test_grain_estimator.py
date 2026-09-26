@@ -1,5 +1,3 @@
-"""Tests for the grain/denoise heuristic estimator."""
-
 import pytest
 
 from app.services.grain_estimator import estimate_grain

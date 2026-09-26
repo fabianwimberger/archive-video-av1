@@ -1,5 +1,3 @@
-"""WebSocket connection manager for broadcasting updates."""
-
 import asyncio
 import logging
 from typing import Set

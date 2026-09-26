@@ -1,5 +1,3 @@
-"""Tests for the /ws real-time updates endpoint."""
-
 from app.services.websocket_manager import websocket_manager
 
 

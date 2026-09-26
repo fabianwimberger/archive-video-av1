@@ -1,5 +1,3 @@
-"""Validation utilities for conversion settings and presets."""
-
 import re
 from typing import Dict, Any
 
@@ -42,7 +40,6 @@ def validate_conversion_settings(settings: Dict[str, Any]) -> None:
 
 
 def validate_preset_name(name: str) -> None:
-    """Validate preset name format."""
     if not name or not PRESET_NAME_PATTERN.match(name):
         raise ValueError(
             "Preset name must be 1-64 characters and can only contain letters, numbers, spaces, underscores, hyphens, and parentheses."

@@ -1,5 +1,3 @@
-"""WebSocket endpoint for real-time updates."""
-
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.websocket_manager import websocket_manager

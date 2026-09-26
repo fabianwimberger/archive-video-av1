@@ -1,5 +1,3 @@
-"""Tests for conversion wrapper configuration."""
-
 import re
 import subprocess
 import pytest

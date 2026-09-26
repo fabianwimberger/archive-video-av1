@@ -1,5 +1,3 @@
-"""Tests for preset API endpoints."""
-
 import json
 
 

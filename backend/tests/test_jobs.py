@@ -1,5 +1,3 @@
-"""Tests for job API endpoints."""
-
 import asyncio
 import httpx
 from .conftest import VIDEO_ROOT

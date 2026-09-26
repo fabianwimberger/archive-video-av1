@@ -1,5 +1,3 @@
-"""Tests for startup/shutdown lifecycle helpers."""
-
 from datetime import datetime, timedelta, timezone
 
 import pytest

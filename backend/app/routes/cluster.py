@@ -1,5 +1,3 @@
-"""Cluster status API endpoints."""
-
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query

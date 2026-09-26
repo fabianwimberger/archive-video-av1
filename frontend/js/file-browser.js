@@ -95,7 +95,6 @@ class FileBrowser {
     async convertSelected() {
         const selected = Array.from(this.selectedFiles);
 
-        // Filter to only convertible files (original files without _conv version)
         const convertibleFiles = this.allFiles.filter(f =>
             selected.includes(f.path) && !this._isConvFile(f) && !f.has_converted
         );
@@ -379,10 +378,8 @@ class FileBrowser {
             }
         }
 
-        // Delete button: enabled only if ALL selected files are deletable (originals with _conv)
         document.getElementById('btn-delete-selected').disabled = !allDeletable;
 
-        // Convert button: enabled only if ALL selected files are convertible (originals without _conv)
         const convertBtn = document.getElementById('btn-convert-selected');
         if (convertBtn) {
             convertBtn.disabled = !allConvertible;

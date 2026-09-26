@@ -50,8 +50,7 @@ RUN chmod +x /build/build.sh
 # - Local builds (Makefile): set to -march=native
 # Build script handles unset vs empty string differently
 
-# Build with PGO
-# Keep instrumented compilation cached when only training samples change.
+# Layer 1: instrumented build, kept cached when only training samples change.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-generate; \
     fi
@@ -59,12 +58,13 @@ RUN if [ "$ENABLE_PGO" = "true" ]; then \
 # Copy samples after Layer 1, so a sample change doesn't invalidate it too.
 COPY sample/ /build/samples/
 
-# Layer 2: Run PGO training (rebuilds if samples change)
+# Layer 2: PGO training, rebuilt when samples change.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-train; \
     fi
 
-# Reuse build paths so SVT-AV1 and FFmpeg can locate their collected profiles.
+# Layer 3: optimized build; reuses the build paths so SVT-AV1 and FFmpeg find
+# their collected profiles.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \
         /build/build.sh pgo-use; \
     else \

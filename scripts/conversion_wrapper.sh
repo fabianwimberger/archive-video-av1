@@ -346,7 +346,6 @@ if [[ $is_av1 -eq 0 && $SKIP_CROP -eq 0 ]]; then
             crop_width=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f1)
             crop_height=$(echo "$crop" | cut -d'=' -f2 | cut -d':' -f2)
 
-            # Skip crop if dimensions match original (no-op)
             if [[ "$crop_width" == "$orig_width" && "$crop_height" == "$orig_height" ]]; then
                 echo "STATUS:No crop needed, dimensions unchanged (${orig_width}x${orig_height})"
                 crop=""

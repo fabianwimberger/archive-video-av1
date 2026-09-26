@@ -39,8 +39,6 @@ class PeerNode:
 
 
 class DistributedService:
-    """Coordinates peer discovery and remote job execution."""
-
     def __init__(self) -> None:
         self._peers: dict[str, PeerNode] = {}
         self._socket: Optional[socket.socket] = None

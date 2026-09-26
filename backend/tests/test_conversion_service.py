@@ -1,5 +1,3 @@
-"""Tests for ConversionService.convert_file edge paths."""
-
 import asyncio
 import os
 from unittest.mock import AsyncMock

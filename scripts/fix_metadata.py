@@ -112,7 +112,6 @@ def format_size(size: int) -> str:
 
 
 def remux_file(file_path: Path, dry_run: bool = False) -> bool:
-    """Remux file to fix metadata."""
     temp_file = file_path.parent / f"{file_path.stem}_remux_temp{file_path.suffix}"
 
     if dry_run:

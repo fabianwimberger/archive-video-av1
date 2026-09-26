@@ -1,5 +1,3 @@
-"""Tests for DistributedService worker coordination edge paths."""
-
 import time
 from typing import Optional, cast
 from unittest.mock import AsyncMock

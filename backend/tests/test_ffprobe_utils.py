@@ -1,5 +1,3 @@
-"""Tests for the ffprobe metadata wrapper utilities."""
-
 import json
 
 import pytest

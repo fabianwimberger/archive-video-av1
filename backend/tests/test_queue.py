@@ -1,5 +1,3 @@
-"""Tests for queue API endpoints."""
-
 import asyncio
 import json
 import time
@@ -303,8 +301,7 @@ class TestQueuePauseRehydration:
     async def test_start_worker_rehydrates_paused_state(
         self, db_session, original_jobqueue_methods
     ):
-        """A restart under paused state must stay paused (PLAN.md §E(4))."""
-        # Persist paused=true in app_state
+        """A restart under paused state must stay paused."""
         db_session.add(AppState(key="queue_paused", value="true"))
         await db_session.commit()
 
