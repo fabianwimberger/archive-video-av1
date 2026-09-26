@@ -1,9 +1,4 @@
-"""Cluster queue ledger on storage shared by every node.
-
-The leader mirrors its queue here after every change, so a node that takes
-over, even after being offline or alone, starts from the queue the cluster
-last agreed on instead of its own possibly stale database.
-"""
+"""Cluster queue on shared storage, so a new leader never starts from a stale DB."""
 
 import asyncio
 import json
@@ -37,9 +32,7 @@ def _read() -> Optional[dict]:
 
 def _write(ledger: dict) -> None:
     path = ledger_path()
-    # Nodes reach the share under different uids (root locally, squashed over
-    # NFS), so whichever node leads must leave the ledger readable and
-    # replaceable by the others.
+    # Nodes reach the share under different uids; any of them may lead next.
     try:
         path.parent.mkdir(parents=True)
         os.chmod(path.parent, 0o777)

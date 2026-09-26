@@ -45,10 +45,7 @@ RUN wget -q "https://downloads.xiph.org/releases/opus/opus-${OPUS_VERSION}.tar.g
 COPY scripts/build.sh /build/build.sh
 RUN chmod +x /build/build.sh
 
-# ARCH_FLAGS is passed via build-arg:
-# - GitHub builds: not set (empty = generic, no -march flag)
-# - Local builds (Makefile): set to -march=native
-# Build script handles unset vs empty string differently
+# ARCH_FLAGS: empty for generic CI builds, -march=native from the Makefile.
 
 # Layer 1: instrumented build, kept cached when only training samples change.
 RUN if [ "$ENABLE_PGO" = "true" ]; then \

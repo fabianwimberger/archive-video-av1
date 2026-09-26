@@ -61,9 +61,7 @@ def test_pgo_training_uses_preferred_audio_stream():
         in script
     )
     assert 'ffmpeg -hide_banner -i "$f" -map 0:$audio_idx -t 10' in script
-    # Training encodes video and audio as separate invocations, mirroring the
-    # concurrent branch V / branch A split in conversion_wrapper.sh. Both seek
-    # into the file first so training doesn't land on a black/logo intro.
+    # Mirrors the runtime video/audio split; both seek past black/logo intros.
     assert (
         'ffmpeg -hide_banner -ss "$train_ss" -i "$f" -map 0:v:0 -an -sn -dn -t 15'
         in script
@@ -157,11 +155,7 @@ def _extract_crop_detect_block():
 
 
 def test_crop_detect_filters_asymmetric_samples_before_consensus():
-    """Dark/underlit scenes push cropdetect's black-level threshold into real
-    picture content on one side only, producing crop values with mismatched
-    left/right or top/bottom bars. A genuine letterbox/pillarbox always has
-    matching bars, so those samples must be excluded from the vote instead of
-    just requiring more exact-match repeats of noisy data."""
+    """Dark scenes yield one-sided crops; real letterboxes are symmetric."""
     block = _extract_crop_detect_block()
 
     assert "dx = x - (ow - w - x)" in block
@@ -176,11 +170,7 @@ def test_crop_detect_filters_asymmetric_samples_before_consensus():
 
 
 def test_crop_detect_consensus_threshold_lowered_after_symmetry_filter():
-    """Requiring 3 exact-string matches across noisy raw samples was too
-    strict once asymmetric outliers are filtered out first: 2 agreeing
-    symmetric samples out of 8 is already a strong signal, since a false
-    positive would have to reproduce the exact same (symmetric) crop twice by
-    chance. Filtering must happen before the vote, or 2 would be too lax."""
+    """Two matching symmetric samples suffice once outliers are filtered."""
     block = _extract_crop_detect_block()
 
     assert "if ($1 >= 2) print $2" in block
@@ -191,9 +181,7 @@ def test_crop_detect_consensus_threshold_lowered_after_symmetry_filter():
 
 
 def test_crop_detect_symmetry_check_runs_synthetic_samples_correctly():
-    """Execute the actual awk formula from conversion_wrapper.sh (not a
-    reimplementation of it) against the real sample set logged for a 1899
-    episode, where 6 of 8 cropdetect windows were dark-scene false positives."""
+    """Real samples where 6 of 8 cropdetect windows were dark-scene misses."""
     script = WRAPPER.read_text()
     match = re.search(
         r"symmetric=\$\(echo \"\$crop_value\" \| awk -F'\[=:\]' -v ow=\"\$orig_width\" -v oh=\"\$orig_height\" '(\{.*?\})'\)",

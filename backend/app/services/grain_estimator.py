@@ -7,11 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 async def estimate_grain(file_path: str) -> Dict[str, Any]:
-    """Estimate film grain and denoise requirements for a video file.
-
-    Samples frames at multiple timestamps and analyzes luma/chroma
-    standard deviation using ffmpeg's showinfo filter.
-    """
+    """Estimate film grain and denoise from sampled frames' luma/chroma deviation."""
     duration_proc = await asyncio.create_subprocess_exec(
         "ffprobe",
         "-v",

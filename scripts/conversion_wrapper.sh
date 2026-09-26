@@ -80,10 +80,8 @@ probe_field() {
     probe_get "streams\.stream\.$1\.$2"
 }
 
-# probe_stream_list <codec_type>: "index,language" per line (matches the old
-# `-of csv=p=0` shape). Reads the stream's own "index" field rather than
-# $ord, since $ord only equals the absolute stream index as long as the
-# probe doesn't use -select_streams.
+# probe_stream_list <codec_type>: "index,language" per line, using the stream's
+# own index since $ord only matches it without -select_streams.
 probe_stream_list() {
     local ord idx lang
     for ord in $(probe_ordinals "$1"); do
@@ -150,9 +148,8 @@ probe_ordinal_for_index() {
     done
 }
 
-# mktemp creates 0600 files owned by whoever runs this script: root on a local
-# disk, a squashed or mapped uid on NFS/SMB. Mirror the source instead, and
-# never fail the job over it, since such mounts may refuse chown or chmod.
+# mktemp files are 0600 and owned by the writer; squashing mounts may refuse
+# the change, which must not fail the job.
 match_source_permissions() {
     local target="$1"
     if ! chmod --reference="$INPUT_FILE" -- "$target" 2>/dev/null \
@@ -170,9 +167,7 @@ match_source_permissions() {
 
 # --- MAIN CONVERSION LOGIC ---
 
-# Encode to TEMP_DIR (fast local storage) when available; mkvmerge remuxes
-# into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
-# The caller holds the output lock for as long as this script runs.
+# Encode in local TEMP_DIR when available. The caller holds the output lock.
 output_dir="$(dirname "$OUTPUT_FILE")"
 if [[ -e "$OUTPUT_FILE" || -L "$OUTPUT_FILE" ]]; then
     echo "ERROR:Conversion output already exists"
@@ -533,8 +528,7 @@ else
 fi
 
 # --- AUDIO MEASUREMENT + ENCODE (branch A) ---
-# Two-pass loudnorm needs a measurement read before the encode read; runs
-# concurrently with branch V, which takes far longer at preset 4.
+# Two-pass loudnorm, run alongside the much slower branch V.
 TARGET_I="-20"
 TARGET_TP="-2"
 TARGET_LRA="13"
@@ -575,14 +569,10 @@ measure_and_encode_audio() {
     local ffmpeg_cmd_a="ffmpeg -i \"$INPUT_FILE\" $audio_map -map_chapters -1 -vn -sn -dn $af_filter -c:a libopus -b:a $AUDIO_BITRATE -f matroska -y \"$tmp_audio\""
     echo "$ffmpeg_cmd_a" > "$AUDIO_CMD_FILE"
 
-    # Full command goes to $AUDIO_CMD_FILE (used for the ENCODER_SETTINGS tag
-    # later); not echoed live here since a long one could exceed PIPE_BUF and
-    # interleave with branch V's writes on the shared fd 3 pipe.
+    # Not echoed: a long line could exceed PIPE_BUF and interleave on fd 3.
     echo "STATUS:CMD (audio): audio encode starting (${#audio_indices[@]} track(s))" >&3
 
-    # -map_chapters -1: ffmpeg copies chapters by default even with an
-    # explicit stream -map. Branch V already carries them; without this,
-    # mkvmerge would merge both branches' copies and double every chapter.
+    # Branch V already carries the chapters; mkvmerge would double them.
     local audio_start
     audio_start=$(date +%s)
 
@@ -650,9 +640,7 @@ if [[ $rc_v -ne 0 || $rc_a -ne 0 ]]; then
             while IFS= read -r line; do echo "STATUS:$line"; done < "$audio_log"
         fi
     fi
-    # Disarm first: kill_all's pkill -g $$ also signals this script's own
-    # PID, which would otherwise re-enter cleanup() and print a spurious
-    # "Stopping conversion..." after the real error above.
+    # Disarm first: pkill -g $$ also hits this script and re-enters cleanup().
     trap '' SIGTERM SIGINT
     kill_all
     rm -f "$tmp_video" "$tmp_audio" "$audio_log" "$AUDIO_CMD_FILE"
@@ -667,9 +655,7 @@ rm -f "$AUDIO_CMD_FILE" "$audio_log"
 echo "STAGE:finalizing"
 echo "STATUS:Finalizing output file with correct metadata..."
 
-# A/V sync: neither branch seeks, so ffmpeg preserves each stream's original
-# container-relative start time - mkvmerge joins them correctly without
-# manual realignment.
+# Neither branch seeks, so start times survive and mkvmerge needs no realignment.
 
 # Global tags XML: embeds both branches' ffmpeg commands for reproducibility.
 TAGS_XML=$(mktemp)

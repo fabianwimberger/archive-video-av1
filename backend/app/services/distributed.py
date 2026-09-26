@@ -603,12 +603,7 @@ class DistributedService:
             logger.warning("Leave notice failed for %s: %s", peer.base_url, exc)
 
     async def reconcile_with_leader(self) -> None:
-        """Keep only local work the leader's queue still assigns to this node.
-
-        Stops encodes the leader requeued, finished elsewhere or removed while
-        this node was unreachable, and drops queue rows left over from when
-        this node led.
-        """
+        """Stop local work the leader no longer assigns here; drop old leader rows."""
         if (
             not settings.DISTRIBUTED_ENABLED
             or self.is_leader

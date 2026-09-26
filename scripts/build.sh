@@ -7,10 +7,7 @@ SVT_AV1_VERSION="${SVT_AV1_VERSION:-4.2.0}"
 BUILD_TYPE="${1:-}"  # "pgo-generate", "pgo-train", or "pgo-use"
 PREFERRED_AUDIO_LANGUAGES="${PREFERRED_AUDIO_LANGUAGES:-ger,deu,de,eng,en}"
 
-# ARCH_FLAGS can be:
-#   - unset: use -march=native (local builds)
-#   - set to empty string: don't use any -march (multi-arch builds)
-#   - set to specific value: use that value
+# ARCH_FLAGS: unset = -march=native, empty = no -march, otherwise used as is.
 if [ -z "${ARCH_FLAGS+x}" ]; then
     ARCH_FLAGS="-march=native"
 fi
@@ -98,9 +95,7 @@ build_all() {
     cd /build/FFmpeg
     make clean 2>/dev/null || true
     export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
-    # Only pin to compile-time CPU flags when targeting a specific arch (-march set).
-    # Generic builds (no ARCH_FLAGS) need runtime cpudetect so decode/swscale can
-    # still pick AVX2 etc. on capable hosts instead of being stuck on the baseline.
+    # Generic builds keep runtime cpudetect so capable hosts still get AVX2 etc.
     cpudetect_flag="--enable-runtime-cpudetect"
     [[ -n "$ARCH_FLAGS" ]] && cpudetect_flag="--disable-runtime-cpudetect"
     # shellcheck disable=SC2086 # $FFMPEG_LTO_FLAG unquoted on purpose: drops the arg entirely when empty

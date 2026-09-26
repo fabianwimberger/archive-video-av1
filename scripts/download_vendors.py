@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """Download pinned vendor libraries for offline use.
 
-Bootstrap and Bootstrap Icons are pinned to exact versions and verified
-against SHA-256 checksums, so builds are reproducible and a compromised or
-changed CDN asset cannot silently end up in the image. Update the version
-constants and the hashes together when bumping.
+Versions and SHA-256 hashes are pinned together; bump both.
 """
 
 import hashlib

@@ -9,14 +9,7 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time job updates.
-
-    Clients can connect to receive:
-    - job_progress: Real-time progress updates during encoding
-    - job_status: Status changes (pending -> processing -> completed/failed)
-    - queue_update: Changes to job queue size
-    """
+    """Pushes job_progress, job_status and queue_update messages."""
     await websocket_manager.connect(websocket)
 
     try:
