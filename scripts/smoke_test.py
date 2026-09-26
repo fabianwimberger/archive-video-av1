@@ -63,6 +63,8 @@ def main() -> None:
             )
             info = client.get("/api/files/info", params={"path": str(output)}).json()
             assert info["codec"] == "av1" and info["duration"] > 0
+            assert output.stat().st_mode & 0o7777 == source.stat().st_mode & 0o7777
+            assert not list(videos.glob(".*.lock"))
             from app.config import settings
 
             before = output.read_bytes()

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Dict, Any, List, Optional, TypedDict
 from app.config import settings
 from app.utils.validation import validate_conversion_settings
-from app.utils.file_safety import validate_source_path
+from app.utils.file_safety import OutputInUse, output_lock, validate_source_path
 
 
 class ProgressData(TypedDict):
@@ -64,6 +64,24 @@ class ConversionService:
 
         logger.info(f"Starting conversion job {job_id}: {source_file} -> {output_file}")
 
+        # Held until the wrapper's whole process group is gone, so the lock
+        # file is removed on success, failure and cancellation alike.
+        try:
+            with output_lock(expected_output):
+                return await self._run_wrapper(
+                    job_id, cmd, progress_callback, process_callback
+                )
+        except OutputInUse as exc:
+            logger.error(f"Job {job_id} error: {exc}")
+            return False, f"ERROR:{exc}"
+
+    async def _run_wrapper(
+        self,
+        job_id: int,
+        cmd: List[str],
+        progress_callback: Callable,
+        process_callback: Optional[Callable],
+    ) -> tuple[bool, str]:
         progress_data: ProgressData = {
             "frame": 0,
             "total_frames": 0,
@@ -96,6 +114,9 @@ class ConversionService:
                             "SUBTITLE_TRACK_MODE",
                             "PREFERRED_AUDIO_LANGUAGES",
                             "PREFERRED_SUBTITLE_LANGUAGES",
+                            "OUTPUT_FILE_MODE",
+                            "PUID",
+                            "PGID",
                         )
                         if k in os.environ
                     },

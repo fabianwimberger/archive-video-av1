@@ -149,7 +149,7 @@ Open `http://localhost:8000` after starting the container.
      normalization run as concurrent branches with live progress output
    - `mkvmerge` joins the two branches and finalizes metadata
 5. **Real-time updates** are pushed to the browser via WebSocket
-6. **Output** is saved alongside the source as Matroska (`_conv.mkv`), regardless of source container
+6. **Output** is saved alongside the source as Matroska (`_conv.mkv`), regardless of source container, with the source file's mode and owner
 
 Outputs are published only after successful finalization and a duration check. Existing outputs are never overwritten; delete the previous conversion before encoding again. Files with the same stem, such as `movie.mp4` and `movie.mkv`, share an output name and cannot be queued together.
 
@@ -178,6 +178,8 @@ Presets are stored in the SQLite database and survive restarts.
 | `SUBTITLE_TRACK_MODE` | `preferred` | Subtitle stream mode: `preferred` selects one matching track, `all` copies all subtitle tracks, `none` drops subtitles |
 | `PREFERRED_AUDIO_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `AUDIO_TRACK_MODE=preferred` |
 | `PREFERRED_SUBTITLE_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `SUBTITLE_TRACK_MODE=preferred` |
+| `OUTPUT_FILE_MODE` | `0644` | Mode for converted files when the source file's mode cannot be copied |
+| `PUID` / `PGID` | empty | Owner for converted files when the source file's owner cannot be copied; empty keeps the writing user |
 | `JOB_HISTORY_RETENTION_DAYS` | `0` | Delete finished jobs older than N days (`0` = keep forever) |
 | `JOB_HISTORY_MAX_ROWS` | `0` | Maximum number of finished jobs to keep (`0` = unlimited) |
 | `DISTRIBUTED_ENABLED` | `false` | Enable LAN peer discovery and remote job delegation |
@@ -206,13 +208,14 @@ Only the leader changes the queue. It mirrors the queue to a ledger file in `DIS
 
 A node that stops cleanly tells its peers it is leaving, so the next leader takes over and requeues the job it was running right away. If a node disappears without notice, the leader requeues its job once the node has been silent for `DISTRIBUTED_WORKER_TIMEOUT_SECONDS`. A job that keeps losing its worker is marked failed after `DISTRIBUTED_MAX_REQUEUES` attempts. Followers regularly confirm their local work with the leader and stop any encode the leader no longer assigns to them.
 
-A worker that is unreachable but still heartbeating keeps its assigned jobs; lost dispatch responses are retried on that worker using the same job identity. Once a worker has been silent for `DISTRIBUTED_WORKER_TIMEOUT_SECONDS`, its jobs are requeued, and if it comes back still encoding, it stops as soon as it sees the job reassigned. Outputs use persistent hidden `.lock` files; do not remove those files while any node is running.
+A worker that is unreachable but still heartbeating keeps its assigned jobs; lost dispatch responses are retried on that worker using the same job identity. Once a worker has been silent for `DISTRIBUTED_WORKER_TIMEOUT_SECONDS`, its jobs are requeued, and if it comes back still encoding, it stops as soon as it sees the job reassigned. While an output is being written or deleted, a hidden `.<name>_conv.mkv.lock` file next to it guards it against other nodes; the file is removed once the job ends.
 
 Requirements:
 
 - `docker-compose.cluster.yml` is not shipped in this repo - it's your own node-specific compose file (ports, hostnames, `DISTRIBUTED_*` env vars per node). Create it yourself before running the commands below.
 - All participating nodes must mount the same media library at the same in-container `SOURCE_MOUNT` path.
-- All nodes must run the same version, and the shared filesystem must support cross-host advisory file locks and hard links.
+- All nodes must run the same version, and the shared filesystem must support cross-host POSIX byte-range locks and hard links. NFSv4 does (keep the default `local_lock=none`); a node on the file server itself shares locks with NFS clients. SMB/CIFS mounts are not supported for multi-node setups.
+- Converted files take the source file's mode and owner. When a node's mount maps users (NFS `root_squash`/`all_squash`, SMB `uid=`/`gid=`/`file_mode=`), the owner change may be refused; the job still succeeds and the file keeps the mount's owner, or `PUID`/`PGID` if the mount allows those.
 - `DISTRIBUTED_STATE_DIR` (by default inside `SOURCE_MOUNT`) must resolve to the same shared, writable directory on every node.
 - When upgrading from a version without the queue ledger, stop all nodes, upgrade them together, and start the previous leader first; wait for `queue.json` to appear in `DISTRIBUTED_STATE_DIR` before starting the others, or let the queue run empty before upgrading.
 - Every node must be reachable from every other node through `DISTRIBUTED_PUBLIC_URL`.

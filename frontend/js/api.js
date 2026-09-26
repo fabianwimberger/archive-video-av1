@@ -306,9 +306,7 @@ const svtParamsForm = {
         qm: 'enable-qm',
     },
 
-    // qm-min/qm-max/chroma-qm-* only round-trip via qmParams when they match its
-    // defaults; a divergent value is kept in extra and folded back into the qm
-    // block on output instead of getting dropped or duplicated.
+    // Divergent qm-* values stay in extra and are folded back into the qm block.
     qmKeys: ['enable-qm', 'qm-min', 'qm-max', 'chroma-qm-min', 'chroma-qm-max'],
     qmSubKeys: ['qm-min', 'qm-max', 'chroma-qm-min', 'chroma-qm-max'],
     qmParams: 'enable-qm=1:qm-min=0:qm-max=15:chroma-qm-min=8:chroma-qm-max=15',
