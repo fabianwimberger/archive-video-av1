@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.9.2] - 2026-09-26
+
+Converted files keep the source file's permissions, and output lock files no longer pile up next to them.
+
+### Fixes
+
+- Converted files take the source file's mode and owner instead of `0600` owned by whichever user the writing node runs as; `OUTPUT_FILE_MODE` and `PUID`/`PGID` are used when that is not possible, and mounts that refuse the change (NFS `root_squash`, SMB `uid=`/`gid=`) no longer matter for the job result
+- Hidden `.<name>_conv.mkv.lock` files are removed once a conversion or deletion ends, whether it succeeded, failed or was cancelled
+- Output locks now hold between a node writing to its local disk and nodes reaching the same files over NFS
+
+### Upgrading
+
+- Update every node together: nodes on v1.9.1 and v1.9.2 do not see each other's output locks
+- Lock files and `0600` outputs left by earlier versions stay in place; once the queue is empty, remove the leftover `.*_conv.mkv.lock` files and fix the modes of existing outputs
+
+### Documentation & Links
+
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.9.1...v1.9.2)
+
 ## [v1.9.1] - 2026-09-24
 
 Cluster ledger fix for nodes that reach the shared storage under different user IDs.
