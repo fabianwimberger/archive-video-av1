@@ -1,3 +1,5 @@
+"""File system operations for browsing and file management."""
+
 import logging
 import re
 from pathlib import Path
@@ -45,6 +47,7 @@ class FileService:
             return False
 
     async def browse_directory(self, path: Optional[str] = None) -> Dict[str, Any]:
+        """Browse directory and return files and subdirectories."""
         try:
             if path:
                 target_path = (self.source_mount / path).resolve()
@@ -147,6 +150,7 @@ class FileService:
             raise
 
     async def get_file_info(self, file_path: str) -> Dict[str, Any]:
+        """Get detailed information about a video file."""
         try:
             path = Path(file_path)
 
@@ -193,6 +197,7 @@ class FileService:
             return (preset.id if preset else None, reason)
 
     async def delete_converted_file(self, converted_path: str) -> bool:
+        """Delete a converted video file."""
         try:
             path = Path(converted_path)
 
@@ -226,6 +231,7 @@ class FileService:
             raise
 
     async def delete_file(self, file_path: str) -> bool:
+        """Delete a file (source or other)."""
         try:
             path = Path(file_path)
 
@@ -235,6 +241,7 @@ class FileService:
             if not path.exists() or not path.is_file():
                 raise ValueError("File does not exist")
 
+            # Safety check: Only allow deleting if converted file exists and is valid
             has_conv, conv_path = await has_converted_file(str(path))
             if not has_conv:
                 raise ValueError(

@@ -1,3 +1,5 @@
+"""AppState database model."""
+
 from sqlalchemy import Column, String, Text
 from app.database import Base
 

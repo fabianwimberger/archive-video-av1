@@ -1,3 +1,5 @@
+"""Job queue manager with background worker."""
+
 import asyncio
 import json
 import logging
@@ -57,13 +59,14 @@ class JobQueue:
                 # The wrapper spawns ffmpeg and helpers, so signal the whole group.
                 os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
 
+                # Give it a moment to terminate gracefully
                 await asyncio.sleep(0.5)
 
                 if self.current_process.returncode is None:
                     try:
                         os.killpg(os.getpgid(self.current_process.pid), signal.SIGKILL)
                     except ProcessLookupError:
-                        pass
+                        pass  # Process already gone
                 return True
             except ProcessLookupError:
                 logger.warning(f"Process {self.current_job_id} already terminated")
@@ -95,7 +98,7 @@ class JobQueue:
         self._wake_event = asyncio.Event()
         self._paused_event = asyncio.Event()
 
-        # A restart while paused stays paused.
+        # Rehydrate pause state from DB (restart under paused stays paused)
         async with AsyncSessionLocal() as db:
             from app.models.app_state import AppState
 

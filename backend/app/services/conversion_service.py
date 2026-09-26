@@ -1,3 +1,5 @@
+"""Conversion service for executing video conversions with progress tracking."""
+
 import asyncio
 import logging
 import os
@@ -36,6 +38,7 @@ class ConversionService:
         progress_callback: Callable,
         process_callback: Optional[Callable] = None,
     ) -> tuple[bool, str]:
+        """Execute video conversion with real-time progress tracking."""
         validate_conversion_settings(conversion_settings)
         source_file = str(validate_source_path(source_file))
         expected_output = Path(self.get_output_path(source_file))

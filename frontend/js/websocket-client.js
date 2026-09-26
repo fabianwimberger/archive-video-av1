@@ -75,6 +75,7 @@ class WebSocketClient {
                 this.emit('system', message);
                 break;
             case 'pong':
+                // Heartbeat response
                 break;
             default:
                 console.warn('Unknown message type:', type);

@@ -1,3 +1,5 @@
+"""File management API endpoints."""
+
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from app.services.file_service import file_service

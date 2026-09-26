@@ -1,3 +1,5 @@
+"""Job database model."""
+
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column,

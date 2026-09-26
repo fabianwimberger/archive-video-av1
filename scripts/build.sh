@@ -78,6 +78,7 @@ build_all() {
     local CFLAGS="${BASE_CFLAGS} ${PFLAGS}"
     local LDFLAGS="${BASE_LDFLAGS} ${PFLAGS}"
 
+    # Build SVT-AV1
     cd /build/SVT-AV1-v${SVT_AV1_VERSION}
     rm -rf Build && mkdir Build && cd Build
     cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -87,11 +88,13 @@ build_all() {
     cp /build/SVT-AV1-v${SVT_AV1_VERSION}/Bin/Release/libSvtAv1Enc.a /usr/local/lib/
     cp ../Source/API/*.h /usr/local/include/
 
+    # Create pkgconfig
     mkdir -p /usr/local/lib/pkgconfig
     printf '%s\n' "prefix=/usr/local" "exec_prefix=\${prefix}" "libdir=\${prefix}/lib" "includedir=\${prefix}/include" "" "Name: SvtAv1Enc" "Description: SVT-AV1 encoder" "Version: ${SVT_AV1_VERSION}" "Libs: -L\${libdir} -lSvtAv1Enc" "Libs.private: -lpthread -lm" "Cflags: -I\${includedir}" > /usr/local/lib/pkgconfig/SvtAv1Enc.pc
     pkg-config --exists SvtAv1Enc || { echo "ERROR: SvtAv1Enc.pc not found"; exit 1; }
     echo "SvtAv1Enc found: $(pkg-config --modversion SvtAv1Enc)"
 
+    # Build FFmpeg
     cd /build/FFmpeg
     make clean 2>/dev/null || true
     export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
@@ -121,6 +124,7 @@ build_all() {
     make -j$(nproc) install
 }
 
+# Run PGO training
 train_pgo() {
     echo "=== PGO Training ==="
     mkdir -p "$PGO_DIR"

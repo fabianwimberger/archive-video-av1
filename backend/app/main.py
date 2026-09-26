@@ -1,3 +1,5 @@
+"""Main FastAPI application."""
+
 import asyncio
 import logging
 from pathlib import Path

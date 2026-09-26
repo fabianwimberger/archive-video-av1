@@ -1,3 +1,5 @@
+"""Job management API endpoints."""
+
 import json
 import logging
 import asyncio
@@ -62,6 +64,7 @@ async def _resolve_job_settings(
     settings_override: Optional[dict],
     source_file: str,
 ):
+    """Resolve job settings, preset link, and snapshot name."""
     preset = None
     if preset_id is not None:
         result = await db.execute(select(Preset).where(Preset.id == preset_id))

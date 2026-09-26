@@ -1,3 +1,5 @@
+"""Tests for the /files API routes."""
+
 import pytest
 import asyncio
 

@@ -1,3 +1,5 @@
+"""Grain and denoise estimator for video files."""
+
 import asyncio
 import logging
 import re
@@ -72,6 +74,7 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
     except ValueError:
         bitrate = 0
 
+    # Sample at 15%, 35%, 55%, 75% of duration
     samples = [duration * p / 100 for p in [15, 35, 55, 75]]
     y_values = []
     u_values = []
@@ -164,6 +167,7 @@ async def estimate_grain(file_path: str) -> Dict[str, Any]:
             "reason": "Moderate luma texture (grainy film)",
         }
 
+    # High detail content
     if y_norm >= 60.0:
         if bitrate_per_mp > 0 and bitrate_per_mp < 3000:
             return {

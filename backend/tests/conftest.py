@@ -1,3 +1,5 @@
+"""Test configuration and fixtures."""
+
 import asyncio
 import os
 import tempfile

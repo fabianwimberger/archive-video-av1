@@ -1,3 +1,5 @@
+"""FFprobe wrapper utilities for extracting video metadata."""
+
 import asyncio
 import json
 import logging
@@ -7,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
+    """Get video metadata using ffprobe."""
     try:
         process = await asyncio.create_subprocess_exec(
             "ffprobe",
@@ -38,6 +41,7 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
 
         format_info = data.get("format", {})
 
+        # Detect HDR
         color_transfer = video_stream.get("color_transfer", "")
         color_primaries = video_stream.get("color_primaries", "")
         is_hdr = color_transfer in ("smpte2084", "arib-std-b67")
@@ -48,6 +52,7 @@ async def get_video_info(file_path: str) -> Optional[Dict[str, Any]]:
         elif color_transfer == "arib-std-b67":
             hdr_format = "HLG"
 
+        # Check for Dolby Vision side data
         if is_hdr or not hdr_format:
             side_data_list = video_stream.get("side_data_list", [])
             for sd in side_data_list:
@@ -87,7 +92,10 @@ def parse_fps(fps_string: str) -> float:
 
 
 async def has_converted_file(source_file: str) -> tuple[bool, Optional[str]]:
-    """Output is always Matroska (.mkv), regardless of source container."""
+    """Check if a converted version of the file exists.
+
+    Output is always Matroska (.mkv), regardless of source container.
+    """
     from pathlib import Path
 
     source_path = Path(source_file)

@@ -1,3 +1,5 @@
+"""Queue management API endpoints."""
+
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy import select

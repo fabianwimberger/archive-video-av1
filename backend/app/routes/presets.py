@@ -1,3 +1,5 @@
+"""Preset management API endpoints."""
+
 import json
 import logging
 from datetime import datetime, timezone
@@ -143,6 +145,7 @@ async def delete_all_presets(db: AsyncSession = Depends(get_db)):
     default_id = await _get_default_preset_id(db)
     default_preset = await db.get(Preset, default_id)
     if default_preset and not default_preset.is_builtin:
+        # Reset to Default built-in
         default_result = await db.execute(
             select(Preset).where(Preset.name == "Default")
         )
@@ -165,6 +168,7 @@ async def delete_preset(preset_id: int, db: AsyncSession = Depends(get_db)):
 
     default_id = await _get_default_preset_id(db)
     if default_id == preset_id:
+        # Reset to Default built-in
         default_result = await db.execute(
             select(Preset).where(Preset.name == "Default")
         )
