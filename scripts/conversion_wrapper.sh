@@ -152,12 +152,8 @@ probe_ordinal_for_index() {
 
 # Encode to TEMP_DIR (fast local storage) when available; mkvmerge remuxes
 # into OUTPUT_FILE afterwards, so the two don't need to share a filesystem.
+# The caller holds the output lock for as long as this script runs.
 output_dir="$(dirname "$OUTPUT_FILE")"
-exec 9>>"${output_dir}/.$(basename "$OUTPUT_FILE").lock" || exit 1
-if ! flock -n 9; then
-    echo "ERROR:Conversion output is in use"
-    exit 1
-fi
 if [[ -e "$OUTPUT_FILE" || -L "$OUTPUT_FILE" ]]; then
     echo "ERROR:Conversion output already exists"
     exit 1

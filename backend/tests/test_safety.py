@@ -1,7 +1,9 @@
 import asyncio
 import json
 from pathlib import Path
+import os
 import subprocess
+import sys
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,7 +14,7 @@ from app.services.conversion_service import ConversionService
 from app.services.distributed import DistributedService, PeerNode
 from app.services.file_service import file_service
 from app.services.websocket_manager import WebSocketManager
-from app.utils.file_safety import output_lock
+from app.utils.file_safety import OutputInUse, output_lock
 from .test_files_routes import record_conversion
 
 
@@ -117,15 +119,60 @@ def test_node_specific_job_lookup_does_not_forward(seeded_client, videos, monkey
     forward.assert_not_called()
 
 
-def test_output_lock_is_shared_with_shell(videos):
+def test_output_lock_excludes_other_holders_and_is_removed(videos):
     output = videos / "source_conv.mkv"
+    lock_path = videos / ".source_conv.mkv.lock"
+    probe = (
+        "import sys; from pathlib import Path; "
+        "from app.utils.file_safety import output_lock\n"
+        "try:\n"
+        "    with output_lock(Path(sys.argv[1])): pass\n"
+        "except ValueError: sys.exit(3)\n"
+    )
     with output_lock(output):
-        result = subprocess.run(
-            ["flock", "-n", str(videos / ".source_conv.mkv.lock"), "true"]
+        assert lock_path.exists()
+        with pytest.raises(OutputInUse):
+            with output_lock(output):
+                pass
+        other = subprocess.run(
+            [sys.executable, "-c", probe, str(output)],
+            cwd=Path(__file__).resolve().parents[1],
         )
-        assert result.returncode != 0
+        assert other.returncode == 3
+    assert not lock_path.exists()
+    with pytest.raises(RuntimeError):
+        with output_lock(output):
+            raise RuntimeError
+    assert not lock_path.exists()
+
+
+@pytest.mark.parametrize("keep_link", [False, True])
+def test_output_lock_retries_when_lock_file_was_replaced(
+    videos, monkeypatch, keep_link
+):
+    # Simulates losing the race to a holder that unlinked the lock file between
+    # our open() and our lock; with keep_link the stale inode stays linked
+    # elsewhere, so only the inode comparison can notice.
+    output = videos / "source_conv.mkv"
+    lock_path = videos / ".source_conv.mkv.lock"
+    real_open = os.open
+    opened = []
+
+    def racing_open(path, flags, mode=0o777):
+        fd = real_open(path, flags, mode)
+        opened.append(os.fstat(fd).st_ino)
+        if len(opened) == 1:
+            if keep_link:
+                os.link(lock_path, videos / "stale.lock")
+            os.unlink(lock_path)
+            os.close(real_open(lock_path, os.O_CREAT | os.O_WRONLY, 0o666))
+        return fd
+
+    monkeypatch.setattr(os, "open", racing_open)
     with output_lock(output):
-        pass
+        assert lock_path.stat().st_ino == opened[-1] != opened[0]
+    assert len(opened) == 2
+    assert not lock_path.exists()
 
 
 def test_remote_submission_is_idempotent(seeded_client, videos):
@@ -262,9 +309,11 @@ async def test_cancellation_terminates_process_group(videos, monkeypatch):
         if child_file.exists():
             break
         await asyncio.sleep(0.01)
+    assert (videos / ".source_conv.mkv.lock").exists()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=5)
+    assert not (videos / ".source_conv.mkv.lock").exists()
     stat = Path(f"/proc/{int(child_file.read_text())}/stat")
     # SIGTERM delivery is asynchronous, so a loaded machine may still show the
     # child as running for a moment.
@@ -290,3 +339,48 @@ def test_converted_output_cannot_be_queued_as_source(videos):
         ValueError, match="Converted outputs cannot be queued as sources"
     ):
         validate_source_path(str(converted))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exit_code,succeeded", [(0, True), (1, False)])
+async def test_conversion_removes_output_lock(videos, exit_code, succeeded):
+    source = videos / "source.mkv"
+    source.write_bytes(b"source")
+    lock_path = videos / ".source_conv.mkv.lock"
+    wrapper = videos / "wrapper.sh"
+    seen = videos / "seen"
+    wrapper.write_text(
+        f"#!/bin/bash\n[[ -e '{lock_path}' ]] && touch '{seen}'\nexit {exit_code}\n"
+    )
+    wrapper.chmod(0o755)
+    service = ConversionService()
+    service.wrapper_script = str(wrapper)
+    success, _log = await service.convert_file(
+        1,
+        str(source),
+        str(videos / "source_conv.mkv"),
+        {"crf": 26, "encoder_preset": 4, "svt_params": "", "audio_bitrate": "96k"},
+        AsyncMock(),
+    )
+    assert success is succeeded
+    assert seen.exists()
+    assert not lock_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_conversion_refuses_locked_output(videos):
+    source = videos / "source.mkv"
+    source.write_bytes(b"source")
+    service = ConversionService()
+    service.wrapper_script = "/bin/false-never-run"
+    with output_lock(videos / "source_conv.mkv"):
+        success, log = await service.convert_file(
+            1,
+            str(source),
+            str(videos / "source_conv.mkv"),
+            {"crf": 26, "encoder_preset": 4, "svt_params": "", "audio_bitrate": "96k"},
+            AsyncMock(),
+        )
+        assert (videos / ".source_conv.mkv.lock").exists()
+    assert success is False and "in use" in log
+    assert not (videos / ".source_conv.mkv.lock").exists()
