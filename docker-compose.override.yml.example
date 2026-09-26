@@ -17,6 +17,10 @@ services:
       SUBTITLE_TRACK_MODE: preferred
       PREFERRED_AUDIO_LANGUAGES: ger,deu,de,eng,en
       PREFERRED_SUBTITLE_LANGUAGES: ger,deu,de,eng,en
+      # Fallbacks when a converted file can't take the source file's mode/owner.
+      # OUTPUT_FILE_MODE: "0644"
+      # PUID: "1000"
+      # PGID: "1000"
       # DISTRIBUTED_ENABLED: "true"
       # DISTRIBUTED_NODE_ID: node-a
       # DISTRIBUTED_NODE_NAME: Node A

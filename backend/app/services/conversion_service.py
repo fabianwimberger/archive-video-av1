@@ -114,6 +114,9 @@ class ConversionService:
                             "SUBTITLE_TRACK_MODE",
                             "PREFERRED_AUDIO_LANGUAGES",
                             "PREFERRED_SUBTITLE_LANGUAGES",
+                            "OUTPUT_FILE_MODE",
+                            "PUID",
+                            "PGID",
                         )
                         if k in os.environ
                     },

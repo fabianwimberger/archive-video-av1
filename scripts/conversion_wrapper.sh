@@ -16,6 +16,9 @@ AUDIO_TRACK_MODE="${AUDIO_TRACK_MODE:-preferred}"
 SUBTITLE_TRACK_MODE="${SUBTITLE_TRACK_MODE:-preferred}"
 PREFERRED_AUDIO_LANGUAGES="${PREFERRED_AUDIO_LANGUAGES:-ger,deu,de,eng,en}"
 PREFERRED_SUBTITLE_LANGUAGES="${PREFERRED_SUBTITLE_LANGUAGES:-ger,deu,de,eng,en}"
+OUTPUT_FILE_MODE="${OUTPUT_FILE_MODE:-0644}"
+PUID="${PUID:-}"
+PGID="${PGID:-}"
 
 # --- TRAP SIGNALS ---
 
@@ -147,6 +150,23 @@ probe_ordinal_for_index() {
     done
 }
 
+# mktemp creates 0600 files owned by whoever runs this script: root on a local
+# disk, a squashed or mapped uid on NFS/SMB. Mirror the source instead, and
+# never fail the job over it, since such mounts may refuse chown or chmod.
+match_source_permissions() {
+    local target="$1"
+    if ! chmod --reference="$INPUT_FILE" -- "$target" 2>/dev/null \
+        && ! chmod "$OUTPUT_FILE_MODE" -- "$target" 2>/dev/null; then
+        echo "STATUS:Could not set output file mode; keeping $(stat -c %a -- "$target")"
+    fi
+    if chown --reference="$INPUT_FILE" -- "$target" 2>/dev/null; then
+        return 0
+    fi
+    if [[ -n "$PUID$PGID" ]] && chown "${PUID}:${PGID}" -- "$target" 2>/dev/null; then
+        return 0
+    fi
+    echo "STATUS:Could not set output file owner; keeping $(stat -c %U:%G -- "$target")"
+}
 
 # --- MAIN CONVERSION LOGIC ---
 
@@ -663,6 +683,7 @@ pending_output=$(mktemp "${output_dir}/.$(basename "$OUTPUT_FILE").XXXXXXXX.tmp"
 mkvmerge -o "$pending_output" --global-tags "$TAGS_XML" "$tmp_video" "$tmp_audio" >/dev/null 2>&1
 mkvmerge_status=$?
 rm -f "$TAGS_XML" "$tmp_video" "$tmp_audio"
+match_source_permissions "$pending_output"
 
 output_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$pending_output" 2>/dev/null)
 source_duration=$(probe_get 'format\.duration')

@@ -223,3 +223,105 @@ def test_crop_detect_symmetry_check_runs_synthetic_samples_correctly():
             check=True,
         )
         assert result.stdout.strip() == expected, crop_value
+
+
+def _run_match_source_permissions(tmp_path, source_mode, env=None, path=None):
+    script = WRAPPER.read_text()
+    start = script.index("match_source_permissions() {")
+    end = script.index("\n}\n", start) + 3
+    source = tmp_path / "source.mkv"
+    target = tmp_path / ".source_conv.mkv.XXXX.tmp"
+    source.write_bytes(b"source")
+    target.write_bytes(b"output")
+    source.chmod(source_mode)
+    target.chmod(0o600)
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            script[start:end] + 'match_source_permissions "$1"',
+            "-",
+            target,
+        ],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{path}:/usr/bin:/bin" if path else "/usr/bin:/bin",
+            "INPUT_FILE": str(source),
+            "OUTPUT_FILE_MODE": "0644",
+            **(env or {}),
+        },
+    )
+    return result, source, target
+
+
+@pytest.mark.parametrize("mode", [0o644, 0o664, 0o640])
+def test_output_mirrors_source_mode_and_owner(tmp_path, mode):
+    result, source, target = _run_match_source_permissions(tmp_path, mode)
+    assert result.returncode == 0, result.stdout
+    assert target.stat().st_mode & 0o7777 == mode
+    assert (target.stat().st_uid, target.stat().st_gid) == (
+        source.stat().st_uid,
+        source.stat().st_gid,
+    )
+    assert "STATUS:" not in result.stdout
+
+
+def _stub(bin_dir, name, body):
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / name
+    stub.write_text(f"#!/bin/bash\n{body}\n")
+    stub.chmod(0o755)
+
+
+def test_output_owner_falls_back_to_puid_pgid(tmp_path):
+    # A squashing mount refuses chown to the source owner but may still allow
+    # the configured one.
+    bin_dir = tmp_path / "bin"
+    calls = tmp_path / "calls"
+    _stub(
+        bin_dir,
+        "chown",
+        f'echo "$*" >> "{calls}"\n[[ "$1" == --reference=* ]] && exit 1\nexit 0',
+    )
+    result, _source, _target = _run_match_source_permissions(
+        tmp_path, 0o644, env={"PUID": "1000", "PGID": "1001"}, path=bin_dir
+    )
+    assert result.returncode == 0
+    assert calls.read_text().splitlines()[-1].startswith("1000:1001 -- ")
+    assert "STATUS:" not in result.stdout
+
+
+def test_output_permission_failures_do_not_fail_the_job(tmp_path):
+    # SMB mounts with fixed uid=/gid=/file_mode= refuse both calls.
+    bin_dir = tmp_path / "bin"
+    _stub(bin_dir, "chown", "exit 1")
+    _stub(bin_dir, "chmod", "exit 1")
+    result, _source, target = _run_match_source_permissions(
+        tmp_path, 0o644, env={"PUID": "1000", "PGID": "1000"}, path=bin_dir
+    )
+    assert result.returncode == 0
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert "Could not set output file mode" in result.stdout
+    assert "Could not set output file owner" in result.stdout
+
+
+def test_output_mode_falls_back_to_configured_mode(tmp_path):
+    bin_dir = tmp_path / "bin"
+    _stub(
+        bin_dir,
+        "chmod",
+        '[[ "$1" == --reference=* ]] && exit 1\nexec /usr/bin/chmod "$@"',
+    )
+    result, _source, target = _run_match_source_permissions(
+        tmp_path, 0o640, env={"OUTPUT_FILE_MODE": "0664"}, path=bin_dir
+    )
+    assert result.returncode == 0
+    assert target.stat().st_mode & 0o777 == 0o664
+
+
+def test_wrapper_applies_source_permissions_before_publishing():
+    script = WRAPPER.read_text()
+    assert script.index('match_source_permissions "$pending_output"') < script.index(
+        'ln -- "$pending_output" "$OUTPUT_FILE"'
+    )
