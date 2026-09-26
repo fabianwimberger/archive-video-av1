@@ -466,3 +466,31 @@ class TestClusterMulticast:
             listener.close()
 
         assert [peer.node_id for peer in distributed_service.peers()] == ["server"]
+
+
+@pytest.mark.asyncio
+async def test_cancel_tolerates_process_exiting_before_sigkill(monkeypatch):
+    import os
+    import signal
+    from types import SimpleNamespace
+
+    sent = []
+
+    def killpg(_pgid, sig):
+        sent.append(sig)
+        if sig == signal.SIGKILL:
+            raise ProcessLookupError
+
+    async def no_wait(_seconds):
+        pass
+
+    monkeypatch.setattr(os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(os, "killpg", killpg)
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    queue = JobQueue()
+    queue.current_job_id = 7
+    queue.current_process = SimpleNamespace(pid=1234, returncode=None)
+
+    assert await queue.cancel_current_job() is True
+    assert sent == [signal.SIGTERM, signal.SIGKILL]
+    assert queue.cancelled_job_ids[7] == "Cancelled by user"

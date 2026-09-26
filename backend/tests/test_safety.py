@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import json
 from pathlib import Path
 import os
@@ -146,13 +147,10 @@ def test_output_lock_excludes_other_holders_and_is_removed(videos):
     assert not lock_path.exists()
 
 
-@pytest.mark.parametrize("keep_link", [False, True])
-def test_output_lock_retries_when_lock_file_was_replaced(
-    videos, monkeypatch, keep_link
-):
-    # Simulates losing the race to a holder that unlinked the lock file between
-    # our open() and our lock; with keep_link the stale inode stays linked
-    # elsewhere, so only the inode comparison can notice.
+@pytest.mark.parametrize("race", ["replaced", "linked", "removed"])
+def test_output_lock_retries_when_lock_file_was_replaced(videos, monkeypatch, race):
+    # The lock file is swapped or removed between open() and lock; "linked"
+    # keeps the stale inode alive so only the inode comparison can notice.
     output = videos / "source_conv.mkv"
     lock_path = videos / ".source_conv.mkv.lock"
     real_open = os.open
@@ -162,10 +160,11 @@ def test_output_lock_retries_when_lock_file_was_replaced(
         fd = real_open(path, flags, mode)
         opened.append(os.fstat(fd).st_ino)
         if len(opened) == 1:
-            if keep_link:
+            if race == "linked":
                 os.link(lock_path, videos / "stale.lock")
             os.unlink(lock_path)
-            os.close(real_open(lock_path, os.O_CREAT | os.O_WRONLY, 0o666))
+            if race != "removed":
+                os.close(real_open(lock_path, os.O_CREAT | os.O_WRONLY, 0o666))
         return fd
 
     monkeypatch.setattr(os, "open", racing_open)
@@ -173,6 +172,36 @@ def test_output_lock_retries_when_lock_file_was_replaced(
         assert lock_path.stat().st_ino == opened[-1] != opened[0]
     assert len(opened) == 2
     assert not lock_path.exists()
+
+
+def _open_fds():
+    return len(os.listdir("/proc/self/fd"))
+
+
+def test_output_lock_tolerates_refused_chmod(videos, monkeypatch):
+    def refuse(*_args):
+        raise PermissionError
+
+    monkeypatch.setattr(os, "fchmod", refuse)
+    with output_lock(videos / "source_conv.mkv"):
+        pass
+    assert not (videos / ".source_conv.mkv.lock").exists()
+
+
+@pytest.mark.parametrize("target", ["fcntl", "stat"])
+def test_output_lock_errors_propagate_without_leaking(videos, monkeypatch, target):
+    import fcntl
+
+    def fail(*_args, **_kwargs):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(fcntl if target == "fcntl" else os, target, fail)
+    before = _open_fds()
+    with pytest.raises(OSError) as info:
+        with output_lock(videos / "source_conv.mkv"):
+            pass
+    assert not isinstance(info.value, OutputInUse)
+    assert _open_fds() == before
 
 
 def test_remote_submission_is_idempotent(seeded_client, videos):
