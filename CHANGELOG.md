@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.9.4] - 2026-10-02
+
+Updates the API server and asynchronous database dependencies.
+
+### Dependencies
+
+- FastAPI 0.141.1 → 0.142.2
+- SQLAlchemy 2.0.54 → 2.1.2, keeping the `asyncio` extra
+- Uvicorn 0.53.0 → 0.54.0
+
+### Documentation & Links
+
+- [README](https://github.com/fabianwimberger/archive-video-av1#readme)
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.9.3...v1.9.4)
+
 ## [v1.9.3] - 2026-10-01
 
 Declares SQLAlchemy's asyncio dependencies explicitly so asynchronous database access has greenlet available.
