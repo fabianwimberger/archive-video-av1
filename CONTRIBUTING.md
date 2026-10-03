@@ -6,6 +6,20 @@
 - **Features:** Open an issue using the feature-request template.
 - **PRs:** Fork, branch from `develop`, keep the change focused, open against `develop`.
 
+## Local development
+
+Create a virtual environment and install the backend with its development tools:
+
+```sh
+python -m venv .venv
+.venv/bin/python -m pip install -e './backend[dev]'
+make lint
+make test
+.venv/bin/python -m mypy --config-file backend/pyproject.toml backend/
+```
+
+Run `make format` to format Python files.
+
 ## Conventions
 
 - Prefix commits semantically (`feat:`, `fix:`, `docs:`, `ci:`, `deps:`).

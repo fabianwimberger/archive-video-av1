@@ -1,4 +1,4 @@
-.PHONY: all build up down clean lint format cluster-build cluster-up cluster-down cluster-recreate node-build node-up node-down node-recreate
+.PHONY: all build up down clean lint format test cluster-build cluster-up cluster-down cluster-recreate node-build node-up node-down node-recreate
 
 # Enable PGO, LTO, and native arch optimization for local builds by default
 ENABLE_PGO ?= true
@@ -6,6 +6,7 @@ ENABLE_LTO ?= true
 ARCH_FLAGS ?= -march=native
 CLUSTER_COMPOSE_FILES := -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.build.yml -f docker-compose.cluster.yml
 SERVICE ?= convert-service
+PYTHON ?= .venv/bin/python
 
 all: build
 
@@ -51,8 +52,11 @@ clean:
 
 lint:
 	@echo "Running linters..."
-	@ruff check backend/ scripts/
+	@$(PYTHON) -m ruff check --config backend/pyproject.toml backend/ scripts/
 
 format:
 	@echo "Formatting code..."
-	@ruff format backend/ scripts/
+	@$(PYTHON) -m ruff format --config backend/pyproject.toml backend/ scripts/
+
+test:
+	@$(PYTHON) -m pytest -c backend/pyproject.toml backend/tests --cov=app --cov-report=term-missing
