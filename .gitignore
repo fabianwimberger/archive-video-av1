@@ -18,6 +18,12 @@ __pycache__/
 venv/
 env/
 .venv/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
 
 # Frontend vendor (downloaded at build time)
 frontend/vendor/

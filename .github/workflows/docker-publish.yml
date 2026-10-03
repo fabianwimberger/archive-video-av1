@@ -12,7 +12,6 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - 'scripts/**'
-      - 'requirements.txt'
 
 env:
   REGISTRY: ghcr.io

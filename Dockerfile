@@ -121,13 +121,13 @@ RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-
     && echo "  - Opus (BSD-3-Clause): https://opus-codec.org/" >> /usr/share/licenses/FFmpeg-LICENSE \
     && echo "================================================================================" >> /usr/share/licenses/FFmpeg-LICENSE
 
-COPY backend/requirements.txt .
+COPY backend/pyproject.toml .
+COPY backend/app/ /app/app/
 RUN python3 -m venv /app/venv \
-    && pip install --no-cache-dir -r requirements.txt \
+    && /app/venv/bin/python -m pip install --no-cache-dir . \
     && mkdir -p /app/data /app/temp
 
 COPY scripts/ /app/scripts/
-COPY backend/app/ /app/app/
 COPY backend/alembic/ /app/alembic/
 COPY backend/alembic.ini /app/
 COPY frontend/ /app/frontend/
