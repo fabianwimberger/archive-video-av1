@@ -23,17 +23,19 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install linting tools
-        run: pip install ruff==0.15.22 mypy
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -e './backend[dev]'
 
       - name: Lint with ruff
-        run: ruff check backend/ scripts/
+        run: make lint
 
       - name: Format check with ruff
-        run: ruff format --check backend/ scripts/
+        run: .venv/bin/python -m ruff format --check --config backend/pyproject.toml backend/ scripts/
 
       - name: Type check with mypy
-        run: mypy backend/ --ignore-missing-imports
+        run: .venv/bin/python -m mypy --config-file backend/pyproject.toml backend/
 
   test:
     name: Test
@@ -51,12 +53,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        working-directory: backend
-        run: pip install -r requirements.txt
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -e './backend[dev]'
 
       - name: Run tests
         working-directory: backend
-        run: pytest -v --cov=app --cov-report=xml
+        run: ../.venv/bin/python -m pytest -v --cov=app --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v7
