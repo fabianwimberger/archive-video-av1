@@ -1,9 +1,9 @@
+# Video Conversion Service
+
 [![CI](https://github.com/fabianwimberger/archive-video-av1/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/archive-video-av1/actions)
 [![codecov](https://codecov.io/gh/fabianwimberger/archive-video-av1/branch/main/graph/badge.svg)](https://codecov.io/gh/fabianwimberger/archive-video-av1)
 [![Docker](https://github.com/fabianwimberger/archive-video-av1/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/fabianwimberger/archive-video-av1/pkgs/container/archive-video-av1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-# Video Conversion Service
 
 A self-hosted, web-based video conversion service running in Docker. Converts video files to AV1 (via SVT-AV1) with real-time progress tracking, batch processing, and a browser UI.
 
@@ -33,32 +33,21 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
 - **Configurable track selection** (default: German > English > first available)
 - **Skips re-encoding** if source is already AV1
 - **History view** with filtering, search, retry, and per-job settings inspection
-- **Mobile and desktop layouts** with touch-friendly controls and compact queue/history views
+- **Auto Speed / Auto Grain** — analyzes the selected file and suggests a preset or grain settings
+- **Cleanup of originals** — delete a source once its conversion is recorded and the sizes still match
 
 ## Quick Start
 
-### Option 1: Using Pre-built Image (Recommended)
-
-Pre-built images support both **AMD64** and **ARM64** architectures. They ship a generic FFmpeg build (no PGO, no `-march=native`) so the same image runs on any host; for a PGO-optimized build, use [Option 2](#option-2-build-from-source-with-pgo-optimization).
-
-**Docker Compose:**
-
 ```bash
-# Clone the repository for docker-compose.yml
 git clone https://github.com/fabianwimberger/archive-video-av1.git
 cd archive-video-av1
-
-# Configure volume mount in docker-compose.yml
-# volumes:
-#   - /path/to/your/videos:/videos
-
-# Run with pre-built image
+# set your library in docker-compose.yml: /path/to/your/videos:/videos
 docker compose up -d
-
-# Open UI at http://localhost:8000
 ```
 
-**Or with docker run:**
+Open `http://localhost:8000`. The pre-built image runs on AMD64 and ARM64 and ships a generic FFmpeg build. Tags: `latest`, `main`, `vX.Y.Z`, `vX.Y`, `vX`, and the short commit SHA.
+
+Without Compose:
 
 ```bash
 docker run -d \
@@ -67,74 +56,18 @@ docker run -d \
   -p 8000:8000 \
   -v /path/to/your/videos:/videos \
   -v archive-video-av1-data:/app/data \
-  -e TZ=UTC \
-  -e SOURCE_MOUNT=/videos \
-  -e LOG_LEVEL=INFO \
-  -e AUDIO_TRACK_MODE=preferred \
-  -e SUBTITLE_TRACK_MODE=preferred \
-  -e PREFERRED_AUDIO_LANGUAGES=ger,deu,de,eng,en \
-  -e PREFERRED_SUBTITLE_LANGUAGES=ger,deu,de,eng,en \
   ghcr.io/fabianwimberger/archive-video-av1:latest
 ```
 
-### Option 2: Build from Source (with PGO optimization)
+### Build from source
+
+`make build` compiles FFmpeg with PGO, LTO and `-march=native` for the host it runs on:
 
 ```bash
-# Clone the repository
-git clone https://github.com/fabianwimberger/archive-video-av1.git
-cd archive-video-av1
-
-# Copy the override file to configure your video path
-cp docker-compose.override.yml.example docker-compose.override.yml
-
-# Edit the override file to set your video path:
-# volumes:
-#   - /path/to/your/videos:/videos
-
-# Build and run (PGO enabled by default for maximum performance)
+cp docker-compose.override.yml.example docker-compose.override.yml   # set your video path here
 make build
 make up
-
-# Or using docker compose directly:
-# docker compose build --build-arg ENABLE_PGO=true --build-arg ENABLE_LTO=true --build-arg ARCH_FLAGS=-march=native
-# docker compose up -d
-
-# Open UI at http://localhost:8000
 ```
-
-### Available Image Tags
-
-The following image tags are available from `ghcr.io/fabianwimberger/archive-video-av1`:
-
-| Tag | Description |
-|-----|-------------|
-| `main` | Latest development build from main branch |
-| `v1.2.3` | Specific release version |
-| `v1.2` | Latest patch release in the v1.2.x series |
-| `v1` | Latest minor release in the v1.x.x series |
-| `<short-sha>` | Specific commit SHA (e.g., `abc1234`)
-
-### Updating
-
-```bash
-# Pull latest image
-docker compose pull
-docker compose up -d
-
-# Or with docker run
-docker pull ghcr.io/fabianwimberger/archive-video-av1:latest
-docker restart convert-service
-```
-
-## Web UI
-
-Open `http://localhost:8000` after starting the container.
-
-- **Convert** — browse mounted `.mkv`/`.mp4` files, search within the current folder, select unconverted files for encoding, or select converted originals for cleanup.
-- **Settings** — choose a preset, adjust CRF, encoder speed, SVT-AV1 parameters, audio bitrate, crop detection, and maximum resolution.
-- **Auto Speed / Auto Grain** — analyze the selected file and apply a suggested preset or grain settings.
-- **Active Queue** — watch running jobs, cluster status, pause or resume processing, cancel jobs, clear queued work, and inspect logs for active encodes.
-- **History** — filter completed, failed, or cancelled jobs; inspect settings and logs; retry jobs; save settings as a preset; export the current page to CSV.
 
 ## How It Works
 
@@ -183,85 +116,11 @@ Presets are stored in the SQLite database and survive restarts.
 | `JOB_HISTORY_RETENTION_DAYS` | `0` | Delete finished jobs older than N days (`0` = keep forever) |
 | `JOB_HISTORY_MAX_ROWS` | `0` | Maximum number of finished jobs to keep (`0` = unlimited) |
 | `DISTRIBUTED_ENABLED` | `false` | Enable LAN peer discovery and remote job delegation |
-| `DISTRIBUTED_NODE_ID` | container hostname | Stable node identifier advertised to peers |
-| `DISTRIBUTED_NODE_NAME` | `DISTRIBUTED_NODE_ID` | Display name for this worker node |
-| `DISTRIBUTED_PUBLIC_URL` | `http://<hostname>:8000` | URL other nodes use to reach this service |
-| `DISTRIBUTED_LEADER_URL` | empty | Optional pinned leader URL; when empty, nodes elect a live leader automatically |
-| `DISTRIBUTED_PEERS` | empty | Comma-separated peer URLs used when multicast discovery is unavailable |
-| `DISTRIBUTED_DISCOVERY_GROUP` | `239.255.42.99` | Multicast group for peer discovery |
-| `DISTRIBUTED_DISCOVERY_PORT` | `9988` | UDP port for peer discovery |
-| `DISTRIBUTED_HEARTBEAT_SECONDS` | `5` | Peer heartbeat and coordination interval |
-| `DISTRIBUTED_PROGRESS_SECONDS` | `1` | Remote worker progress sync interval |
-| `DISTRIBUTED_PEER_TTL_SECONDS` | `20` | Seconds before a silent peer is removed |
-| `DISTRIBUTED_WORKER_TIMEOUT_SECONDS` | `120` | Seconds an unreachable worker may stay silent before the leader requeues its active job |
-| `DISTRIBUTED_MAX_REQUEUES` | `3` | Times a job is requeued after losing its worker before it is marked failed |
-| `DISTRIBUTED_STATE_DIR` | `<SOURCE_MOUNT>/.archive-video-av1` | Shared directory holding the cluster queue ledger; must be the same storage on every node |
 | `TZ` | `UTC` | Container timezone |
 
 ## Distributed Processing
 
-Distributed mode lets several trusted LAN devices run the container and share AV1 jobs. Queue jobs from any node; non-leader nodes forward queue changes to the current leader, the leader delegates pending work to discovered idle peers, and every node shows the same cluster-wide active queue with worker assignments. By default, nodes use a deterministic tie-break when no leader is known, then keep the current leader until it disappears. Set `DISTRIBUTED_LEADER_URL` only when you want to pin one coordinator.
-
-Cluster state is shown in the Active Queue panel and is also available at `/api/cluster/status`. Active job listings include peer jobs by default; pass `cluster=false` to `/api/jobs` when a node-local view is needed.
-
-Only the leader changes the queue. It mirrors the queue to a ledger file in `DISTRIBUTED_STATE_DIR` after every change, and a node that becomes leader loads the queue from that ledger instead of its own database. A node that was offline therefore never resumes jobs that were deleted or finished elsewhere in the meantime, even when it comes back alone. While a new leader is taking over, queue changes are rejected with `503` for a few seconds.
-
-A node that stops cleanly tells its peers it is leaving, so the next leader takes over and requeues the job it was running right away. If a node disappears without notice, the leader requeues its job once the node has been silent for `DISTRIBUTED_WORKER_TIMEOUT_SECONDS`. A job that keeps losing its worker is marked failed after `DISTRIBUTED_MAX_REQUEUES` attempts. Followers regularly confirm their local work with the leader and stop any encode the leader no longer assigns to them.
-
-A worker that is unreachable but still heartbeating keeps its assigned jobs; lost dispatch responses are retried on that worker using the same job identity. Once a worker has been silent for `DISTRIBUTED_WORKER_TIMEOUT_SECONDS`, its jobs are requeued, and if it comes back still encoding, it stops as soon as it sees the job reassigned. While an output is being written or deleted, a hidden `.<name>_conv.mkv.lock` file next to it guards it against other nodes; the file is removed once the job ends.
-
-Requirements:
-
-- `docker-compose.cluster.yml` is not shipped in this repo - it's your own node-specific compose file (ports, hostnames, `DISTRIBUTED_*` env vars per node). Create it yourself before running the commands below.
-- All participating nodes must mount the same media library at the same in-container `SOURCE_MOUNT` path.
-- All nodes must run the same version, and the shared filesystem must support cross-host POSIX byte-range locks and hard links. NFSv4 does (keep the default `local_lock=none`); a node on the file server itself shares locks with NFS clients. SMB/CIFS mounts are not supported for multi-node setups.
-- Converted files take the source file's mode and owner. When a node's mount maps users (NFS `root_squash`/`all_squash`, SMB `uid=`/`gid=`/`file_mode=`), the owner change may be refused; the job still succeeds and the file keeps the mount's owner, or `PUID`/`PGID` if the mount allows those.
-- `DISTRIBUTED_STATE_DIR` (by default inside `SOURCE_MOUNT`) must resolve to the same shared, writable directory on every node.
-- When upgrading from a version without the queue ledger, stop all nodes, upgrade them together, and start the previous leader first; wait for `queue.json` to appear in `DISTRIBUTED_STATE_DIR` before starting the others, or let the queue run empty before upgrading.
-- Every node must be reachable from every other node through `DISTRIBUTED_PUBLIC_URL`.
-- For automatic leader election, leave `DISTRIBUTED_LEADER_URL` empty on every node and use stable, unique `DISTRIBUTED_NODE_ID` values.
-- The network must allow UDP multicast on `DISTRIBUTED_DISCOVERY_PORT`, or `DISTRIBUTED_PEERS` must list peer URLs explicitly.
-- Docker host networking is the most reliable option for multicast discovery; otherwise use `DISTRIBUTED_PEERS`.
-- For three or more nodes, set each node's `DISTRIBUTED_PEERS` to the comma-separated URLs of the other nodes.
-- The service has no built-in authentication, so only enable distributed mode on a trusted network.
-
-Compose node commands:
-
-```bash
-# Build the local node image with the distributed compose stack
-make node-build
-
-# Start the node with docker-compose.override.yml and docker-compose.cluster.yml
-make node-up
-
-# Recreate the node after code or image changes
-make node-recreate
-
-# Stop the node stack without deleting volumes
-make node-down
-```
-
-`docker compose up -d` auto-loads `docker-compose.override.yml` only for the default compose stack. Distributed nodes must include `docker-compose.cluster.yml`, so use the node targets above or pass all compose files explicitly.
-
-Example with explicit peers:
-
-```bash
-docker run -d \
-  --name convert-service-node-a \
-  --restart unless-stopped \
-  -p 8000:8000 \
-  -v /mnt/media:/videos \
-  -v archive-video-av1-node-a:/app/data \
-  -e SOURCE_MOUNT=/videos \
-  -e DISTRIBUTED_ENABLED=true \
-  -e DISTRIBUTED_NODE_ID=notebook \
-  -e DISTRIBUTED_NODE_NAME=notebook \
-  -e DISTRIBUTED_PUBLIC_URL=http://192.168.1.10:8000 \
-  -e DISTRIBUTED_PEERS=http://192.168.1.11:8000,http://192.168.1.12:8000 \
-  ghcr.io/fabianwimberger/archive-video-av1:latest
-```
-
-If a worker disappears while it is processing a delegated job, the leader requeues that job after `DISTRIBUTED_WORKER_TIMEOUT_SECONDS`. If the leader disappears, the next elected leader waits until the ledger has gone quiet for `DISTRIBUTED_PEER_TTL_SECONDS`, takes over the queue from it and continues scheduling from there.
+Several nodes on a trusted LAN can share one queue: set `DISTRIBUTED_ENABLED=true` on each and mount the same library at the same path. An elected leader hands pending jobs to idle peers and requeues the work of a node that disappears. Requirements, node setup, failure handling and the other `DISTRIBUTED_*` variables are in [docs/distributed.md](docs/distributed.md).
 
 ## Security
 
