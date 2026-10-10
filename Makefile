@@ -52,11 +52,11 @@ clean:
 
 lint:
 	@echo "Running linters..."
-	@$(PYTHON) -m ruff check --config backend/pyproject.toml backend/ scripts/
+	@$(PYTHON) -m ruff check backend/ scripts/
 
 format:
 	@echo "Formatting code..."
-	@$(PYTHON) -m ruff format --config backend/pyproject.toml backend/ scripts/
+	@$(PYTHON) -m ruff format backend/ scripts/
 
 test:
-	@$(PYTHON) -m pytest -c backend/pyproject.toml backend/tests --cov=app --cov-report=term-missing
+	@$(PYTHON) -m pytest --cov=app --cov-report=term-missing

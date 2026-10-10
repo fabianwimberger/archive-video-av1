@@ -28,6 +28,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["backend"]
 include = ["app*"]
 
 [tool.ruff.lint]
@@ -41,6 +42,6 @@ module = ["sqlalchemy.*"]
 follow_imports = "skip"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["backend/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

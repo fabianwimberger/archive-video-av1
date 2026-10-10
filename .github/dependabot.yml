@@ -26,7 +26,7 @@ updates:
 
   # Python dependencies
   - package-ecosystem: "pip"
-    directory: "/backend"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
