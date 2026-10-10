@@ -121,11 +121,16 @@ RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-
     && echo "  - Opus (BSD-3-Clause): https://opus-codec.org/" >> /usr/share/licenses/FFmpeg-LICENSE \
     && echo "================================================================================" >> /usr/share/licenses/FFmpeg-LICENSE
 
-COPY backend/pyproject.toml .
-COPY backend/app/ /app/app/
+# The package is installed from the repository layout, then the app is
+# placed where it runs from: it resolves alembic.ini and the frontend
+# relative to its own location.
+COPY pyproject.toml .
+COPY backend/app/ /app/backend/app/
 RUN python3 -m venv /app/venv \
     && /app/venv/bin/python -m pip install --no-cache-dir . \
+    && rm -rf /app/backend /app/build \
     && mkdir -p /app/data /app/temp
+COPY backend/app/ /app/app/
 
 COPY scripts/ /app/scripts/
 COPY backend/alembic/ /app/alembic/

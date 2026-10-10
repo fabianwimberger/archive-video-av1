@@ -8,14 +8,14 @@
 
 ## Local development
 
-Create a virtual environment and install the backend with its development tools:
+Create a virtual environment and install the project with its development tools:
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install -e './backend[dev]'
+.venv/bin/python -m pip install -e '.[dev]'
 make lint
 make test
-.venv/bin/python -m mypy --config-file backend/pyproject.toml backend/
+.venv/bin/python -m mypy backend/
 ```
 
 Run `make format` to format Python files.
