@@ -106,7 +106,7 @@ Presets are stored in the SQLite database and survive restarts.
 | `SOURCE_MOUNT` | `/videos` | Mount point for source video files |
 | `TEMP_DIR` | `/app/temp` | Temporary directory for in-progress conversions |
 | `DATABASE_PATH` | `/app/data/app.db` | SQLite database path (persistent) |
-| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `LOG_LEVEL` | `INFO` | Logging level for the app, uvicorn, and httpx (`DEBUG`, `INFO`, `WARNING`, `ERROR`); per-request lines only at `DEBUG` |
 | `AUDIO_TRACK_MODE` | `preferred` | Audio stream mode: `preferred` selects one track and normalizes it, `all` copies all audio tracks |
 | `SUBTITLE_TRACK_MODE` | `preferred` | Subtitle stream mode: `preferred` selects one matching track, `all` copies all subtitle tracks, `none` drops subtitles |
 | `PREFERRED_AUDIO_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `AUDIO_TRACK_MODE=preferred` |
