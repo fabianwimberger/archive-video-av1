@@ -73,6 +73,8 @@ class JobCreate(BaseModel):
     source_file: str
     preset_id: Optional[int] = None
     settings: Optional[ConversionSettings] = None
+    # Preset ids are node-local, so peers pass resolved settings plus the name.
+    preset_name_snapshot: Optional[str] = Field(default=None, max_length=128)
     notes: Optional[str] = None
     local_only: bool = False
     cluster_job_id: Optional[str] = Field(default=None, max_length=128)

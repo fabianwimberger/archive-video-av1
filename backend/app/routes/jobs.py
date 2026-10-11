@@ -249,6 +249,8 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
         preset_id, preset_name_snapshot, settings = await _resolve_job_settings(
             db, job_data.preset_id, settings_override, job_data.source_file
         )
+        if preset_id is None and job_data.preset_name_snapshot:
+            preset_name_snapshot = job_data.preset_name_snapshot
 
         if not job_data.local_only and _should_forward_to_leader(mutation=True):
             return JobCreateResponse(
@@ -258,6 +260,7 @@ async def create_job(job_data: JobCreate, db: AsyncSession = Depends(get_db)):
                     json_body={
                         "source_file": job_data.source_file,
                         "settings": settings,
+                        "preset_name_snapshot": preset_name_snapshot,
                         "notes": job_data.notes,
                     },
                 )
@@ -354,21 +357,22 @@ async def create_batch_jobs(
             for source_file in sorted_files:
                 (
                     _preset_id,
-                    _preset_name_snapshot,
+                    preset_name_snapshot,
                     settings,
                 ) = await _resolve_job_settings(
                     db, batch_data.preset_id, settings_override, source_file
                 )
-                files_payload.append((source_file, settings))
+                files_payload.append((source_file, settings, preset_name_snapshot))
 
             leader_job_ids = []
-            for source_file, settings in files_payload:
+            for source_file, settings, preset_name_snapshot in files_payload:
                 data = await _leader_request(
                     "POST",
                     "/api/jobs",
                     json_body={
                         "source_file": source_file,
                         "settings": settings,
+                        "preset_name_snapshot": preset_name_snapshot,
                         "notes": batch_data.notes,
                     },
                 )
