@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 
 BOOTSTRAP_VERSION = "5.3.8"
-BOOTSTRAP_ICONS_VERSION = "1.13.1"
+BOOTSTRAP_ICONS_VERSION = "1.13.2"
 
 CDN = "https://cdn.jsdelivr.net/npm"
 
@@ -37,13 +37,13 @@ BOOTSTRAP_FILES = {
 
 BOOTSTRAP_ICONS_CSS = (
     "css/bootstrap-icons.css",
-    "004322721c8557331759bc6ddaacbb689b0f0715d688aec82bd056d2d5b5cc3b",
+    "60da58893ec6f16edabdac4f79a10dd73151010407782e90236286db0ee71992",
 )
 
 # Referenced by the pinned bootstrap-icons.css above.
 BOOTSTRAP_ICONS_FONTS = {
-    "bootstrap-icons.woff": "f55513b7b591cb84a3b87ff0e34ea24d4831d6fedc22e54b911ca64b5b544a15",
-    "bootstrap-icons.woff2": "6c75710364a1ca5604267716f6d28997b26319fdb078cf11e0b42ab66ff2ea61",
+    "bootstrap-icons.woff": "24929e8a44da027588f833d4e82240ee734bd65bf962b08b0545af58a9ce80fa",
+    "bootstrap-icons.woff2": "2b7689746f87e0beeae25338bc021dd2515c2f6f003f3d3d064d878d380b2150",
 }
 
 BASE_DIR = Path.cwd()
