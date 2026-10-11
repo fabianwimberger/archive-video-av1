@@ -12,19 +12,22 @@ from fastapi.staticfiles import StaticFiles
 from app.config import APP_ROOT, ASSET_ROOT, settings
 from app.database import init_db
 
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
 
-# Uvicorn may configure the root logger without a handler or level.
-if not logging.getLogger().handlers:
-    console = logging.StreamHandler()
-    console.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
-    logging.getLogger().addHandler(console)
+def configure_logging() -> None:
+    level = getattr(logging, settings.LOG_LEVEL)
+    logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logging.getLogger().setLevel(level)
+    # Uvicorn pins its own loggers to INFO before importing the app.
+    for name in ("uvicorn", "uvicorn.error"):
+        logging.getLogger(name).setLevel(level)
+    # Cluster and UI polling would otherwise log several requests per second.
+    request_level = level if level == logging.DEBUG else max(level, logging.WARNING)
+    for name in ("uvicorn.access", "httpx"):
+        logging.getLogger(name).setLevel(request_level)
+
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -38,8 +41,9 @@ async def lifespan(app: FastAPI):
 
     cfg = Config(str(APP_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(APP_ROOT / "alembic"))
+    # alembic.ini would replace the handlers and level set by configure_logging.
+    cfg.attributes["configure_logger"] = False
     await asyncio.to_thread(command.upgrade, cfg, "head")
-    logging.getLogger().setLevel(getattr(logging, settings.LOG_LEVEL))
     logger.info("Database migrated to head")
 
     await init_db()
