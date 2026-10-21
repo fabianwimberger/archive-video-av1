@@ -1,9 +1,11 @@
 class ConversionApp {
+    constructor() {
+        this.views = ['convert', 'queue', 'history', 'presets', 'cluster'];
+        this.currentView = null;
+        this.toastContainer = null;
+    }
+
     async init() {
-        console.log('Initializing Conversion App...');
-
-        this.initTheme();
-
         await presetManager.init();
         await settingsPanel.init();
         window.settingsPanel = settingsPanel;
@@ -13,190 +15,99 @@ class ConversionApp {
         window.historyView = historyView;
 
         this.setupViewSwitching();
-        this.setupQueueResizer();
-        this.initTooltips();
+        this.setupDialogs();
 
         wsClient.connect();
-
         this.handleHash();
-
-        console.log('Conversion App initialized');
-    }
-
-    initTheme() {
-        const themeToggle = document.getElementById('theme-toggle');
-        const html = document.documentElement;
-        const icon = themeToggle.querySelector('i');
-
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        html.setAttribute('data-bs-theme', savedTheme);
-        this.updateThemeIcon(savedTheme, icon);
-
-        themeToggle.addEventListener('click', () => {
-            const currentTheme = html.getAttribute('data-bs-theme');
-            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-            
-            html.setAttribute('data-bs-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-            this.updateThemeIcon(newTheme, icon);
-        });
-    }
-
-    initTooltips() {
-        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
-            bootstrap.Tooltip.getOrCreateInstance(el);
-        });
-    }
-
-    updateThemeIcon(theme, icon) {
-        if (theme === 'dark') {
-            icon.className = 'bi bi-sun-fill';
-        } else {
-            icon.className = 'bi bi-moon-fill';
-        }
     }
 
     setupViewSwitching() {
-        document.getElementById('tab-convert').addEventListener('click', () => this.switchView('convert'));
-        document.getElementById('tab-history').addEventListener('click', () => this.switchView('history'));
+        document.querySelectorAll('[data-view-link]').forEach(link => {
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
+                this.switchView(link.dataset.viewLink);
+            });
+        });
         window.addEventListener('hashchange', () => this.handleHash());
     }
 
-    setupQueueResizer() {
-        const handle = document.getElementById('queue-resize-handle');
-        const convertView = document.getElementById('view-convert');
-        if (!handle || !convertView) return;
-
-        const storageKey = 'activeQueueHeight';
-        const minQueueHeight = 210;
-        const minTopHeight = 220;
-
-        const clampHeight = (height) => {
-            const viewHeight = convertView.getBoundingClientRect().height;
-            const maxQueueHeight = Math.max(minQueueHeight, viewHeight - minTopHeight);
-            return Math.min(Math.max(height, minQueueHeight), maxQueueHeight);
-        };
-
-        const setQueueHeight = (height, persist = true) => {
-            const nextHeight = clampHeight(height);
-            document.documentElement.style.setProperty('--queue-row-height', `${nextHeight}px`);
-            handle.setAttribute('aria-valuemin', String(minQueueHeight));
-            const maxQueueHeight = Math.max(
-                minQueueHeight,
-                convertView.getBoundingClientRect().height - minTopHeight,
-            );
-            handle.setAttribute('aria-valuemax', String(Math.round(maxQueueHeight)));
-            handle.setAttribute('aria-valuenow', String(Math.round(nextHeight)));
-            if (persist) localStorage.setItem(storageKey, String(Math.round(nextHeight)));
-        };
-
-        const savedHeight = Number(localStorage.getItem(storageKey));
-        if (Number.isFinite(savedHeight) && savedHeight > 0) {
-            requestAnimationFrame(() => setQueueHeight(savedHeight, false));
-        }
-
-        handle.addEventListener('pointerdown', (event) => {
-            if (window.matchMedia('(max-width: 992px)').matches) return;
-            event.preventDefault();
-            handle.setPointerCapture(event.pointerId);
-            document.body.classList.add('queue-resizing');
-
-            const viewRect = convertView.getBoundingClientRect();
-            const updateFromPointer = (pointerEvent) => {
-                setQueueHeight(viewRect.bottom - pointerEvent.clientY);
-            };
-
-            const stopResize = () => {
-                document.body.classList.remove('queue-resizing');
-                handle.removeEventListener('pointermove', updateFromPointer);
-                handle.removeEventListener('pointerup', stopResize);
-                handle.removeEventListener('pointercancel', stopResize);
-            };
-
-            handle.addEventListener('pointermove', updateFromPointer);
-            handle.addEventListener('pointerup', stopResize);
-            handle.addEventListener('pointercancel', stopResize);
+    setupDialogs() {
+        document.querySelectorAll('dialog').forEach(dialog => {
+            dialog.addEventListener('click', (event) => {
+                // A click on the backdrop lands on the dialog element itself.
+                if (event.target === dialog) dialog.close();
+            });
         });
 
-        handle.addEventListener('keydown', (event) => {
-            if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-            event.preventDefault();
-            const currentHeight = Number(localStorage.getItem(storageKey))
-                || convertView.getBoundingClientRect().height * 0.28;
-            setQueueHeight(currentHeight + (event.key === 'ArrowUp' ? 24 : -24));
+        document.querySelectorAll('[data-dialog-close]').forEach(button => {
+            button.addEventListener('click', () => {
+                const dialog = button.closest('dialog');
+                if (dialog) dialog.close();
+            });
         });
-
-        window.addEventListener('resize', () => {
-            const currentHeight = Number(localStorage.getItem(storageKey));
-            if (Number.isFinite(currentHeight) && currentHeight > 0) {
-                setQueueHeight(currentHeight);
-            }
-        });
-    }
-
-    switchView(view) {
-        const convertView = document.getElementById('view-convert');
-        const historyViewEl = document.getElementById('view-history');
-        const tabConvert = document.getElementById('tab-convert');
-        const tabHistory = document.getElementById('tab-history');
-
-        if (view === 'convert') {
-            convertView.classList.remove('d-none');
-            historyViewEl.classList.add('d-none');
-            tabConvert.classList.add('active', 'btn-light');
-            tabConvert.classList.remove('btn-outline-light');
-            tabHistory.classList.remove('active', 'btn-light');
-            tabHistory.classList.add('btn-outline-light');
-            window.location.hash = '#/convert';
-            jobQueue.loadJobs();
-        } else {
-            convertView.classList.add('d-none');
-            historyViewEl.classList.remove('d-none');
-            tabHistory.classList.add('active', 'btn-light');
-            tabHistory.classList.remove('btn-outline-light');
-            tabConvert.classList.remove('active', 'btn-light');
-            tabConvert.classList.add('btn-outline-light');
-            window.location.hash = '#/history';
-            historyView.loadJobs();
-        }
     }
 
     handleHash() {
-        const hash = window.location.hash;
-        if (hash === '#/history') {
-            this.switchView('history');
-        } else {
-            this.switchView('convert');
+        const requested = window.location.hash.replace(/^#\/?/, '') || 'convert';
+        const view = this.views.includes(requested) ? requested : 'convert';
+        if (view === this.currentView) return;
+        this.switchView(view);
+    }
+
+    switchView(view) {
+        if (!this.views.includes(view)) view = 'convert';
+
+        const changed = this.currentView !== view;
+        this.currentView = view;
+
+        document.querySelectorAll('[data-view-panel]').forEach(panel => {
+            panel.hidden = panel.dataset.viewPanel !== view;
+        });
+
+        document.querySelectorAll('[data-view-link]').forEach(link => {
+            if (link.dataset.viewLink === view) {
+                link.setAttribute('aria-current', 'page');
+            } else {
+                link.removeAttribute('aria-current');
+            }
+        });
+
+        const hash = `#/${view}`;
+        if (window.location.hash !== hash) {
+            window.location.hash = hash;
         }
+
+        if (changed) this.refreshView(view);
+    }
+
+    refreshView(view) {
+        if (view === 'convert' || view === 'queue') jobQueue.loadJobs();
+        if (view === 'history') historyView.loadJobs();
+        if (view === 'presets') presetManager.open();
+        if (view === 'cluster') jobQueue.loadClusterStatus();
     }
 
     showNotification(message, type = 'info') {
-        console.log(`[${type.toUpperCase()}] ${message}`);
+        const kinds = { success: 'ok', danger: 'fail', warning: 'warn', info: 'info' };
+        if (!this.toastContainer) {
+            this.toastContainer = document.createElement('div');
+            this.toastContainer.className = 'toasts';
+            this.toastContainer.setAttribute('aria-live', 'polite');
+            document.body.appendChild(this.toastContainer);
+        }
 
-        const toastDiv = document.createElement('div');
-        const bgClass = type === 'success' ? 'bg-success' : type === 'danger' ? 'bg-danger' : 'bg-primary';
-
-        toastDiv.className = `toast align-items-center text-white ${bgClass} border-0 show position-fixed bottom-0 end-0 m-3`;
-        toastDiv.setAttribute('role', 'alert');
-        toastDiv.setAttribute('aria-live', 'assertive');
-        toastDiv.setAttribute('aria-atomic', 'true');
-        toastDiv.style.zIndex = '1050';
-
-        toastDiv.innerHTML = `
-            <div class="d-flex">
-                <div class="toast-body">
-                    ${utils.escapeHtml(message)}
-                </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
+        const toast = document.createElement('div');
+        toast.className = `toast toast--${kinds[type] || 'info'}`;
+        toast.setAttribute('role', 'status');
+        toast.innerHTML = `
+            <span class="toast__text">${utils.escapeHtml(message)}</span>
+            <button type="button" class="btn btn--text btn--small" aria-label="Dismiss">Dismiss</button>
         `;
 
-        document.body.appendChild(toastDiv);
-
-        setTimeout(() => {
-            toastDiv.classList.remove('show');
-            setTimeout(() => toastDiv.remove(), 500);
-        }, 5000);
+        const dismiss = () => toast.remove();
+        toast.querySelector('button').addEventListener('click', dismiss);
+        this.toastContainer.appendChild(toast);
+        setTimeout(dismiss, 5000);
     }
 }
 

@@ -1,520 +1,504 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="light">
+<!doctype html>
+<html lang="en" data-kf="archive-video-av1" data-density="leitstand">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Conversion Service</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Video conversion</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link href="/vendor/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/vendor/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="/css/kennfarbe.css">
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg app-navbar shadow-sm">
-        <div class="container-fluid gap-2">
-            <a class="navbar-brand" href="#">
-                <i class="bi bi-film me-2"></i>Video Conversion
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <div class="app">
+        <nav class="rail" aria-label="Sections">
+            <a class="mark" href="#/convert">
+                <span class="mark__chip" aria-hidden="true"></span>Video conversion
             </a>
-            <div class="app-topbar d-flex align-items-center gap-2 flex-wrap">
-                <div class="btn-group app-view-tabs" role="group" aria-label="View switcher">
-                    <button type="button" class="btn btn-light active" id="tab-convert" data-view="convert">Convert</button>
-                    <button type="button" class="btn btn-outline-light" id="tab-history" data-view="history">History</button>
-                </div>
-                <button id="theme-toggle" class="btn btn-outline-light btn-sm" title="Toggle dark mode">
-                    <i class="bi bi-moon-fill"></i>
-                </button>
-                <span id="ws-status" class="badge bg-warning text-dark">Connecting...</span>
-            </div>
-        </div>
-    </nav>
+            <a href="#/convert" data-view-link="convert" aria-current="page">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+                Convert
+            </a>
+            <a href="#/queue" data-view-link="queue">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v4H5zM5 10h14v4H5zM5 16h14v4H5z"/></svg>
+                Queue<span class="count num" id="rail-queue-count">0</span>
+            </a>
+            <a href="#/history" data-view-link="history">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="8"/></svg>
+                History
+            </a>
+            <a href="#/presets" data-view-link="presets">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 17h16M4 12h6"/><circle cx="17" cy="7" r="2"/><circle cx="13" cy="12" r="2"/></svg>
+                Presets
+            </a>
+            <a href="#/cluster" data-view-link="cluster">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/><path d="M10 7h4a2 2 0 0 1 2 2v5"/></svg>
+                Cluster<span class="count num" id="rail-peer-count">0</span>
+            </a>
+        </nav>
 
-    <div id="view-convert" class="view-container container-fluid px-3 px-lg-4 main-content py-3">
-        <div class="card shadow-sm section-files">
-            <div class="card-header py-3 d-flex justify-content-between align-items-center flex-wrap">
-                <h5 class="card-title mb-0"><i class="bi bi-folder2-open me-2"></i>File Browser</h5>
-                <div class="file-actions d-flex gap-2 flex-wrap justify-content-end">
-                    <span id="selection-count" class="badge bg-info text-dark align-self-center">0 files selected</span>
-                    <button id="btn-select-unconverted" class="btn btn-outline-secondary btn-sm" title="Select original files that have no converted version yet">
-                        Select Unconverted
-                    </button>
-                    <button id="btn-select-converted" class="btn btn-outline-secondary btn-sm" title="Select original files that already have a converted version">
-                        Select Converted
-                    </button>
-                    <button id="btn-unselect-all" class="btn btn-outline-secondary btn-sm" title="Unselect All" disabled>
-                        Unselect All
-                    </button>
-                    <button id="btn-delete-selected" class="btn btn-outline-danger btn-sm" title="Delete Selected" disabled>
-                        <i class="bi bi-trash"></i> Delete Selected
-                    </button>
-                    <button id="btn-refresh" class="btn btn-outline-secondary btn-sm" title="Refresh">
-                        <i class="bi bi-arrow-clockwise"></i>
-                    </button>
-                </div>
-            </div>
-            <div class="card-body p-0 d-flex flex-column file-browser-body">
-                <div class="p-3 border-bottom bg-body-tertiary">
-                        <div class="input-group">
-                        <span class="input-group-text border-end-0"><i class="bi bi-search"></i></span>
-                        <input type="text" id="search-files" class="form-control border-start-0" placeholder="Search files...">
-                    </div>
-                </div>
-                <div id="file-browser" class="list-group list-group-flush flex-grow-1 overflow-auto custom-scrollbar">
-                    <div class="text-center p-5 text-muted">
-                        <div class="spinner-border text-primary mb-2" role="status"></div>
-                        <div>Loading files...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <main class="work" id="main">
+            <section class="view view--convert" id="view-convert" data-view-panel="convert" aria-label="Convert">
+                <header class="work__head">
+                    <h1>Convert</h1>
+                    <span id="ws-status" class="status status--warn">Connecting</span>
+                    <span class="work__context small muted" id="browse-path" hidden></span>
+                </header>
 
-        <div class="card shadow-sm section-settings">
-            <div class="card-header py-3 d-flex justify-content-between align-items-center gap-2">
-                <h5 class="card-title mb-0"><i class="bi bi-sliders me-2"></i>Settings</h5>
-                <button id="btn-manage-presets" class="btn btn-outline-primary btn-sm">Manage Presets</button>
-            </div>
-            <div class="card-body p-3 d-flex flex-column gap-3" id="settings-panel">
-                <div class="settings-section" data-section="preset">
-                    <div class="settings-section__header">
-                        <label for="preset-select" class="settings-eyebrow"><i class="bi bi-bookmark-star"></i>Preset</label>
-                        <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-preset" aria-label="Toggle Preset section"><i class="bi bi-chevron-down"></i></button>
-                    </div>
-                    <div class="settings-section__body" id="section-body-preset">
-                        <select id="preset-select" class="form-select form-select-sm">
-                            <option value="" disabled>Loading presets...</option>
-                        </select>
-                        <div id="preset-modified-badge" class="small text-warning mt-1 d-none"><i class="bi bi-pencil-square me-1"></i>Modified from preset</div>
-                    </div>
-                </div>
-
-                <div class="settings-section" data-section="speed">
-                    <div class="settings-section__header">
-                        <label for="preset-slider" class="settings-eyebrow"><i class="bi bi-speedometer2"></i>Encoding Speed<span id="preset-value" class="settings-value">4</span></label>
-                        <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-speed" aria-label="Toggle Encoding Speed section"><i class="bi bi-chevron-down"></i></button>
-                    </div>
-                    <div class="settings-section__body" id="section-body-speed">
-                        <input type="range" id="preset-slider" class="form-range" min="0" max="10" value="4">
-                        <div class="range-scale"><span>Slower · smaller file</span><span>Faster · larger file</span></div>
-                    </div>
-                </div>
-
-                <div class="settings-section" data-section="crf">
-                    <div class="settings-section__header">
-                        <label for="crf-slider" class="settings-eyebrow"><i class="bi bi-gem"></i>Quality (CRF)<span id="crf-value" class="settings-value">28</span></label>
-                        <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-crf" aria-label="Toggle Quality section"><i class="bi bi-chevron-down"></i></button>
-                    </div>
-                    <div class="settings-section__body" id="section-body-crf">
-                        <input type="range" id="crf-slider" class="form-range" min="0" max="51" value="26">
-                        <div class="range-scale"><span>Higher quality</span><span>Smaller file</span></div>
-                    </div>
-                </div>
-
-                <div class="settings-section svt-panel" data-section="svt">
-                    <div class="settings-section__header svt-panel__header">
-                        <span class="settings-eyebrow"><i class="bi bi-cpu"></i>SVT-AV1 Encoder</span>
-                        <div class="d-flex align-items-center gap-1 flex-wrap">
-                            <button id="btn-auto-preset" class="btn btn-auto btn-xs" type="button" title="Auto-suggest encoding speed (0-10) for the selected file" disabled>
-                                <i class="bi bi-speedometer2"></i> Auto Speed
-                            </button>
-                            <button id="btn-auto-estimate" class="btn btn-auto btn-xs" type="button" title="Auto-estimate film-grain / denoise SVT-AV1 params for the selected file" disabled>
-                                <i class="bi bi-magic"></i> Auto Grain
-                            </button>
-                            <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-svt" aria-label="Toggle SVT-AV1 Encoder section"><i class="bi bi-chevron-down"></i></button>
+                <section class="files" aria-label="Files">
+                    <div class="toolbar">
+                        <label class="visually-hidden" for="search-files">Search files</label>
+                        <input class="input toolbar__search" type="search" id="search-files" placeholder="Search files" autocomplete="off">
+                        <div class="seg" role="group" aria-label="Show files">
+                            <button type="button" data-file-filter="all" aria-pressed="true">All</button>
+                            <button type="button" data-file-filter="unconverted" aria-pressed="false">Not converted</button>
+                            <button type="button" data-file-filter="converted" aria-pressed="false">Converted</button>
                         </div>
+                        <div class="toolbar__actions">
+                            <button id="btn-select-unconverted" class="btn btn--quiet btn--small" type="button" title="Select original files that have no converted version yet">Select unconverted</button>
+                            <button id="btn-select-converted" class="btn btn--quiet btn--small" type="button" title="Select original files that already have a converted version">Select converted</button>
+                            <button id="btn-unselect-all" class="btn btn--text btn--small" type="button" disabled>Unselect all</button>
+                            <button id="btn-delete-selected" class="btn btn--quiet btn--small" type="button" disabled>Delete selected</button>
+                            <button id="btn-refresh" class="btn btn--text btn--small" type="button" title="Reload this folder">Refresh</button>
+                        </div>
+                        <span id="selection-count" class="toolbar__count small muted num">0 files selected</span>
                     </div>
+                    <div class="files__scroll" id="file-browser">
+                        <p class="empty">Loading files…</p>
+                    </div>
+                </section>
 
-                    <div class="settings-section__body" id="section-body-svt">
-                        <div class="svt-row">
-                            <div class="svt-field">
-                                <label for="svt-tune" class="svt-field-label" data-bs-toggle="tooltip" data-bs-title="Rate-distortion tuning target. The exact mapping of 0/1/2 to visual quality, PSNR or SSIM depends on the encoder build.">Tune <i class="bi bi-question-circle"></i></label>
-                                <select id="svt-tune" class="form-select form-select-sm" aria-label="SVT tune">
-                                    <option value="0">Tune 0</option>
-                                    <option value="1">Tune 1</option>
-                                    <option value="2">Tune 2</option>
-                                    <option value="">No tune</option>
-                                </select>
+                <section class="settings" aria-label="Encoding settings">
+                    <div class="settings__scroll" id="settings-panel">
+                        <div class="settings-section" data-section="preset">
+                            <div class="settings-section__header">
+                                <label class="label" for="preset-select">Preset</label>
+                                <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-preset" aria-label="Show or hide preset">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </button>
                             </div>
-                            <div class="svt-field">
-                                <label for="svt-film-grain" class="svt-field-label">Film Grain</label>
-                                <div class="d-flex gap-1">
-                                    <input type="number" id="svt-film-grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="0-50">
-                                    <canvas id="svt-grain-preview" class="svt-grain-swatch" width="30" height="30" title="Preview of the selected grain intensity"></canvas>
+                            <div class="settings-section__body" id="section-body-preset">
+                                <select id="preset-select" class="select">
+                                    <option value="" disabled>Loading presets…</option>
+                                </select>
+                                <p id="preset-modified-badge" class="settings-note" hidden>Modified from preset</p>
+                            </div>
+                        </div>
+
+                        <div class="settings-section" data-section="speed">
+                            <div class="settings-section__header">
+                                <label class="label" for="preset-slider">Encoding speed</label>
+                                <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-speed" aria-label="Show or hide encoding speed">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </button>
+                            </div>
+                            <div class="settings-section__body" id="section-body-speed">
+                                <div class="range-head"><span class="settings-value num" id="preset-value">4</span></div>
+                                <input type="range" id="preset-slider" min="0" max="10" value="4">
+                                <div class="range-ends"><span>Slower, smaller file</span><span>Faster, larger file</span></div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section" data-section="crf">
+                            <div class="settings-section__header">
+                                <label class="label" for="crf-slider">Quality (CRF)</label>
+                                <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-crf" aria-label="Show or hide quality">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </button>
+                            </div>
+                            <div class="settings-section__body" id="section-body-crf">
+                                <div class="range-head"><span class="settings-value num" id="crf-value">28</span></div>
+                                <input type="range" id="crf-slider" min="0" max="51" value="26">
+                                <div class="range-ends"><span>Higher quality</span><span>Smaller file</span></div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section" data-section="svt">
+                            <div class="settings-section__header">
+                                <span class="label">SVT-AV1</span>
+                                <div class="settings-section__tools">
+                                    <button id="btn-auto-preset" class="btn btn--quiet btn--small" type="button" title="Suggest the encoding speed and CRF for the selected file" disabled>Auto speed</button>
+                                    <button id="btn-auto-estimate" class="btn btn--quiet btn--small" type="button" title="Estimate film grain and denoise for the selected file" disabled>Auto grain</button>
+                                    <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-svt" aria-label="Show or hide SVT-AV1 options">
+                                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                    </button>
                                 </div>
+                            </div>
+                            <div class="settings-section__body" id="section-body-svt">
+                                <div class="grid-2">
+                                    <label class="field">
+                                        <span class="label" title="Rate-distortion tuning target; the exact meaning of 0, 1 and 2 depends on the encoder build.">Tune</span>
+                                        <select id="svt-tune" class="select" aria-label="SVT tune">
+                                            <option value="0">Tune 0</option>
+                                            <option value="1">Tune 1</option>
+                                            <option value="2">Tune 2</option>
+                                            <option value="">No tune</option>
+                                        </select>
+                                    </label>
+                                    <label class="field">
+                                        <span class="label">Film grain</span>
+                                        <span class="inline-control">
+                                            <input type="number" id="svt-film-grain" class="input" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="0-50">
+                                            <canvas id="svt-grain-preview" class="grain-swatch" width="30" height="30" role="img" aria-label="Grain preview"></canvas>
+                                        </span>
+                                        <span class="field__hint">Preview of the selected intensity</span>
+                                    </label>
+                                    <label class="field">
+                                        <span class="label">Temporal filtering strength</span>
+                                        <input type="number" id="svt-tf-strength" class="input" min="0" max="4" step="1" placeholder="0-4" title="SVT-AV1 temporal filtering strength on alt-ref frames, 0 to 4. Blank uses the encoder default (3).">
+                                    </label>
+                                    <label class="field">
+                                        <span class="label">Sharpness</span>
+                                        <input type="number" id="svt-sharpness" class="input" min="-7" max="7" step="1" placeholder="-7 to 7" title="SVT-AV1 deblocking sharpness bias, -7 to 7. Most effective with Tune 3 and 4. Blank uses the encoder default (0).">
+                                    </label>
+                                </div>
+
                                 <datalist id="svt-film-grain-options">
                                     <option value="0"></option>
                                     <option value="8"></option>
                                     <option value="16"></option>
                                 </datalist>
-                            </div>
-                            <div class="svt-field svt-field--switch">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input" type="checkbox" role="switch" id="svt-denoise">
-                                    <label class="form-check-label small" for="svt-denoise" data-bs-toggle="tooltip" data-bs-title="Denoises the source before encoding — separate from the synthetic grain re-added at playback.">Denoise</label>
+
+                                <div class="check-list">
+                                    <label class="check" title="Denoises the source before encoding, separate from the synthetic grain re-added at playback.">
+                                        <input type="checkbox" id="svt-denoise">Denoise
+                                    </label>
+                                    <label class="check" title="Keeps detail in flat areas such as skies and walls that CRF would otherwise over-compress.">
+                                        <input type="checkbox" id="svt-variance-boost">Variance boost
+                                    </label>
+                                    <label class="check" title="Enables in-loop restoration filtering to reduce blocking and ringing.">
+                                        <input type="checkbox" id="svt-restoration">Restoration
+                                    </label>
+                                    <label class="check" title="Uses frequency-weighted quantisation matrices for better perceptual quality at the same bitrate.">
+                                        <input type="checkbox" id="svt-qm">Quantisation matrices
+                                    </label>
+                                </div>
+
+                                <label class="field">
+                                    <span class="label">Additional parameters</span>
+                                    <input type="text" id="svt-extra-params" class="input machine" placeholder="scd=1" autocomplete="off">
+                                </label>
+
+                                <p id="estimate-info" class="settings-note"></p>
+
+                                <div class="resolved">
+                                    <span class="label">Resolved</span>
+                                    <code id="svt-resolved-params">Using encoder defaults</code>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="svt-row">
-                            <div class="svt-field">
-                                <label for="svt-tf-strength" class="svt-field-label" data-bs-toggle="tooltip" data-bs-title="SVT-AV1 temporal filtering strength on alt-ref frames, 0-4. Higher = stronger filtering. Blank uses the encoder default (3).">TF Strength <i class="bi bi-question-circle"></i></label>
-                                <input type="number" id="svt-tf-strength" class="form-control form-control-sm" min="0" max="4" step="1" placeholder="0-4">
+                        <div class="settings-section" data-section="audio">
+                            <div class="settings-section__header">
+                                <label class="label" for="audio-bitrate">Audio bitrate</label>
+                                <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-audio" aria-label="Show or hide audio bitrate">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </button>
                             </div>
-                            <div class="svt-field">
-                                <label for="svt-sharpness" class="svt-field-label" data-bs-toggle="tooltip" data-bs-title="SVT-AV1 deblocking sharpness bias, -7 to 7. Most effective with Tune 3/4. Blank uses the encoder default (0).">Sharpness <i class="bi bi-question-circle"></i></label>
-                                <input type="number" id="svt-sharpness" class="form-control form-control-sm" min="-7" max="7" step="1" placeholder="-7 to 7">
+                            <div class="settings-section__body" id="section-body-audio">
+                                <input type="text" id="audio-bitrate" class="input" value="96k" autocomplete="off">
                             </div>
                         </div>
 
-                        <div class="svt-toggle-grid">
-                            <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Preserves detail in flat areas (skies, walls) that CRF would otherwise over-compress.">
-                                <input class="form-check-input" type="checkbox" role="switch" id="svt-variance-boost">
-                                <span>Variance Boost</span>
-                            </label>
-                            <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Enables in-loop restoration filtering to reduce blocking and ringing artifacts.">
-                                <input class="form-check-input" type="checkbox" role="switch" id="svt-restoration">
-                                <span>Restoration</span>
-                            </label>
-                            <label class="svt-toggle form-switch" data-bs-toggle="tooltip" data-bs-title="Uses frequency-weighted quantization matrices for better perceptual quality at the same bitrate.">
-                                <input class="form-check-input" type="checkbox" role="switch" id="svt-qm">
-                                <span>Quantization Matrices</span>
-                            </label>
+                        <div class="settings-section" data-section="resolution">
+                            <div class="settings-section__header">
+                                <span class="label" id="resolution-label">Largest resolution</span>
+                                <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-resolution" aria-label="Show or hide resolution">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </button>
+                            </div>
+                            <div class="settings-section__body" id="section-body-resolution">
+                                <div class="seg seg--fill" role="group" aria-labelledby="resolution-label">
+                                    <label class="seg__option">
+                                        <input type="radio" name="resolution" id="res-720" value="720">
+                                        <span>720p</span>
+                                    </label>
+                                    <label class="seg__option">
+                                        <input type="radio" name="resolution" id="res-1080" value="1080" checked>
+                                        <span>1080p</span>
+                                    </label>
+                                    <label class="seg__option">
+                                        <input type="radio" name="resolution" id="res-4k" value="2160">
+                                        <span>4K</span>
+                                    </label>
+                                </div>
+                            </div>
                         </div>
 
-                        <input type="text" id="svt-extra-params" class="form-control form-control-sm svt-mono mt-2" placeholder="Additional SVT params, e.g. scd=1">
-                        <div id="estimate-info" class="form-text small text-muted mt-1" style="min-height: 1.2em;"></div>
-
-                        <div class="svt-summary">
-                            <span class="svt-summary-label">Resolved</span>
-                            <code id="svt-resolved-params">Using encoder defaults</code>
+                        <div class="settings-section" data-section="crop">
+                            <div class="settings-section__header">
+                                <span class="label">Crop</span>
+                                <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-crop" aria-label="Show or hide crop">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </button>
+                            </div>
+                            <div class="settings-section__body" id="section-body-crop">
+                                <label class="check">
+                                    <input type="checkbox" id="skip-crop">Skip crop detection
+                                </label>
+                            </div>
                         </div>
-                    </div>
-                </div>
 
-                <div class="settings-section" data-section="audio">
-                    <div class="settings-section__header">
-                        <label for="audio-bitrate" class="settings-eyebrow"><i class="bi bi-soundwave"></i>Audio Bitrate</label>
-                        <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-audio" aria-label="Toggle Audio Bitrate section"><i class="bi bi-chevron-down"></i></button>
+                        <button id="btn-manage-presets" class="btn btn--text btn--small" type="button">Manage presets</button>
                     </div>
-                    <div class="settings-section__body" id="section-body-audio">
-                        <input type="text" id="audio-bitrate" class="form-control form-control-sm" value="96k">
+                    <div class="settings__go">
+                        <button id="btn-convert-selected" class="btn" type="button" disabled><span>Convert <span id="convert-count">0</span> <span id="convert-unit">files</span></span></button>
                     </div>
-                </div>
+                </section>
 
-                <div class="settings-section" data-section="crop">
-                    <div class="settings-section__header">
-                        <span class="settings-eyebrow"><i class="bi bi-crop"></i>Skip Crop</span>
-                        <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-crop" aria-label="Toggle Skip Crop section"><i class="bi bi-chevron-down"></i></button>
+                <section class="live" aria-label="Queue">
+                    <div class="live__current" id="live-current">
+                        <p class="empty">No job running</p>
                     </div>
-                    <div class="settings-section__body" id="section-body-crop">
-                        <div class="form-check">
-                            <input type="checkbox" id="skip-crop" class="form-check-input">
-                            <label for="skip-crop" class="form-check-label small">Skip Crop</label>
-                        </div>
+                    <div class="live__next">
+                        <span class="label">Up next</span>
+                        <ol class="next-list" id="live-next" role="list"></ol>
                     </div>
-                </div>
+                </section>
+            </section>
 
-                <div class="settings-section" data-section="resolution">
-                    <div class="settings-section__header">
-                        <label class="settings-eyebrow"><i class="bi bi-aspect-ratio"></i>Max Resolution</label>
-                        <button type="button" class="settings-section__toggle" aria-expanded="true" aria-controls="section-body-resolution" aria-label="Toggle Max Resolution section"><i class="bi bi-chevron-down"></i></button>
+            <section class="view view--queue" id="view-queue" data-view-panel="queue" aria-label="Queue" hidden>
+                <header class="work__head">
+                    <h1>Queue</h1>
+                    <span class="work__stats small muted num"><span id="stat-processing">0</span> running, <span id="stat-pending">0</span> waiting</span>
+                    <div class="work__actions">
+                        <span id="paused-banner" class="status status--warn" hidden>Paused</span>
+                        <button id="btn-pause-queue" class="btn btn--quiet btn--small" type="button">Pause</button>
+                        <button id="btn-clear-queued" class="btn btn--quiet btn--small" type="button">Clear queued</button>
+                        <button id="btn-clear-all" class="btn btn--quiet btn--small" type="button" title="Stops running jobs as well">Clear all</button>
                     </div>
-                    <div class="settings-section__body" id="section-body-resolution">
-                        <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="resolution" id="res-720" value="720">
-                            <label class="btn btn-outline-secondary btn-sm" for="res-720">720p</label>
-                            <input type="radio" class="btn-check" name="resolution" id="res-1080" value="1080" checked>
-                            <label class="btn btn-outline-secondary btn-sm" for="res-1080">1080p</label>
-                            <input type="radio" class="btn-check" name="resolution" id="res-4k" value="2160">
-                            <label class="btn btn-outline-secondary btn-sm" for="res-4k">4K</label>
-                        </div>
-                    </div>
+                </header>
+                <div class="view__body view__body--flush" id="job-queue">
+                    <p class="empty">No active jobs</p>
                 </div>
+            </section>
 
-                <button id="btn-convert-selected" class="btn btn-primary w-100 mt-auto" disabled>
-                    <i class="bi bi-play-fill me-1"></i> Convert Selected (<span id="convert-count">0</span>)
-                </button>
-            </div>
-        </div>
-
-        <div class="card shadow-sm section-queue job-queue-card">
-            <div id="queue-resize-handle" class="queue-resize-handle" role="separator" aria-label="Resize Active Queue" aria-orientation="horizontal" tabindex="0" title="Resize Active Queue">
-                <span></span>
-            </div>
-            <div class="card-header py-3 d-flex justify-content-between align-items-center flex-wrap">
-                <div>
-                    <h5 class="card-title mb-0"><i class="bi bi-activity me-2"></i>Active Queue</h5>
-                    <div class="small text-muted mt-1">
-                        <span id="queue-stats" class="d-flex gap-3">
-                            <span><i class="bi bi-hourglass-split text-warning me-1"></i><span id="stat-pending">0</span> queued</span>
-                            <span><i class="bi bi-arrow-repeat text-primary me-1"></i><span id="stat-processing">0</span> running</span>
-                        </span>
+            <section class="view view--history" id="view-history" data-view-panel="history" aria-label="History" hidden>
+                <header class="work__head">
+                    <h1>History</h1>
+                    <div class="work__actions">
+                        <button id="btn-history-export-csv" class="btn btn--quiet btn--small" type="button">Export CSV</button>
+                        <button id="btn-history-clear-finished" class="btn btn--quiet btn--small" type="button">Clear finished</button>
+                        <button id="btn-history-clear-older" class="btn btn--quiet btn--small" type="button">Clear older than…</button>
                     </div>
+                </header>
+                <div class="view__toolbar">
+                    <label class="visually-hidden" for="history-search">Search history</label>
+                    <input type="search" id="history-search" class="input toolbar__search" placeholder="Search files or presets" autocomplete="off">
+                    <label class="visually-hidden" for="history-filter-status">Status</label>
+                    <select id="history-filter-status" class="select" multiple size="1">
+                        <option value="" selected>All statuses</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <label class="visually-hidden" for="history-filter-preset">Preset</label>
+                    <select id="history-filter-preset" class="select">
+                        <option value="" selected>All presets</option>
+                    </select>
+                    <label class="visually-hidden" for="history-date-from">From</label>
+                    <input type="date" id="history-date-from" class="input" title="From">
+                    <label class="visually-hidden" for="history-date-to">To</label>
+                    <input type="date" id="history-date-to" class="input" title="To">
+                    <button id="btn-history-apply" class="btn btn--small" type="button">Filter</button>
                 </div>
-                <div class="queue-actions d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                    <div id="paused-banner" class="badge bg-warning text-dark d-none">PAUSED</div>
-                    <button id="btn-pause-queue" class="btn btn-outline-warning btn-sm">Pause</button>
-                    <button id="btn-clear-all" class="btn btn-outline-danger btn-sm" title="Force Clear All (stops running jobs)">Force Clear All</button>
-                    <button id="btn-clear-queued" class="btn btn-outline-warning btn-sm">Clear Queued</button>
-                    <button id="btn-toggle-queue" class="btn btn-sm btn-link text-decoration-none text-muted">Collapse</button>
-                </div>
-            </div>
-            <div id="cluster-status" class="cluster-status border-bottom px-3 py-2">
-                <div class="text-muted small">Cluster status unavailable</div>
-            </div>
-            <div id="job-queue" class="card-body p-0 overflow-auto custom-scrollbar">
-                    <div class="text-center p-5 text-muted">No jobs yet</div>
-            </div>
-        </div>
-    </div>
-
-    <div id="view-history" class="view-container container-fluid px-3 px-lg-4 main-content py-3 d-none">
-        <div class="card shadow-sm">
-            <div class="card-header py-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <h5 class="card-title mb-0"><i class="bi bi-clock-history me-2"></i>History</h5>
-                    <div class="history-actions d-flex gap-2 flex-wrap justify-content-end">
-                        <button id="btn-history-export-csv" class="btn btn-outline-secondary btn-sm">Export CSV</button>
-                        <button id="btn-history-clear-finished" class="btn btn-outline-danger btn-sm">Clear Finished</button>
-                        <button id="btn-history-clear-older" class="btn btn-outline-warning btn-sm">Clear Older Than…</button>
-                    </div>
-                </div>
-                <div id="history-stats" class="small text-muted mt-2 d-flex gap-4 flex-wrap"></div>
-            </div>
-            <div class="card-body">
-                <div class="row g-2 mb-3">
-                    <div class="col-12 col-lg-3">
-                        <input type="text" id="history-search" class="form-control form-control-sm" placeholder="Search files or presets...">
-                    </div>
-                    <div class="col-6 col-lg-2">
-                        <select id="history-filter-status" class="form-select form-select-sm" multiple size="1">
-                            <option value="" selected>All statuses</option>
-                            <option value="completed">Completed</option>
-                            <option value="failed">Failed</option>
-                            <option value="cancelled">Cancelled</option>
-                        </select>
-                    </div>
-                    <div class="col-6 col-lg-2">
-                        <select id="history-filter-preset" class="form-select form-select-sm">
-                            <option value="" selected>All presets</option>
-                        </select>
-                    </div>
-                    <div class="col-6 col-lg-2">
-                        <input type="date" id="history-date-from" class="form-control form-control-sm" placeholder="From">
-                    </div>
-                    <div class="col-6 col-lg-2">
-                        <input type="date" id="history-date-to" class="form-control form-control-sm" placeholder="To">
-                    </div>
-                    <div class="col-12 col-lg-1">
-                        <button id="btn-history-apply" class="btn btn-primary btn-sm w-100">Filter</button>
-                    </div>
-                </div>
-                <div class="table-responsive history-table">
-                    <table class="table table-sm table-hover align-middle">
+                <div id="history-stats" class="view__stats small muted"></div>
+                <div class="view__scroll table-scroll">
+                    <table class="data-table">
                         <thead>
                             <tr>
                                 <th>File</th>
-                                <th>Preset</th>
-                                <th>Settings</th>
+                                <th class="col-wide">Preset</th>
+                                <th class="col-wide">Settings</th>
                                 <th>Status</th>
-                                <th>Savings</th>
-                                <th>Completed</th>
-                                <th>Notes</th>
-                                <th class="text-end">Actions</th>
+                                <th class="r col-savings">Savings</th>
+                                <th class="col-wide">Completed</th>
+                                <th class="col-wide">Notes</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody id="history-table-body">
-                            <tr><td colspan="8" class="text-center text-muted py-4">No history yet</td></tr>
+                            <tr><td colspan="8"><p class="empty">No history yet</p></td></tr>
                         </tbody>
                     </table>
                 </div>
-                <div id="history-pagination" class="d-flex justify-content-between align-items-center"></div>
-            </div>
-        </div>
-    </div>
+                <div id="history-pagination" class="view__pagination"></div>
+            </section>
 
-    <div class="modal fade" id="log-modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Job Log</h5>
-                    <button type="button" class="btn-close modal-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body bg-dark text-light font-monospace">
-                    <pre id="log-content" class="m-0 p-0" style="white-space: pre-wrap; word-break: break-all;"></pre>
-                </div>
-            </div>
-        </div>
-    </div>
+            <section class="view view--presets" id="view-presets" data-view-panel="presets" aria-label="Presets" hidden>
+                <header class="work__head">
+                    <h1>Presets</h1>
+                    <div class="work__actions">
+                        <button id="btn-preset-new" class="btn btn--small" type="button">New preset</button>
+                        <button id="btn-preset-import" class="btn btn--quiet btn--small" type="button">Import</button>
+                        <button id="btn-preset-export-all" class="btn btn--quiet btn--small" type="button">Export all</button>
+                        <button id="btn-preset-remove-all" class="btn btn--quiet btn--small" type="button">Remove all</button>
+                    </div>
+                </header>
+                <div class="view__body">
+                    <div id="preset-list" class="preset-list"></div>
 
-    <div class="modal fade" id="preset-modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-fullscreen-sm-down">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Manage Presets</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="d-flex justify-content-between mb-3 gap-2 flex-wrap">
-                        <button id="btn-preset-new" class="btn btn-primary btn-sm">New Preset</button>
-                        <div class="d-flex gap-2 flex-wrap">
-                            <button id="btn-preset-export-all" class="btn btn-outline-secondary btn-sm">Export All</button>
-                            <button id="btn-preset-import" class="btn btn-outline-secondary btn-sm">Import</button>
-                            <button id="btn-preset-remove-all" class="btn btn-outline-danger btn-sm">Remove All</button>
+                    <div id="preset-import-form" class="panel" hidden>
+                        <h2 class="h4">Import presets</h2>
+                        <div class="grid-2">
+                            <label class="field">
+                                <span class="label">On conflict</span>
+                                <select id="preset-import-strategy" class="select">
+                                    <option value="skip">Skip existing</option>
+                                    <option value="rename">Rename on conflict</option>
+                                    <option value="overwrite">Overwrite existing</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span class="label">File</span>
+                                <input type="file" id="preset-import-file" class="input" accept=".json">
+                            </label>
                         </div>
+                        <div class="panel__actions">
+                            <button id="btn-preset-import-confirm" class="btn btn--quiet btn--small" type="button">Import</button>
+                            <button id="btn-preset-import-cancel" class="btn btn--quiet btn--small" type="button">Cancel</button>
+                        </div>
+                        <pre id="preset-import-result" class="result small muted"></pre>
                     </div>
-                    <div id="preset-list" class="list-group list-group-flush border"></div>
-                    <div id="preset-import-form" class="d-none mt-3 border p-3 rounded">
-                        <label class="form-label small fw-bold">Import Presets</label>
-                        <div class="mb-2">
-                            <select id="preset-import-strategy" class="form-select form-select-sm">
-                                <option value="skip">Skip existing</option>
-                                <option value="rename">Rename on conflict</option>
-                                <option value="overwrite">Overwrite existing</option>
-                            </select>
-                        </div>
-                        <div class="mb-2">
-                            <input type="file" id="preset-import-file" class="form-control form-control-sm" accept=".json">
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button id="btn-preset-import-confirm" class="btn btn-primary btn-sm">Import</button>
-                            <button id="btn-preset-import-cancel" class="btn btn-secondary btn-sm">Cancel</button>
-                        </div>
-                        <pre id="preset-import-result" class="mt-2 small text-muted mb-0"></pre>
-                    </div>
-                    <div id="preset-edit-form" class="d-none mt-3 border p-3 rounded">
+
+                    <div id="preset-edit-form" class="panel" hidden>
+                        <h2 class="h4" id="preset-edit-title">Preset</h2>
                         <input type="hidden" id="preset-edit-id">
-                        <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label small">Name</label>
-                                <input type="text" id="preset-edit-name" class="form-control form-control-sm">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label small">Description</label>
-                                <input type="text" id="preset-edit-description" class="form-control form-control-sm">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small">CRF</label>
-                                <input type="number" id="preset-edit-crf" class="form-control form-control-sm" min="0" max="51">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small">Encoder Preset</label>
-                                <input type="number" id="preset-edit-encoder_preset" class="form-control form-control-sm" min="0" max="13">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small">Max Resolution</label>
-                                <select id="preset-edit-max_resolution" class="form-select form-select-sm">
+                        <div class="grid-2">
+                            <label class="field">
+                                <span class="label">Name</span>
+                                <input type="text" id="preset-edit-name" class="input">
+                            </label>
+                            <label class="field">
+                                <span class="label">Description</span>
+                                <input type="text" id="preset-edit-description" class="input">
+                            </label>
+                            <label class="field">
+                                <span class="label">CRF</span>
+                                <input type="number" id="preset-edit-crf" class="input" min="0" max="51">
+                            </label>
+                            <label class="field">
+                                <span class="label">Encoder preset</span>
+                                <input type="number" id="preset-edit-encoder_preset" class="input" min="0" max="13">
+                            </label>
+                            <label class="field">
+                                <span class="label">Largest resolution</span>
+                                <select id="preset-edit-max_resolution" class="select">
                                     <option value="720">720p</option>
                                     <option value="1080">1080p</option>
                                     <option value="2160">4K</option>
                                 </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label small">SVT Params</label>
-                                <div class="svt-panel">
-                                    <div class="svt-row mb-0">
-                                        <div class="svt-field">
-                                            <label for="preset-edit-svt_tune" class="svt-field-label">Tune</label>
-                                            <select id="preset-edit-svt_tune" class="form-select form-select-sm" aria-label="SVT tune">
-                                                <option value="0">Tune 0</option>
-                                                <option value="1">Tune 1</option>
-                                                <option value="2">Tune 2</option>
-                                                <option value="">No tune</option>
-                                            </select>
-                                        </div>
-                                        <div class="svt-field">
-                                            <label for="preset-edit-svt_film_grain" class="svt-field-label">Film Grain</label>
-                                            <input type="number" id="preset-edit-svt_film_grain" class="form-control form-control-sm" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="0-50">
-                                        </div>
-                                        <div class="svt-field svt-field--switch">
-                                            <div class="form-check form-switch mb-0">
-                                                <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_denoise">
-                                                <label class="form-check-label small" for="preset-edit-svt_denoise">Denoise</label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="svt-row mb-0">
-                                        <div class="svt-field">
-                                            <label for="preset-edit-svt_tf_strength" class="svt-field-label">TF Strength</label>
-                                            <input type="number" id="preset-edit-svt_tf_strength" class="form-control form-control-sm" min="0" max="4" step="1" placeholder="0-4">
-                                        </div>
-                                        <div class="svt-field">
-                                            <label for="preset-edit-svt_sharpness" class="svt-field-label">Sharpness</label>
-                                            <input type="number" id="preset-edit-svt_sharpness" class="form-control form-control-sm" min="-7" max="7" step="1" placeholder="-7 to 7">
-                                        </div>
-                                    </div>
-                                    <div class="svt-toggle-grid">
-                                        <label class="svt-toggle form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_variance_boost">
-                                            <span>Variance Boost</span>
-                                        </label>
-                                        <label class="svt-toggle form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_restoration">
-                                            <span>Restoration</span>
-                                        </label>
-                                        <label class="svt-toggle form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="preset-edit-svt_qm">
-                                            <span>Quantization Matrices</span>
-                                        </label>
-                                    </div>
-                                    <input type="text" id="preset-edit-svt_extra_params" class="form-control form-control-sm svt-mono mt-2" placeholder="Additional SVT params">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label small">Audio Bitrate</label>
-                                <input type="text" id="preset-edit-audio_bitrate" class="form-control form-control-sm">
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-check mt-2">
-                                    <input type="checkbox" id="preset-edit-skip_crop_detect" class="form-check-input">
-                                    <label for="preset-edit-skip_crop_detect" class="form-check-label small">Skip Crop Detect</label>
-                                </div>
-                            </div>
+                            </label>
+                            <label class="field">
+                                <span class="label">Audio bitrate</span>
+                                <input type="text" id="preset-edit-audio_bitrate" class="input">
+                            </label>
                         </div>
-                        <div class="d-flex gap-2 mt-3">
-                            <button id="btn-preset-edit-save" class="btn btn-primary btn-sm">Save</button>
-                            <button id="btn-preset-edit-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+
+                        <fieldset class="field-group">
+                            <legend class="label">SVT-AV1</legend>
+                            <div class="grid-2">
+                                <label class="field">
+                                    <span class="label">Tune</span>
+                                    <select id="preset-edit-svt_tune" class="select" aria-label="SVT tune">
+                                        <option value="0">Tune 0</option>
+                                        <option value="1">Tune 1</option>
+                                        <option value="2">Tune 2</option>
+                                        <option value="">No tune</option>
+                                    </select>
+                                </label>
+                                <label class="field">
+                                    <span class="label">Film grain</span>
+                                    <input type="number" id="preset-edit-svt_film_grain" class="input" min="0" max="50" step="1" list="svt-film-grain-options" aria-label="Film grain" placeholder="0-50">
+                                </label>
+                                <label class="field">
+                                    <span class="label">Temporal filtering strength</span>
+                                    <input type="number" id="preset-edit-svt_tf_strength" class="input" min="0" max="4" step="1" placeholder="0-4">
+                                </label>
+                                <label class="field">
+                                    <span class="label">Sharpness</span>
+                                    <input type="number" id="preset-edit-svt_sharpness" class="input" min="-7" max="7" step="1" placeholder="-7 to 7">
+                                </label>
+                            </div>
+                            <div class="check-list">
+                                <label class="check"><input type="checkbox" id="preset-edit-svt_denoise">Denoise</label>
+                                <label class="check"><input type="checkbox" id="preset-edit-svt_variance_boost">Variance boost</label>
+                                <label class="check"><input type="checkbox" id="preset-edit-svt_restoration">Restoration</label>
+                                <label class="check"><input type="checkbox" id="preset-edit-svt_qm">Quantisation matrices</label>
+                            </div>
+                            <label class="field">
+                                <span class="label">Additional parameters</span>
+                                <input type="text" id="preset-edit-svt_extra_params" class="input machine" placeholder="scd=1" autocomplete="off">
+                            </label>
+                        </fieldset>
+
+                        <label class="check">
+                            <input type="checkbox" id="preset-edit-skip_crop_detect">Skip crop detection
+                        </label>
+
+                        <div class="panel__actions">
+                            <button id="btn-preset-edit-save" class="btn btn--quiet btn--small" type="button">Save</button>
+                            <button id="btn-preset-edit-cancel" class="btn btn--quiet btn--small" type="button">Cancel</button>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+            </section>
+
+            <section class="view view--cluster" id="view-cluster" data-view-panel="cluster" aria-label="Cluster" hidden>
+                <header class="work__head">
+                    <h1>Cluster</h1>
+                </header>
+                <div class="view__body" id="cluster-status">
+                    <p class="muted small">Cluster status unavailable</p>
+                </div>
+            </section>
+        </main>
+
+        <footer class="statusbar" aria-label="Status">
+            <span class="statusbar__brand">Video conversion</span>
+            <span>Node <b id="status-node">—</b>, <span id="status-role">standalone</span></span>
+            <span class="statusbar__peers">Peers <b class="num" id="status-peers">0</b> online</span>
+            <span>Queue <b class="num" id="status-running">0</b> running, <b class="num" id="status-waiting">0</b> waiting</span>
+            <span id="status-paused" hidden>Queue paused</span>
+            <span class="statusbar__grow" id="status-cluster">Cluster disabled</span>
+        </footer>
     </div>
 
-    <div class="modal fade" id="history-detail-modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Encode Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="history-detail-content"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
+    <dialog class="dialog dialog--wide" id="log-modal" aria-labelledby="log-title">
+        <div class="dialog__head">
+            <h2 class="h4" id="log-title">Job log</h2>
+            <button type="button" class="btn btn--quiet btn--small dialog__close" data-dialog-close aria-label="Close">Close</button>
         </div>
-    </div>
+        <pre id="log-content" class="log"></pre>
+    </dialog>
 
-    <div class="modal fade" id="clear-older-modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-sm">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Clear Older Than</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="datetime-local" id="clear-older-date" class="form-control">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" id="btn-clear-older-confirm" class="btn btn-danger">Clear</button>
-                </div>
-            </div>
+    <dialog class="dialog dialog--wide" id="history-detail-modal" aria-labelledby="history-detail-title">
+        <div class="dialog__head">
+            <h2 class="h4" id="history-detail-title">Encode details</h2>
+            <button type="button" class="btn btn--quiet btn--small dialog__close" data-dialog-close aria-label="Close">Close</button>
         </div>
-    </div>
+        <div class="dialog__body">
+            <div id="history-detail-content"></div>
+        </div>
+    </dialog>
 
-    <script src="/vendor/js/bootstrap.bundle.min.js"></script>
+    <dialog class="dialog dialog--narrow" id="clear-older-modal" aria-labelledby="clear-older-title">
+        <div class="dialog__head">
+            <h2 class="h4" id="clear-older-title">Clear older than</h2>
+            <button type="button" class="btn btn--quiet btn--small dialog__close" data-dialog-close aria-label="Close">Close</button>
+        </div>
+        <div class="dialog__body">
+            <label class="field">
+                <span class="label">Date and time</span>
+                <input type="datetime-local" id="clear-older-date" class="input">
+            </label>
+        </div>
+        <div class="dialog__foot">
+            <button type="button" class="btn btn--quiet btn--small" data-dialog-close>Cancel</button>
+            <button type="button" id="btn-clear-older-confirm" class="btn btn--small">Clear</button>
+        </div>
+    </dialog>
 
     <script src="/js/api.js"></script>
     <script src="/js/websocket-client.js"></script>
