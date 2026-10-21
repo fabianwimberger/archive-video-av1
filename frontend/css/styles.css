@@ -1313,6 +1313,16 @@ input[type="range"] {
     border-left: 1px solid var(--line);
 }
 
+.statusbar__credit {
+    border-right: 0;
+    border-left: 1px solid var(--line);
+}
+
+.statusbar__credit a {
+    color: inherit;
+    text-underline-offset: 2px;
+}
+
 /* ---------- Narrow screens ---------- */
 
 @media (max-width: 63.99rem) {
