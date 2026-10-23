@@ -30,7 +30,7 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
   - **Custom presets** — create, edit, duplicate, import/export your own presets
 - **Automatic crop detection** (consensus-based, 8-point sampling)
 - **Two-pass audio normalization** (loudnorm, Opus stereo output)
-- **Configurable track selection** (default: German > English > first available)
+- **Settings page** for track and language selection (default: German > English > first available), output file owner, cluster mode and history retention
 - **Skips re-encoding** if source is already AV1
 - **History view** with filtering, search, retry, and per-job settings inspection
 - **Auto Speed / Auto Grain** — analyzes the selected file and suggests a preset or grain settings
@@ -92,10 +92,10 @@ Deleting an original requires a completed conversion record whose source and out
 
 Presets are stored in the SQLite database and survive restarts.
 
-- **Built-in presets** (`Default`, `Animated`, `Grainy`, `Very Grainy`) are seeded automatically and synced on startup. They cannot be edited or deleted, but you can duplicate them to create user presets.
-- **User presets** can be created from the settings panel, or saved from any past job's settings snapshot.
-- **Import / Export** — share presets as JSON documents via the Manage Presets modal.
-- **Default preset** — one preset can be marked as default; it is pre-selected in the UI on load.
+- **Built-in presets** (`Default`, `Animated`, `Grainy`, `Very Grainy`) cannot be edited or deleted, but can be duplicated.
+- **User presets** are created on the Presets page or saved from a past job's settings.
+- **Import / Export** shares presets as JSON on the Presets page.
+- **Default preset** is pre-selected on the Convert page.
 
 ## Configuration
 
@@ -120,19 +120,13 @@ The node ID is taken from the hostname on first start, stored in the database an
 | `TEMP_DIR` | `/app/temp` | Temporary directory for in-progress conversions |
 | `DATABASE_PATH` | `/app/data/app.db` | SQLite database path (persistent) |
 | `TZ` | `UTC` | Container timezone |
-| `DISTRIBUTED_NODE_ID` | stored | Overrides the stored node ID |
-| `DISTRIBUTED_DISCOVERY_GROUP` / `DISTRIBUTED_DISCOVERY_PORT` | `239.255.42.99` / `9988` | Multicast peer discovery |
-| `DISTRIBUTED_HEARTBEAT_SECONDS` / `DISTRIBUTED_PROGRESS_SECONDS` | `5` / `1` | Cluster coordination intervals |
-| `DISTRIBUTED_PEER_TTL_SECONDS` / `DISTRIBUTED_WORKER_TIMEOUT_SECONDS` | `20` / `120` | Peer expiry and worker timeout |
-| `DISTRIBUTED_MAX_REQUEUES` | `3` | Requeue attempts before a job fails |
-| `DISTRIBUTED_STATE_DIR` | `<SOURCE_MOUNT>/.archive-video-av1` | Shared cluster queue ledger directory |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed browser origins |
 
-The remaining `DISTRIBUTED_*` variables are described in [docs/distributed.md](docs/distributed.md).
+Cluster tuning variables are described in [docs/distributed.md](docs/distributed.md).
 
 ## Distributed Processing
 
-Several nodes on a trusted LAN can share one queue: set `DISTRIBUTED_ENABLED=true` on each and mount the same library at the same path. An elected leader hands pending jobs to idle peers and requeues the work of a node that disappears. Requirements, node setup, failure handling and the other `DISTRIBUTED_*` variables are in [docs/distributed.md](docs/distributed.md).
+Several nodes on a trusted LAN can share one queue: turn on distributed mode on each node's Settings page and mount the same library at the same path. An elected leader hands pending jobs to idle peers and requeues the work of a node that disappears. Setup, requirements and failure handling are in [docs/distributed.md](docs/distributed.md).
 
 ## Security
 
