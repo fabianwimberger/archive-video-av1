@@ -80,5 +80,7 @@ def normalize_url(value: str, allow_empty: bool = True) -> str:
 
 def normalize_url_list(value: str) -> str:
     return ",".join(
-        normalize_url(part, allow_empty=False) for part in value.split(",") if part.strip()
+        normalize_url(part, allow_empty=False)
+        for part in value.split(",")
+        if part.strip()
     )
