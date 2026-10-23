@@ -2,9 +2,17 @@
 
 import json
 from datetime import datetime
+from enum import StrEnum
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.config import settings
+from app.utils.validation import (
+    normalize_file_mode,
+    normalize_language_list,
+    normalize_url,
+    normalize_url_list,
+)
 
 
 class ConversionSettings(BaseModel):
@@ -267,3 +275,76 @@ class PresetImportResponse(BaseModel):
     skipped: list[str]
     renamed: list[dict]
     errors: list[dict]
+
+
+class AudioTrackMode(StrEnum):
+    PREFERRED = "preferred"
+    ALL = "all"
+
+
+class SubtitleTrackMode(StrEnum):
+    PREFERRED = "preferred"
+    ALL = "all"
+    NONE = "none"
+
+
+class LogLevel(StrEnum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+
+class SettingsUpdate(BaseModel):
+    AUDIO_TRACK_MODE: Optional[AudioTrackMode] = None
+    SUBTITLE_TRACK_MODE: Optional[SubtitleTrackMode] = None
+    PREFERRED_AUDIO_LANGUAGES: Optional[str] = None
+    PREFERRED_SUBTITLE_LANGUAGES: Optional[str] = None
+    OUTPUT_FILE_MODE: Optional[str] = None
+    PUID: Optional[int] = Field(default=None, ge=0, le=65535)
+    PGID: Optional[int] = Field(default=None, ge=0, le=65535)
+    LOG_LEVEL: Optional[LogLevel] = None
+    JOB_HISTORY_RETENTION_DAYS: Optional[int] = Field(default=None, ge=0)
+    JOB_HISTORY_MAX_ROWS: Optional[int] = Field(default=None, ge=0)
+    DISTRIBUTED_ENABLED: Optional[bool] = None
+    DISTRIBUTED_NODE_NAME: Optional[str] = None
+    DISTRIBUTED_PUBLIC_URL: Optional[str] = None
+    DISTRIBUTED_LEADER_URL: Optional[str] = None
+    DISTRIBUTED_PEERS: Optional[str] = None
+
+    @field_validator("PUID", "PGID", mode="before")
+    @classmethod
+    def empty_owner_is_none(cls, value):
+        if value is None or value == "":
+            return None
+        return value
+
+    @field_validator("PREFERRED_AUDIO_LANGUAGES", "PREFERRED_SUBTITLE_LANGUAGES")
+    @classmethod
+    def check_languages(cls, value):
+        return None if value is None else normalize_language_list(value)
+
+    @field_validator("OUTPUT_FILE_MODE")
+    @classmethod
+    def check_file_mode(cls, value):
+        return None if value is None else normalize_file_mode(value)
+
+    @field_validator("DISTRIBUTED_PUBLIC_URL", "DISTRIBUTED_LEADER_URL")
+    @classmethod
+    def check_url(cls, value):
+        return "" if value is None else normalize_url(value)
+
+    @field_validator("DISTRIBUTED_PEERS")
+    @classmethod
+    def check_peers(cls, value):
+        return "" if value is None else normalize_url_list(value)
+
+    @field_validator("DISTRIBUTED_NODE_NAME")
+    @classmethod
+    def check_node_name(cls, value):
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("Node name requires a value")
+        return text

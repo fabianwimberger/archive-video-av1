@@ -8,6 +8,7 @@ import pytest
 
 from .conftest import VIDEO_ROOT
 from app.services.conversion_service import ConversionService
+from app.services.settings_service import WRAPPER_SETTINGS, settings_service
 
 
 VALID_SETTINGS = {
@@ -61,7 +62,9 @@ class FakeProcess:
 
 
 @pytest.mark.asyncio
-async def test_convert_file_tolerates_already_dead_process_group(monkeypatch):
+async def test_convert_file_tolerates_already_dead_process_group(
+    monkeypatch, db_session
+):
     source = VIDEO_ROOT / "dead.mkv"
     source.write_bytes(b"source")
     service = ConversionService()
@@ -90,7 +93,7 @@ async def test_convert_file_tolerates_already_dead_process_group(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_convert_file_kills_stuck_process_on_timeout(monkeypatch):
+async def test_convert_file_kills_stuck_process_on_timeout(monkeypatch, db_session):
     source = VIDEO_ROOT / "stuck.mkv"
     source.write_bytes(b"source")
     service = ConversionService()
@@ -116,3 +119,67 @@ async def test_convert_file_kills_stuck_process_on_timeout(monkeypatch):
 
     assert success is True
     assert process.communicate_calls == 2
+
+
+async def _capture_wrapper_env(monkeypatch, service, source_name):
+    source = VIDEO_ROOT / source_name
+    source.write_bytes(b"source")
+    captured = {}
+    process = FakeProcess()
+
+    async def fake_exec(*_args, **kwargs):
+        captured.update(kwargs["env"])
+        return process
+
+    def dead_killpg(_pid, _sig):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(os, "killpg", dead_killpg)
+
+    success, _log = await service.convert_file(
+        1,
+        str(source),
+        str(VIDEO_ROOT / f"{source.stem}_conv.mkv"),
+        dict(VALID_SETTINGS),
+        AsyncMock(),
+    )
+
+    assert success is True
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_wrapper_env_uses_stored_settings(monkeypatch, db_session):
+    for name in WRAPPER_SETTINGS:
+        monkeypatch.delenv(name, raising=False)
+
+    await settings_service.update(
+        {
+            "AUDIO_TRACK_MODE": "all",
+            "PREFERRED_AUDIO_LANGUAGES": "en,de",
+            "OUTPUT_FILE_MODE": "0600",
+            "PUID": 1000,
+            "PGID": 1001,
+        }
+    )
+
+    env = await _capture_wrapper_env(monkeypatch, ConversionService(), "stored.mkv")
+
+    assert env["AUDIO_TRACK_MODE"] == "all"
+    assert env["PREFERRED_AUDIO_LANGUAGES"] == "en,de"
+    assert env["OUTPUT_FILE_MODE"] == "0600"
+    assert env["PUID"] == "1000"
+    assert env["PGID"] == "1001"
+    assert env["SUBTITLE_TRACK_MODE"] == "preferred"
+
+
+@pytest.mark.asyncio
+async def test_wrapper_env_lets_environment_win(monkeypatch, db_session):
+    for name in WRAPPER_SETTINGS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OUTPUT_FILE_MODE", "0601")
+
+    env = await _capture_wrapper_env(monkeypatch, ConversionService(), "env.mkv")
+
+    assert env["OUTPUT_FILE_MODE"] == "0601"

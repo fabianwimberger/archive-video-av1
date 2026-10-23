@@ -99,24 +99,36 @@ Presets are stored in the SQLite database and survive restarts.
 
 ## Configuration
 
-### Environment Variables
+Settings are managed on the Settings page and stored in the SQLite database. An environment variable of the same name wins and locks the field read-only; otherwise the stored value is used, then the built-in default.
+
+### Settings page
+
+| Section | Settings | Takes effect |
+|---------|----------|--------------|
+| Tracks and languages | Audio and subtitle track mode, preferred language lists | Next job |
+| Output files | Fallback file mode, file owner UID and GID | Next job |
+| Cluster | Distributed mode, node name, public URL, leader URL, peers, node ID | After a restart |
+| Maintenance | History retention in days and rows, log level | Log level immediately, retention on the next cleanup pass |
+
+The node ID is taken from the hostname on first start, stored in the database and shown read-only, so a recreated container keeps it.
+
+### Environment-only variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SOURCE_MOUNT` | `/videos` | Mount point for source video files |
 | `TEMP_DIR` | `/app/temp` | Temporary directory for in-progress conversions |
 | `DATABASE_PATH` | `/app/data/app.db` | SQLite database path (persistent) |
-| `LOG_LEVEL` | `INFO` | Logging level for the app, uvicorn, and httpx (`DEBUG`, `INFO`, `WARNING`, `ERROR`); per-request lines only at `DEBUG` |
-| `AUDIO_TRACK_MODE` | `preferred` | Audio stream mode: `preferred` selects one track and normalizes it, `all` copies all audio tracks |
-| `SUBTITLE_TRACK_MODE` | `preferred` | Subtitle stream mode: `preferred` selects one matching track, `all` copies all subtitle tracks, `none` drops subtitles |
-| `PREFERRED_AUDIO_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `AUDIO_TRACK_MODE=preferred` |
-| `PREFERRED_SUBTITLE_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `SUBTITLE_TRACK_MODE=preferred` |
-| `OUTPUT_FILE_MODE` | `0644` | Mode for converted files when the source file's mode cannot be copied |
-| `PUID` / `PGID` | empty | Owner for converted files when the source file's owner cannot be copied; empty keeps the writing user |
-| `JOB_HISTORY_RETENTION_DAYS` | `0` | Delete finished jobs older than N days (`0` = keep forever) |
-| `JOB_HISTORY_MAX_ROWS` | `0` | Maximum number of finished jobs to keep (`0` = unlimited) |
-| `DISTRIBUTED_ENABLED` | `false` | Enable LAN peer discovery and remote job delegation |
 | `TZ` | `UTC` | Container timezone |
+| `DISTRIBUTED_NODE_ID` | stored | Overrides the stored node ID |
+| `DISTRIBUTED_DISCOVERY_GROUP` / `DISTRIBUTED_DISCOVERY_PORT` | `239.255.42.99` / `9988` | Multicast peer discovery |
+| `DISTRIBUTED_HEARTBEAT_SECONDS` / `DISTRIBUTED_PROGRESS_SECONDS` | `5` / `1` | Cluster coordination intervals |
+| `DISTRIBUTED_PEER_TTL_SECONDS` / `DISTRIBUTED_WORKER_TIMEOUT_SECONDS` | `20` / `120` | Peer expiry and worker timeout |
+| `DISTRIBUTED_MAX_REQUEUES` | `3` | Requeue attempts before a job fails |
+| `DISTRIBUTED_STATE_DIR` | `<SOURCE_MOUNT>/.archive-video-av1` | Shared cluster queue ledger directory |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed browser origins |
+
+The remaining `DISTRIBUTED_*` variables are described in [docs/distributed.md](docs/distributed.md).
 
 ## Distributed Processing
 

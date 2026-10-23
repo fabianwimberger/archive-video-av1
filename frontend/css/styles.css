@@ -111,6 +111,12 @@
     color: var(--ink-faint);
 }
 
+.input:disabled,
+.select:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
 .seg {
     display: inline-flex;
     padding: 2px;
@@ -321,7 +327,8 @@ body {
 
 .view--queue,
 .view--presets,
-.view--cluster {
+.view--cluster,
+.view--settings {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
 }
@@ -1033,6 +1040,43 @@ input[type="range"] {
     overflow-wrap: anywhere;
 }
 
+/* ---------- Settings ---------- */
+
+/* Columns rather than a grid: the cards differ a lot in height, and a grid
+   row would leave a hole under the shorter ones. */
+.settings-grid {
+    columns: 2 26rem;
+    column-gap: var(--s-4);
+}
+
+.settings-card {
+    break-inside: avoid;
+    margin-bottom: var(--s-4);
+}
+
+.settings-card h2 {
+    font-size: var(--fs-16);
+    font-weight: 620;
+}
+
+.settings-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-2);
+}
+
+.settings-card__fields {
+    display: grid;
+    gap: var(--s-3);
+}
+
+.settings-card .panel__actions {
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--line);
+}
+
 /* ---------- Presets ---------- */
 
 .preset-list {
@@ -1385,7 +1429,8 @@ input[type="range"] {
     .view--queue,
     .view--history,
     .view--presets,
-    .view--cluster {
+    .view--cluster,
+    .view--settings {
         display: block;
     }
 

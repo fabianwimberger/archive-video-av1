@@ -158,8 +158,8 @@ async def test_recover_interrupted_jobs_skips_remote_delegated_jobs(
 async def test_prune_history_noop_when_disabled(
     db_session, original_lifecycle_functions, monkeypatch
 ):
-    monkeypatch.setattr(settings, "JOB_HISTORY_RETENTION_DAYS", 0)
-    monkeypatch.setattr(settings, "JOB_HISTORY_MAX_ROWS", 0)
+    monkeypatch.setenv("JOB_HISTORY_RETENTION_DAYS", "0")
+    monkeypatch.setenv("JOB_HISTORY_MAX_ROWS", "0")
 
     old_job = make_job(
         status="completed",
@@ -179,8 +179,8 @@ async def test_prune_history_noop_when_disabled(
 async def test_prune_history_removes_jobs_past_retention(
     db_session, original_lifecycle_functions, monkeypatch
 ):
-    monkeypatch.setattr(settings, "JOB_HISTORY_RETENTION_DAYS", 7)
-    monkeypatch.setattr(settings, "JOB_HISTORY_MAX_ROWS", 0)
+    monkeypatch.setenv("JOB_HISTORY_RETENTION_DAYS", "7")
+    monkeypatch.setenv("JOB_HISTORY_MAX_ROWS", "0")
 
     old_job = make_job(
         status="completed", completed_at=datetime.now(timezone.utc) - timedelta(days=30)
@@ -204,8 +204,8 @@ async def test_prune_history_removes_jobs_past_retention(
 async def test_prune_history_respects_max_rows(
     db_session, original_lifecycle_functions, monkeypatch
 ):
-    monkeypatch.setattr(settings, "JOB_HISTORY_RETENTION_DAYS", 0)
-    monkeypatch.setattr(settings, "JOB_HISTORY_MAX_ROWS", 2)
+    monkeypatch.setenv("JOB_HISTORY_RETENTION_DAYS", "0")
+    monkeypatch.setenv("JOB_HISTORY_MAX_ROWS", "2")
 
     now = datetime.now(timezone.utc)
     jobs = [
@@ -229,8 +229,8 @@ async def test_prune_history_respects_max_rows(
 async def test_prune_history_ignores_active_jobs(
     db_session, original_lifecycle_functions, monkeypatch
 ):
-    monkeypatch.setattr(settings, "JOB_HISTORY_RETENTION_DAYS", 1)
-    monkeypatch.setattr(settings, "JOB_HISTORY_MAX_ROWS", 0)
+    monkeypatch.setenv("JOB_HISTORY_RETENTION_DAYS", "1")
+    monkeypatch.setenv("JOB_HISTORY_MAX_ROWS", "0")
 
     active_job = make_job(status="processing", completed_at=None)
     db_session.add(active_job)

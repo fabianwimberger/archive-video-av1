@@ -36,6 +36,10 @@
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/><path d="M10 7h4a2 2 0 0 1 2 2v5"/></svg>
                 Cluster<span class="count num" id="rail-peer-count">0</span>
             </a>
+            <a href="#/settings" data-view-link="settings">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg>
+                Settings
+            </a>
         </nav>
 
         <main class="work" id="main">
@@ -453,6 +457,64 @@
                     <p class="muted small">Cluster status unavailable</p>
                 </div>
             </section>
+
+            <section class="view view--settings" id="view-settings" data-view-panel="settings" aria-label="Settings" hidden>
+                <header class="work__head">
+                    <h1>Settings</h1>
+                    <span id="settings-restart-status" class="status status--warn" hidden>Restart to apply</span>
+                    <div class="work__actions">
+                        <button id="btn-settings-restart" class="btn btn--small" type="button" hidden>Restart service</button>
+                    </div>
+                </header>
+                <div class="view__body" id="settings-view">
+                    <div class="settings-grid">
+                        <section class="panel settings-card" data-settings-section="tracks" aria-labelledby="settings-tracks-title">
+                            <div class="settings-card__head">
+                                <h2 class="h4" id="settings-tracks-title">Tracks and languages</h2>
+                                <span class="settings-card__status small muted" id="settings-tracks-status"></span>
+                            </div>
+                            <div class="settings-card__fields" id="settings-tracks-fields"></div>
+                            <div class="panel__actions">
+                                <button class="btn btn--quiet btn--small" type="button" data-settings-save="tracks">Save</button>
+                            </div>
+                        </section>
+
+                        <section class="panel settings-card" data-settings-section="output" aria-labelledby="settings-output-title">
+                            <div class="settings-card__head">
+                                <h2 class="h4" id="settings-output-title">Output files</h2>
+                                <span class="settings-card__status small muted" id="settings-output-status"></span>
+                            </div>
+                            <div class="settings-card__fields" id="settings-output-fields"></div>
+                            <div class="panel__actions">
+                                <button class="btn btn--quiet btn--small" type="button" data-settings-save="output">Save</button>
+                            </div>
+                        </section>
+
+                        <section class="panel settings-card" data-settings-section="cluster" aria-labelledby="settings-cluster-title">
+                            <div class="settings-card__head">
+                                <h2 class="h4" id="settings-cluster-title">Cluster</h2>
+                                <span class="settings-card__status small muted" id="settings-cluster-status"></span>
+                            </div>
+                            <div class="settings-card__fields" id="settings-cluster-fields"></div>
+                            <p class="field__hint">Delegated jobs run with the worker's own track, language and ownership settings. Cluster changes apply after a restart.</p>
+                            <div class="panel__actions">
+                                <button class="btn btn--quiet btn--small" type="button" data-settings-save="cluster">Save</button>
+                            </div>
+                        </section>
+
+                        <section class="panel settings-card" data-settings-section="maintenance" aria-labelledby="settings-maintenance-title">
+                            <div class="settings-card__head">
+                                <h2 class="h4" id="settings-maintenance-title">Maintenance</h2>
+                                <span class="settings-card__status small muted" id="settings-maintenance-status"></span>
+                            </div>
+                            <div class="settings-card__fields" id="settings-maintenance-fields"></div>
+                            <div class="panel__actions">
+                                <button class="btn btn--quiet btn--small" type="button" data-settings-save="maintenance">Save</button>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <footer class="statusbar" aria-label="Status">
@@ -508,6 +570,7 @@
     <script src="/js/settings-panel.js"></script>
     <script src="/js/job-queue.js"></script>
     <script src="/js/history-view.js"></script>
+    <script src="/js/settings-view.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

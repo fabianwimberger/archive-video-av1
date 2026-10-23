@@ -7,6 +7,7 @@ import signal
 from pathlib import Path
 from typing import Callable, Dict, Any, List, Optional, TypedDict
 from app.config import settings
+from app.services.settings_service import settings_service
 from app.utils.validation import validate_conversion_settings
 from app.utils.file_safety import OutputInUse, output_lock, validate_source_path
 
@@ -64,12 +65,14 @@ class ConversionService:
 
         logger.info(f"Starting conversion job {job_id}: {source_file} -> {output_file}")
 
+        wrapper_env = await settings_service.wrapper_environment()
+
         # Held until the wrapper's whole process group is gone, so the lock
         # file is removed on success, failure and cancellation alike.
         try:
             with output_lock(expected_output):
                 return await self._run_wrapper(
-                    job_id, cmd, progress_callback, process_callback
+                    job_id, cmd, progress_callback, process_callback, wrapper_env
                 )
         except OutputInUse as exc:
             logger.error(f"Job {job_id} error: {exc}")
@@ -81,6 +84,7 @@ class ConversionService:
         cmd: List[str],
         progress_callback: Callable,
         process_callback: Optional[Callable],
+        wrapper_env: Dict[str, str],
     ) -> tuple[bool, str]:
         progress_data: ProgressData = {
             "frame": 0,
@@ -107,19 +111,7 @@ class ConversionService:
                     "PATH": "/usr/bin:/bin:/usr/local/bin",
                     "LC_ALL": "C.UTF-8",
                     "LANG": "C.UTF-8",
-                    **{
-                        k: os.environ[k]
-                        for k in (
-                            "AUDIO_TRACK_MODE",
-                            "SUBTITLE_TRACK_MODE",
-                            "PREFERRED_AUDIO_LANGUAGES",
-                            "PREFERRED_SUBTITLE_LANGUAGES",
-                            "OUTPUT_FILE_MODE",
-                            "PUID",
-                            "PGID",
-                        )
-                        if k in os.environ
-                    },
+                    **wrapper_env,
                 },
             )
 

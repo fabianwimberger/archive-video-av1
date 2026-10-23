@@ -248,6 +248,23 @@ class ApiClient {
         return this.request('/cluster/status');
     }
 
+    async getSettings() {
+        return this.request('/settings');
+    }
+
+    async updateSettings(changes) {
+        return this.request('/settings', {
+            method: 'PUT',
+            body: JSON.stringify(changes),
+        });
+    }
+
+    async restartService() {
+        return this.request('/settings/restart', {
+            method: 'POST',
+        });
+    }
+
     async getHealth() {
         return this.request('/health');
     }
