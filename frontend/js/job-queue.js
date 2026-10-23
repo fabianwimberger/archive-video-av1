@@ -39,9 +39,9 @@ class JobQueue {
             this.startRefresh();
         });
 
-        const logModal = document.getElementById('log-modal');
-        if (logModal) {
-            logModal.addEventListener('hidden.bs.modal', () => {
+        const logDialog = document.getElementById('log-modal');
+        if (logDialog) {
+            logDialog.addEventListener('close', () => {
                 this.openLogJobId = null;
             });
         }
@@ -65,9 +65,9 @@ class JobQueue {
             if (this.jobs.size === 0) return;
             const processingCount = Array.from(this.jobs.values()).filter(j => j.status === 'processing').length;
             const pendingCount = Array.from(this.jobs.values()).filter(j => j.status === 'pending').length;
-            let message = 'Are you sure you want to force clear all jobs?';
-            if (processingCount > 0) message += `\n\nThis will STOP ${processingCount} running job(s)!`;
-            if (pendingCount > 0) message += `\n\n${pendingCount} pending job(s) will be cancelled.`;
+            let message = 'Clear all jobs?';
+            if (processingCount > 0) message += `\n\nThis stops ${processingCount} running job(s).`;
+            if (pendingCount > 0) message += `\n\n${pendingCount} waiting job(s) will be cancelled.`;
             if (!confirm(message)) return;
             try {
                 const cancelPromises = Array.from(this.jobs.values())
@@ -77,17 +77,11 @@ class JobQueue {
                 await api.clearAllJobs();
                 this.jobs.clear();
                 this.render();
+                this.updateStats();
             } catch (error) {
                 console.error('Error force clearing all jobs:', error);
                 alert('Failed to clear all jobs: ' + error.message);
             }
-        });
-
-        document.getElementById('btn-toggle-queue').addEventListener('click', (e) => {
-            const queueElement = document.getElementById('job-queue');
-            const isCollapsed = queueElement.style.display === 'none';
-            queueElement.style.display = isCollapsed ? 'block' : 'none';
-            e.target.textContent = isCollapsed ? 'Collapse' : 'Expand';
         });
 
         document.getElementById('btn-pause-queue').addEventListener('click', async () => {
@@ -95,15 +89,10 @@ class JobQueue {
             try {
                 if (btn.textContent === 'Pause') {
                     await api.pauseQueue();
-                    document.getElementById('paused-banner').classList.remove('d-none');
-                    btn.textContent = 'Resume';
-                    btn.classList.replace('btn-outline-warning', 'btn-outline-success');
                 } else {
                     await api.resumeQueue();
-                    document.getElementById('paused-banner').classList.add('d-none');
-                    btn.textContent = 'Pause';
-                    btn.classList.replace('btn-outline-success', 'btn-outline-warning');
                 }
+                await this.loadQueueState();
             } catch (error) {
                 window.app.showNotification(`Queue control failed: ${error.message}`, 'danger');
             }
@@ -115,15 +104,11 @@ class JobQueue {
             const state = await api.getQueueState();
             const banner = document.getElementById('paused-banner');
             const btn = document.getElementById('btn-pause-queue');
-            if (state.paused) {
-                banner.classList.remove('d-none');
-                btn.textContent = 'Resume';
-                btn.classList.replace('btn-outline-warning', 'btn-outline-success');
-            } else {
-                banner.classList.add('d-none');
-                btn.textContent = 'Pause';
-                btn.classList.replace('btn-outline-success', 'btn-outline-warning');
-            }
+            const statusPaused = document.getElementById('status-paused');
+
+            banner.hidden = !state.paused;
+            statusPaused.hidden = !state.paused;
+            btn.textContent = state.paused ? 'Resume' : 'Pause';
         } catch (e) {
             console.error('Error loading queue state:', e);
         }
@@ -138,8 +123,16 @@ class JobQueue {
             this.renderClusterStatus();
         } catch (error) {
             console.error('Error loading cluster status:', error);
-            container.innerHTML = '<div class="text-muted small">Cluster status unavailable</div>';
+            container.innerHTML = '<p class="muted small">Cluster status unavailable</p>';
+            document.getElementById('status-cluster').textContent = 'Cluster unavailable';
         }
+    }
+
+    clusterRole(status) {
+        if (!status.enabled) return 'Standalone';
+        if (status.is_leader) return 'Leader';
+        if (status.leader_url) return 'Follower';
+        return 'Self-led';
     }
 
     renderClusterStatus() {
@@ -147,34 +140,44 @@ class JobQueue {
         if (!container || !this.clusterStatus) return;
 
         const status = this.clusterStatus;
-        const peerCount = status.peers ? status.peers.length : 0;
-        const enabledBadge = status.enabled
-            ? '<span class="badge bg-success">enabled</span>'
-            : '<span class="badge bg-secondary">disabled</span>';
-        const peerSummary = peerCount === 1
-            ? '1 connected peer'
-            : `${peerCount} connected peers`;
-        const leaderSummary = status.leader_url
-            ? (status.is_leader ? 'leader' : 'leader remote')
-            : 'self-led';
-        const peers = status.enabled && peerCount > 0
-            ? status.peers.map(peer => `
-                <span class="cluster-peer badge text-bg-light border">
-                    <i class="bi bi-hdd-network me-1"></i>${utils.escapeHtml(peer.node_name)}
-                </span>
+        const peers = status.peers || [];
+        const role = this.clusterRole(status);
+
+        const peerItems = peers.length
+            ? peers.map(peer => `
+                <li>
+                    <span>${utils.escapeHtml(peer.node_name)}</span>
+                    <span class="num">${Number(peer.last_seen_seconds).toFixed(1)} s ago</span>
+                </li>
             `).join('')
-            : '<span class="text-muted">No peers discovered</span>';
+            : '<li><span class="muted">No peers discovered</span></li>';
 
         container.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="small fw-bold"><i class="bi bi-diagram-3 me-1"></i>Cluster</span>
-                    ${enabledBadge}
-                    <span class="small text-muted">${utils.escapeHtml(status.node_name)} · ${leaderSummary} · ${peerSummary}</span>
-                </div>
-                <div class="cluster-peers d-flex align-items-center gap-1 flex-wrap small">${peers}</div>
+            <div class="cluster-grid">
+                <section class="cluster-block">
+                    <h2>This node</h2>
+                    <dl class="detail-list">
+                        <dt>Name</dt><dd>${utils.escapeHtml(status.node_name)}</dd>
+                        <dt>Node ID</dt><dd class="machine">${utils.escapeHtml(status.node_id)}</dd>
+                        <dt>Role</dt><dd><span class="status ${status.enabled ? 'status--ok' : 'status--info'}">${role}</span></dd>
+                        <dt>Address</dt><dd class="machine">${utils.escapeHtml(status.public_url || '—')}</dd>
+                        <dt>Leader</dt><dd class="machine">${utils.escapeHtml(status.leader_url || '—')}</dd>
+                    </dl>
+                </section>
+                <section class="cluster-block">
+                    <h2>Peers <span class="num">${peers.length}</span></h2>
+                    <ul class="cluster-list">${peerItems}</ul>
+                </section>
             </div>
         `;
+
+        document.getElementById('rail-peer-count').textContent = String(peers.length);
+        document.getElementById('status-node').textContent = status.node_name;
+        document.getElementById('status-role').textContent = role.toLowerCase();
+        document.getElementById('status-peers').textContent = String(peers.length);
+        document.getElementById('status-cluster').textContent = status.enabled
+            ? `Cluster on, ${peers.length} peer${peers.length === 1 ? '' : 's'}`
+            : 'Cluster off';
     }
 
     async loadJobs() {
@@ -198,22 +201,16 @@ class JobQueue {
     updateStats() {
         const pending = Array.from(this.jobs.values()).filter(j => j.status === 'pending').length;
         const processing = Array.from(this.jobs.values()).filter(j => j.status === 'processing').length;
+
         document.getElementById('stat-pending').textContent = pending;
         document.getElementById('stat-processing').textContent = processing;
+        document.getElementById('rail-queue-count').textContent = String(pending);
+        document.getElementById('status-running').textContent = processing;
+        document.getElementById('status-waiting').textContent = pending;
     }
 
-    render() {
-        const container = document.getElementById('job-queue');
-
-        if (this.jobs.size === 0) {
-            container.innerHTML = '<div class="text-center p-5 text-muted"><i class="bi bi-inbox fs-1 d-block mb-2"></i>No active jobs</div>';
-            return;
-        }
-
-        container.innerHTML = '';
-
-        // Sort jobs: processing first, then pending by queue_position / created_at
-        const sortedJobs = Array.from(this.jobs.values()).sort((a, b) => {
+    sortedJobs() {
+        return Array.from(this.jobs.values()).sort((a, b) => {
             if (a.status === 'processing' && b.status !== 'processing') return -1;
             if (a.status !== 'processing' && b.status === 'processing') return 1;
             if (a.queue_position != null && b.queue_position != null) {
@@ -221,72 +218,122 @@ class JobQueue {
             }
             return new Date(a.created_at) - new Date(b.created_at);
         });
+    }
 
-        sortedJobs.forEach(job => {
+    render() {
+        const container = document.getElementById('job-queue');
+
+        if (this.jobs.size === 0) {
+            container.innerHTML = '<p class="empty">No active jobs</p>';
+            this.renderLiveStrip();
+            return;
+        }
+
+        container.replaceChildren();
+        this.sortedJobs().forEach(job => {
             container.appendChild(this.createJobElement(job));
         });
+
+        this.renderLiveStrip();
+    }
+
+    renderLiveStrip() {
+        const current = document.getElementById('live-current');
+        const next = document.getElementById('live-next');
+        if (!current || !next) return;
+
+        const sorted = this.sortedJobs();
+        const running = sorted.find(job => job.status === 'processing');
+        const waiting = sorted.filter(job => job.status === 'pending').slice(0, 3);
+
+        if (!running) {
+            current.innerHTML = '<p class="empty">No job running</p>';
+        } else {
+            const percent = Number(running.progress_percent || 0);
+            const fps = running.current_fps ? running.current_fps.toFixed(1) : '0.0';
+            current.innerHTML = `
+                <div class="live__job-row">
+                    <span class="live__job-name" title="${utils.escapeHtml(running.source_file)}">${utils.escapeHtml(running.source_file.split('/').pop())}</span>
+                    <span class="status status--run num">${percent.toFixed(0)}%</span>
+                </div>
+                <div class="progress"><span style="width: ${Math.min(percent, 100)}%"></span></div>
+                <div class="live__job-meta">
+                    <span>${utils.escapeHtml(this.encodeSummary(running.settings) || 'Encoder defaults')}</span>
+                    <span class="num">${fps} fps, ETA ${running.eta_seconds ? utils.formatEta(running.eta_seconds) : 'unknown'}</span>
+                </div>
+            `;
+        }
+
+        if (waiting.length === 0) {
+            next.innerHTML = '<li><span class="muted">Nothing waiting</span></li>';
+        } else {
+            next.innerHTML = waiting.map(job => `
+                <li>
+                    <span title="${utils.escapeHtml(job.source_file)}">${utils.escapeHtml(job.source_file.split('/').pop())}</span>
+                    <span class="num">${job.queue_position != null ? `#${job.queue_position}` : 'waiting'}</span>
+                </li>
+            `).join('');
+        }
     }
 
     encodeSummary(settings) {
         if (!settings) return '';
         const parts = [];
         if (settings.crf != null) parts.push(`CRF ${settings.crf}`);
-        if (settings.encoder_preset != null || settings.preset != null) parts.push(`preset ${settings.encoder_preset ?? settings.preset}`);
+        if (settings.encoder_preset != null || settings.preset != null) parts.push(`speed ${settings.encoder_preset ?? settings.preset}`);
         if (settings.svt_params) parts.push(settings.svt_params);
         if (settings.max_resolution) parts.push(`${settings.max_resolution}p`);
         if (settings.audio_bitrate) parts.push(settings.audio_bitrate);
-        return parts.join(' · ');
+        return parts.join(', ');
+    }
+
+    statusBadge(job) {
+        if (job.status === 'processing') return '<span class="status status--run">Encoding</span>';
+        if (job.status === 'pending') return '<span class="status status--info">Waiting</span>';
+        if (job.status === 'failed') return '<span class="status status--fail">Failed</span>';
+        if (job.status === 'cancelled') return '<span class="status status--warn">Cancelled</span>';
+        return `<span class="status status--ok">${utils.escapeHtml(job.status)}</span>`;
     }
 
     createJobElement(job) {
-        const element = document.createElement('div');
-        element.className = 'border-bottom p-3 job-item';
+        const element = document.createElement('article');
+        element.className = 'job-item';
         const key = this.jobKey(job);
-        const detailsId = `encode-details-${encodeURIComponent(key)}`;
         element.dataset.jobId = key;
+        element.dataset.status = job.status;
+
         if (job.status === 'pending') {
             element.draggable = true;
-            element.classList.add('cursor-move');
+            element.title = 'Drag to reorder';
         }
 
         const fileName = job.source_file.split('/').pop();
-        const presetBadge = job.preset_name_snapshot
-            ? `<span class="badge bg-info text-dark me-2">[${utils.escapeHtml(job.preset_name_snapshot)}]</span>`
+        const preset = job.preset_name_snapshot
+            ? `<span class="small muted">${utils.escapeHtml(job.preset_name_snapshot)}</span>`
             : '';
-        const summary = this.encodeSummary(job.settings);
-
-        let badgeClass = 'bg-secondary';
-        if (job.status === 'processing') badgeClass = 'bg-primary';
-
-        const isPending = job.status === 'pending';
-        const dragHandle = isPending ? '<i class="bi bi-grip-vertical me-2 text-muted"></i>' : '';
         const workerName = job.assigned_worker_name || job.assigned_worker_id;
-        const workerBadge = workerName
-            ? `<span class="badge text-bg-light border"><i class="bi bi-cpu me-1"></i>${utils.escapeHtml(workerName)}</span>`
+        const worker = workerName
+            ? `<span class="small muted">on ${utils.escapeHtml(workerName)}</span>`
             : '';
+        const isPending = job.status === 'pending';
+        const grip = isPending ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : '';
 
         element.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center mb-2 job-item-header">
-                <div class="fw-medium text-truncate me-3" title="${utils.escapeHtml(job.source_file)}">
-                    ${dragHandle}<i class="bi bi-film me-2 text-muted"></i>${utils.escapeHtml(fileName)}
-                </div>
-                <div class="d-flex align-items-center gap-2 job-item-actions">
-                    ${workerBadge}
-                    ${presetBadge}
-                    <span class="badge ${badgeClass}">${job.status}</span>
-                    <button class="btn btn-outline-danger btn-sm cancel-btn" data-job-id="${job.id}" title="Cancel job"><i class="bi bi-x-lg"></i></button>
-                    ${(job.status !== 'pending') ? `<button class="btn btn-outline-secondary btn-sm log-btn" data-job-id="${job.id}"><i class="bi bi-file-text"></i></button>` : ''}
-                </div>
+            <div class="job-item__head">
+                <span class="job-item__name">${grip}${utils.escapeHtml(fileName)}</span>
+                <span class="job-item__actions">
+                    ${worker}
+                    ${preset}
+                    ${this.statusBadge(job)}
+                    <button class="btn btn--quiet btn--small cancel-btn" type="button" title="Cancel job">Cancel</button>
+                    ${job.status !== 'pending' ? '<button class="btn btn--text btn--small log-btn" type="button">Log</button>' : ''}
+                </span>
             </div>
-            <div class="small text-muted mb-1">${utils.escapeHtml(summary)}</div>
-            <div>
-                <button class="btn btn-link btn-sm p-0 text-decoration-none" data-bs-toggle="collapse" data-bs-target="#${utils.escapeHtml(CSS.escape(detailsId))}">Encode details</button>
-                <div class="collapse mt-2" id="${utils.escapeHtml(detailsId)}">
-                    <div class="bg-body-tertiary p-2 rounded small font-monospace">
-                        ${this.formatSettings(job.settings)}
-                    </div>
-                </div>
-            </div>
+            <p class="job-item__summary">${utils.escapeHtml(this.encodeSummary(job.settings) || 'Encoder defaults')}</p>
+            <details class="job-item__details">
+                <summary>Encode details</summary>
+                ${this.formatSettings(job.settings)}
+            </details>
             ${this.createProgressElement(job)}
         `;
 
@@ -322,12 +369,11 @@ class JobQueue {
     }
 
     formatSettings(settings) {
-        if (!settings) return 'No settings';
-        const lines = [];
-        for (const [key, value] of Object.entries(settings)) {
-            lines.push(`${utils.escapeHtml(key)}: ${utils.escapeHtml(String(value))}`);
-        }
-        return lines.join('<br>');
+        if (!settings) return '<p class="job-item__summary">No settings recorded</p>';
+        const rows = Object.entries(settings)
+            .map(([key, value]) => `<dt>${utils.escapeHtml(key)}</dt><dd>${utils.escapeHtml(String(value))}</dd>`)
+            .join('');
+        return `<dl>${rows}</dl>`;
     }
 
     async reorderJob(draggedId, targetId) {
@@ -347,26 +393,18 @@ class JobQueue {
 
     createProgressElement(job) {
         if (job.status === 'pending') {
-            return '<div class="text-muted small"><i class="bi bi-hourglass me-1"></i>Waiting in queue...</div>';
+            return '<p class="job-item__summary">Waiting in queue</p>';
         }
 
         if (job.status === 'processing') {
-            const percent = job.progress_percent || 0;
+            const percent = Number(job.progress_percent || 0);
             const fps = job.current_fps ? job.current_fps.toFixed(1) : '0.0';
-            const eta = utils.formatEta(job.eta_seconds);
+            const eta = job.eta_seconds ? utils.formatEta(job.eta_seconds) : 'unknown';
 
             return `
                 <div class="job-progress">
-                    <div class="progress" style="height: 20px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
-                             style="width: ${percent}%" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
-                             ${percent.toFixed(1)}%
-                        </div>
-                    </div>
-                    <div class="d-flex justify-content-between mt-1 small text-muted">
-                        <span><i class="bi bi-speedometer2 me-1"></i>${fps} FPS</span>
-                        <span><i class="bi bi-clock me-1"></i>ETA: ${eta}</span>
-                    </div>
+                    <div class="progress"><span style="width: ${Math.min(percent, 100)}%"></span></div>
+                    <div class="job-item__summary num">${percent.toFixed(1)}%, ${fps} fps, ETA ${eta}</div>
                 </div>
             `;
         }
@@ -404,14 +442,15 @@ class JobQueue {
             }
         }
 
+        this.renderLiveStrip();
+
         if (this.openLogJobId === displayedJobId && progressData.current_log) {
             const logContent = document.getElementById('log-content');
             if (logContent) {
-                const scrollContainer = logContent.parentElement;
-                const isNearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 100;
+                const isNearBottom = logContent.scrollHeight - logContent.scrollTop - logContent.clientHeight < 100;
                 logContent.textContent = progressData.current_log;
                 if (isNearBottom) {
-                    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+                    logContent.scrollTop = logContent.scrollHeight;
                 }
             }
         }
@@ -451,6 +490,7 @@ class JobQueue {
         if (element) {
             element.replaceWith(this.createJobElement(job));
         }
+        this.renderLiveStrip();
     }
 
     async cancelJob(jobId) {
@@ -477,24 +517,17 @@ class JobQueue {
             this.openLogJobId = jobId;
             const displayed = this.jobs.get(jobId);
             const job = await api.getJob(displayed.id, displayed.cluster_node_id);
-            const modalElement = document.getElementById('log-modal');
+            const dialog = document.getElementById('log-modal');
             const logContent = document.getElementById('log-content');
 
-            if (!modalElement || !logContent) {
-                console.error('Modal elements not found');
-                alert('Modal not found in page');
+            if (!dialog || !logContent) {
+                console.error('Log dialog elements not found');
+                alert('Log dialog not found in page');
                 return;
             }
 
             logContent.textContent = job.log || 'No log available';
-
-            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                modal.show();
-            } else {
-                console.error('Bootstrap Modal not available');
-                alert('Bootstrap library not loaded properly');
-            }
+            dialog.showModal();
         } catch (error) {
             console.error('Error fetching job log:', error);
             alert(`Failed to load job log: ${error.message}`);
@@ -508,7 +541,6 @@ class JobQueue {
                 this.loadJobs();
                 this.loadQueueState();
             }, 5000);
-            console.log('Started fallback polling (WebSocket disconnected)');
         }
     }
 
@@ -516,7 +548,6 @@ class JobQueue {
         if (this.refreshInterval) {
             clearInterval(this.refreshInterval);
             this.refreshInterval = null;
-            console.log('Stopped fallback polling (WebSocket connected)');
         }
     }
 

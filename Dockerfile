@@ -136,7 +136,7 @@ COPY scripts/ /app/scripts/
 COPY backend/alembic/ /app/alembic/
 COPY backend/alembic.ini /app/
 COPY frontend/ /app/frontend/
-RUN chmod +x /app/scripts/*.sh && python3 scripts/download_vendors.py
+RUN chmod +x /app/scripts/*.sh
 
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

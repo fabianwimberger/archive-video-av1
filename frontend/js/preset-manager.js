@@ -1,18 +1,16 @@
 class PresetManager {
     constructor() {
         this.presets = [];
-        this.modal = null;
         this.editingId = null;
     }
 
     async init() {
-        this.modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('preset-modal'));
         this.setupEventListeners();
     }
 
     setupEventListeners() {
         document.getElementById('btn-manage-presets').addEventListener('click', () => {
-            this.open();
+            window.app.switchView('presets');
         });
 
         document.getElementById('btn-preset-new').addEventListener('click', () => {
@@ -24,12 +22,11 @@ class PresetManager {
         });
 
         document.getElementById('btn-preset-import').addEventListener('click', () => {
-            document.getElementById('preset-import-form').classList.remove('d-none');
-            document.getElementById('preset-edit-form').classList.add('d-none');
+            this.setMode('import');
         });
 
         document.getElementById('btn-preset-import-cancel').addEventListener('click', () => {
-            document.getElementById('preset-import-form').classList.add('d-none');
+            this.setMode('view');
         });
 
         document.getElementById('btn-preset-import-confirm').addEventListener('click', () => {
@@ -45,16 +42,24 @@ class PresetManager {
         });
 
         document.getElementById('btn-preset-edit-cancel').addEventListener('click', () => {
-            document.getElementById('preset-edit-form').classList.add('d-none');
+            this.setMode('view');
         });
     }
 
     async open() {
         await this.loadPresets();
         this.renderList();
-        document.getElementById('preset-edit-form').classList.add('d-none');
-        document.getElementById('preset-import-form').classList.add('d-none');
-        this.modal.show();
+        this.setMode('view');
+    }
+
+    /* One primary button per view: the mode that is open owns it. */
+    setMode(mode) {
+        const quiet = (id, isQuiet) => document.getElementById(id).classList.toggle('btn--quiet', isQuiet);
+        quiet('btn-preset-new', mode !== 'view');
+        quiet('btn-preset-edit-save', mode !== 'edit');
+        quiet('btn-preset-import-confirm', mode !== 'import');
+        document.getElementById('preset-edit-form').hidden = mode !== 'edit';
+        document.getElementById('preset-import-form').hidden = mode !== 'import';
     }
 
     async loadPresets() {
@@ -70,30 +75,29 @@ class PresetManager {
         container.innerHTML = '';
 
         if (this.presets.length === 0) {
-            container.innerHTML = '<div class="list-group-item text-muted">No presets found</div>';
+            container.innerHTML = '<p class="empty">No presets found</p>';
             return;
         }
 
         this.presets.forEach(preset => {
             const item = document.createElement('div');
-            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+            item.className = 'preset';
 
-            const isDefaultBadge = preset.is_default ? '<span class="badge bg-success ms-2">Default</span>' : '';
-            const builtinBadge = preset.is_builtin ? '<span class="badge bg-secondary ms-2">Built-in</span>' : '';
+            const badges = [];
+            if (preset.is_default) badges.push('<span class="status status--ok">Default</span>');
+            if (preset.is_builtin) badges.push('<span class="status status--info">Built-in</span>');
 
             item.innerHTML = `
-                <div>
-                    <span class="fw-medium">${utils.escapeHtml(preset.name)}</span>
-                    ${isDefaultBadge}
-                    ${builtinBadge}
-                    <div class="small text-muted">CRF ${preset.crf} · preset ${preset.encoder_preset} · ${preset.max_resolution}p</div>
+                <div class="preset__main">
+                    <div class="preset__name"><span>${utils.escapeHtml(preset.name)}</span>${badges.join('')}</div>
+                    <div class="preset__meta num">CRF ${preset.crf}, speed ${preset.encoder_preset}, ${preset.max_resolution}p</div>
                 </div>
-                <div class="d-flex gap-1">
-                    <button class="btn btn-sm btn-outline-primary preset-action-edit" data-id="${preset.id}" title="Edit" ${preset.is_builtin ? 'disabled' : ''}>Edit</button>
-                    <button class="btn btn-sm btn-outline-secondary preset-action-dup" data-id="${preset.id}" title="Duplicate">Dup</button>
-                    <button class="btn btn-sm btn-outline-danger preset-action-del" data-id="${preset.id}" title="Delete" ${preset.is_builtin ? 'disabled' : ''}>Del</button>
-                    <button class="btn btn-sm btn-outline-secondary preset-action-export" data-id="${preset.id}" title="Export">Exp</button>
-                    <button class="btn btn-sm btn-outline-success preset-action-default" data-id="${preset.id}" title="Set as default" ${preset.is_default ? 'disabled' : ''}>Def</button>
+                <div class="preset__actions">
+                    <button class="btn btn--quiet btn--small preset-action-edit" type="button" title="Edit preset" ${preset.is_builtin ? 'disabled' : ''}>Edit</button>
+                    <button class="btn btn--quiet btn--small preset-action-dup" type="button" title="Duplicate preset">Duplicate</button>
+                    <button class="btn btn--quiet btn--small preset-action-del" type="button" title="Delete preset" ${preset.is_builtin ? 'disabled' : ''}>Delete</button>
+                    <button class="btn btn--quiet btn--small preset-action-export" type="button" title="Export preset">Export</button>
+                    <button class="btn btn--text btn--small preset-action-default" type="button" title="Use as default preset" ${preset.is_default ? 'disabled' : ''}>Set default</button>
                 </div>
             `;
 
@@ -108,9 +112,10 @@ class PresetManager {
     }
 
     startNew() {
-        // Seed from current form values
+        // Seed from the current settings panel values.
         const current = window.settingsPanel.getCurrentSettings();
         this.editingId = null;
+        document.getElementById('preset-edit-title').textContent = 'New preset';
         document.getElementById('preset-edit-id').value = '';
         document.getElementById('preset-edit-name').value = '';
         document.getElementById('preset-edit-description').value = '';
@@ -120,14 +125,15 @@ class PresetManager {
         document.getElementById('preset-edit-audio_bitrate').value = current.audio_bitrate;
         document.getElementById('preset-edit-skip_crop_detect').checked = current.skip_crop_detect;
         document.getElementById('preset-edit-max_resolution').value = current.max_resolution;
-        document.getElementById('preset-edit-form').classList.remove('d-none');
-        document.getElementById('preset-import-form').classList.add('d-none');
+        this.setMode('edit');
+        document.getElementById('preset-edit-name').focus();
     }
 
     startEdit(id) {
         const preset = this.presets.find(p => p.id === id);
         if (!preset) return;
         this.editingId = id;
+        document.getElementById('preset-edit-title').textContent = 'Edit preset';
         document.getElementById('preset-edit-id').value = id;
         document.getElementById('preset-edit-name').value = preset.name;
         document.getElementById('preset-edit-description').value = preset.description || '';
@@ -137,8 +143,8 @@ class PresetManager {
         document.getElementById('preset-edit-audio_bitrate').value = preset.audio_bitrate;
         document.getElementById('preset-edit-skip_crop_detect').checked = preset.skip_crop_detect;
         document.getElementById('preset-edit-max_resolution').value = preset.max_resolution;
-        document.getElementById('preset-edit-form').classList.remove('d-none');
-        document.getElementById('preset-import-form').classList.add('d-none');
+        this.setMode('edit');
+        document.getElementById('preset-edit-name').focus();
     }
 
     async saveEdit() {
@@ -163,7 +169,7 @@ class PresetManager {
             }
             await this.loadPresets();
             this.renderList();
-            document.getElementById('preset-edit-form').classList.add('d-none');
+            this.setMode('view');
             await window.settingsPanel.loadPresets();
             await window.settingsPanel.populatePresetSelect();
             if (window.historyView) window.historyView.loadPresetsForFilter();
@@ -202,7 +208,7 @@ class PresetManager {
     }
 
     async removeAllPresets() {
-        if (!confirm('Remove all user presets? Built-in presets will be kept.')) return;
+        if (!confirm('Remove all user presets? Built-in presets are kept.')) return;
         try {
             await api.deleteAllPresets();
             window.app.showNotification('All user presets removed', 'success');
@@ -263,13 +269,13 @@ class PresetManager {
         const resultEl = document.getElementById('preset-import-result');
 
         if (!fileInput.files || fileInput.files.length === 0) {
-            resultEl.textContent = 'Please select a file';
+            resultEl.textContent = 'Choose a file first';
             return;
         }
 
         try {
             const result = await api.importPresets(fileInput.files[0], strategy);
-            resultEl.textContent = `Imported: ${result.imported.length}, Skipped: ${result.skipped.length}, Renamed: ${result.renamed.length}, Errors: ${result.errors.length}`;
+            resultEl.textContent = `Imported ${result.imported.length}, skipped ${result.skipped.length}, renamed ${result.renamed.length}, errors ${result.errors.length}`;
             await this.loadPresets();
             this.renderList();
             await window.settingsPanel.loadPresets();

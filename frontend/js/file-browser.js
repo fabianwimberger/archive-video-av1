@@ -2,12 +2,12 @@
  * File browser component
  *
  * Selection rules:
- *   _conv files       -> NOT selectable, no actions (display only)
+ *   _conv files        -> NOT selectable, display only
  *   Original w/o _conv -> selectable, only convert possible
  *   Original w/ _conv  -> selectable, only delete possible
  *
- * "Select Unconverted" -> selects originals that have NO _conv file
- * "Select Converted"   -> selects originals that already HAVE a _conv file
+ * "Select unconverted" -> selects originals that have NO _conv file
+ * "Select converted"   -> selects originals that already HAVE a _conv file
  */
 class FileBrowser {
     constructor() {
@@ -15,17 +15,23 @@ class FileBrowser {
         this.currentPath = null;
         this.allFiles = [];
         this.filteredFiles = [];
+        this.directories = [];
+        this.filterMode = 'all';
         this.searchTimeout = null;
+        this.narrowQuery = window.matchMedia('(max-width: 63.99rem)');
     }
 
     async init() {
         this.setupEventListeners();
+        this.narrowQuery.addEventListener('change', () => {
+            if (this.allFiles.length || this.directories.length) this.render();
+        });
         await this.loadFiles();
     }
 
     setupEventListeners() {
         document.getElementById('btn-refresh').addEventListener('click', () => {
-            this.loadFiles(this.currentPath);
+            this.loadFiles(this.currentPath || null);
         });
 
         document.getElementById('btn-select-unconverted').addEventListener('click', () => {
@@ -40,30 +46,38 @@ class FileBrowser {
             this.clearSelection();
         });
 
-        document.getElementById('search-files').addEventListener('input', (e) => {
+        document.getElementById('search-files').addEventListener('input', () => {
             clearTimeout(this.searchTimeout);
-            this.searchTimeout = setTimeout(() => {
-                this.filterFiles(e.target.value);
-            }, 300);
+            this.searchTimeout = setTimeout(() => this.applyFilters(), 300);
+        });
+
+        document.querySelectorAll('[data-file-filter]').forEach(button => {
+            button.addEventListener('click', () => {
+                this.filterMode = button.dataset.fileFilter;
+                document.querySelectorAll('[data-file-filter]').forEach(other => {
+                    other.setAttribute('aria-pressed', String(other === button));
+                });
+                this.applyFilters();
+            });
         });
 
         document.getElementById('btn-delete-selected').addEventListener('click', async () => {
             const count = this.selectedFiles.size;
             if (count === 0) return;
 
-            if (!confirm(`Are you sure you want to delete ${count} selected file(s)?\nThis cannot be undone.`)) {
+            if (!confirm(`Delete ${count} selected file${count === 1 ? '' : 's'}?\nThis cannot be undone.`)) {
                 return;
             }
 
             const btn = document.getElementById('btn-delete-selected');
-            const originalText = btn.innerHTML;
+            const originalText = btn.textContent;
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            btn.textContent = 'Deleting…';
 
             try {
                 const filesToDelete = Array.from(this.selectedFiles);
                 let deletedCount = 0;
-                let errors = [];
+                const errors = [];
 
                 for (const path of filesToDelete) {
                     try {
@@ -80,13 +94,13 @@ class FileBrowser {
                 }
 
                 this.clearSelection();
-                await this.loadFiles(this.currentPath);
-
+                await this.loadFiles(this.currentPath || null);
+                window.app.showNotification(`${deletedCount} file${deletedCount === 1 ? '' : 's'} deleted`, 'success');
             } catch (error) {
                 console.error('Error during batch delete:', error);
                 alert('An error occurred while deleting files.');
             } finally {
-                btn.innerHTML = originalText;
+                btn.textContent = originalText;
                 this.updateButtonStates();
             }
         });
@@ -95,7 +109,7 @@ class FileBrowser {
     async convertSelected() {
         const selected = Array.from(this.selectedFiles);
 
-        // Filter to only convertible files (original files without _conv version)
+        // Only originals without a _conv version can be converted.
         const convertibleFiles = this.allFiles.filter(f =>
             selected.includes(f.path) && !this._isConvFile(f) && !f.has_converted
         );
@@ -108,21 +122,20 @@ class FileBrowser {
         const btn = document.getElementById('btn-convert-selected');
         const originalText = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Converting...';
+        btn.textContent = 'Converting…';
 
         try {
             const filePaths = convertibleFiles.map(f => f.path);
             const settings = window.settingsPanel.getCurrentSettings();
             const presetId = window.settingsPanel.selectedPresetId;
-            const isModified = !document.getElementById('preset-modified-badge').classList.contains('d-none');
+            const isModified = !document.getElementById('preset-modified-badge').hidden;
 
             await api.createBatchJobs(filePaths, presetId, isModified ? settings : null);
 
             await window.jobQueue.loadJobs();
             this.clearSelection();
 
-            window.app.showNotification(`Started ${convertibleFiles.length} conversion(s)`, 'success');
-
+            window.app.showNotification(`Started ${convertibleFiles.length} conversion${convertibleFiles.length === 1 ? '' : 's'}`, 'success');
         } catch (error) {
             console.error('Error during batch convert:', error);
             window.app.showNotification(`Failed to create conversion jobs: ${error.message}`, 'danger');
@@ -134,187 +147,268 @@ class FileBrowser {
 
     async loadFiles(path = null) {
         const container = document.getElementById('file-browser');
-        container.innerHTML = '<div class="loading">Loading files...</div>';
+        container.innerHTML = '<p class="empty">Loading files…</p>';
 
         try {
             const data = await api.browseFiles(path);
             this.currentPath = data.current_path;
             this.allFiles = data.files;
+            this.directories = data.directories;
             this.filteredFiles = [...this.allFiles];
-            this.render(data);
+
+            const context = document.getElementById('browse-path');
+            if (this.currentPath) {
+                context.textContent = `/${this.currentPath}`;
+                context.hidden = false;
+            } else {
+                context.textContent = '';
+                context.hidden = true;
+            }
+
+            this.applyFilters();
         } catch (error) {
             console.error('Error loading files:', error);
-            container.innerHTML = '<div class="empty-state">Error loading files</div>';
+            container.innerHTML = '<p class="empty">Could not load this folder.</p>';
         }
     }
 
-    filterFiles(query) {
-        const lowerQuery = query.toLowerCase();
-        this.filteredFiles = this.allFiles.filter(file =>
-            file.name.toLowerCase().includes(lowerQuery)
-        );
-        this.renderFiles();
-    }
+    applyFilters() {
+        const query = document.getElementById('search-files').value.trim().toLowerCase();
 
-    render(data) {
-        const container = document.getElementById('file-browser');
-        container.innerHTML = '';
-
-        if (this.currentPath) {
-            const parentButton = document.createElement('div');
-            parentButton.className = 'list-group-item list-group-item-action cursor-pointer bg-body-tertiary text-secondary';
-            parentButton.innerHTML = `
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-arrow-return-left me-3 fs-5"></i>
-                    <div class="fw-medium">..</div>
-                </div>
-            `;
-            parentButton.addEventListener('click', () => {
-                const parts = this.currentPath.split('/');
-                parts.pop();
-                this.clearSelection();
-                this.loadFiles(parts.join('/') || null);
-            });
-            container.appendChild(parentButton);
-        }
-
-        data.directories.forEach(dir => {
-            const dirElement = document.createElement('div');
-            dirElement.className = 'list-group-item list-group-item-action cursor-pointer';
-            dirElement.innerHTML = `
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-folder-fill me-3 text-warning fs-5"></i>
-                    <div class="fw-medium text-truncate">${utils.escapeHtml(dir.name)}</div>
-                </div>
-            `;
-            dirElement.addEventListener('click', () => {
-                this.clearSelection();
-                this.loadFiles(dir.path);
-            });
-            container.appendChild(dirElement);
+        this.filteredFiles = this.allFiles.filter(file => {
+            if (query && !file.name.toLowerCase().includes(query)) return false;
+            if (this.filterMode === 'unconverted') {
+                return !this._isConvFile(file) && !file.has_converted;
+            }
+            if (this.filterMode === 'converted') {
+                return this._isConvFile(file) || file.has_converted;
+            }
+            return true;
         });
 
-        this.renderFiles();
+        this.render();
     }
 
-    renderFiles() {
+    render() {
         const container = document.getElementById('file-browser');
+        const narrow = this.narrowQuery.matches;
+        const columns = narrow ? 2 : 4;
 
-        container.querySelectorAll('.file-item').forEach(el => el.remove());
+        const table = document.createElement('table');
+        table.className = 'data-table files-table';
+
+        const head = document.createElement('thead');
+        head.innerHTML = `
+            <tr>
+                <th class="col-check"><input type="checkbox" id="select-all-files" aria-label="Select all files shown that can be converted" title="Select all files shown that can be converted"></th>
+                <th>File</th>
+                ${narrow ? '' : '<th class="col-status">Status</th><th class="col-last">Last conversion</th>'}
+            </tr>
+        `;
+        table.appendChild(head);
+
+        const tbody = document.createElement('tbody');
+        table.appendChild(tbody);
+        container.replaceChildren(table);
+
+        document.getElementById('select-all-files').addEventListener('change', (event) => {
+            this.toggleAllShown(event.target.checked);
+        });
+
+        if (this.currentPath) {
+            tbody.appendChild(this.createParentRow(columns));
+        }
+
+        this.directories.forEach(directory => {
+            tbody.appendChild(this.createDirectoryRow(directory, columns));
+        });
 
         this.filteredFiles.forEach(file => {
-            const fileElement = document.createElement('div');
-            fileElement.className = 'list-group-item list-group-item-action file-item';
+            tbody.appendChild(this.createFileRow(file, narrow));
+        });
 
-            const size = this.formatFileSize(file.size);
-            const isConvFile = this._isConvFile(file);
+        if (this.filteredFiles.length === 0) {
+            const filtering = this.filterMode !== 'all'
+                || document.getElementById('search-files').value.trim() !== '';
+            tbody.appendChild(this.createEmptyRow(
+                filtering ? 'No files match the search' : 'No videos in this folder',
+                columns,
+            ));
+        }
 
-            // _conv files: not selectable, display only
-            if (isConvFile) {
-                fileElement.innerHTML = `
-                    <div class="d-flex align-items-center w-100">
-                        <div class="me-3">
-                            <span class="ms-2"><i class="bi bi-check-circle-fill text-success me-1"></i></span>
-                        </div>
-                        <div class="me-3">
-                            <i class="bi bi-file-earmark-play text-success fs-5"></i>
-                        </div>
-                        <div class="flex-grow-1 min-width-0">
-                            <div class="fw-medium text-truncate text-success">${utils.escapeHtml(file.name)}</div>
-                            <div class="small text-muted">
-                                <span>${size}</span>${file.hdr ? ` <span class="badge bg-warning text-dark ms-1">${utils.escapeHtml(file.hdr_format || 'HDR')}</span>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
-                container.appendChild(fileElement);
-                return;
-            }
+        this.updateSelectionCount();
+        this.updateButtonStates();
+    }
 
-            // Original files: selectable
-            const textClass = file.has_converted ? '' : 'text-danger';
-            let lastJobHtml = '';
-            if (file.last_job) {
-                const isSuccess = file.last_job.status === 'completed';
-                const icon = isSuccess ? 'bi-check-circle' : 'bi-exclamation-triangle';
-                const color = isSuccess ? 'text-success' : 'text-warning';
-                const badge = isSuccess
-                    ? `${file.last_job.preset_name_snapshot || ''} · ${this.formatSavings(file.last_job.source_size_bytes, file.last_job.output_size_bytes)}`
-                    : `${file.last_job.status}`;
-                lastJobHtml = `<div class="small ${color}"><i class="bi ${icon} me-1"></i>${utils.escapeHtml(badge)}</div>`;
-            }
+    createEmptyRow(message, columns) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="${columns}"><p class="empty">${utils.escapeHtml(message)}</p></td>`;
+        return row;
+    }
 
-            if (this.selectedFiles.has(file.path)) {
-                fileElement.classList.add('list-group-item-primary');
-            }
+    createParentRow(columns) {
+        const row = document.createElement('tr');
+        row.className = 'row-dir';
+        row.innerHTML = `
+            <td colspan="${columns}">
+                <button class="row-dir__button" type="button">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                    Parent folder
+                </button>
+            </td>
+        `;
+        row.querySelector('button').addEventListener('click', () => {
+            const parts = this.currentPath.split('/');
+            parts.pop();
+            this.clearSelection();
+            this.loadFiles(parts.join('/') || null);
+        });
+        return row;
+    }
 
-            fileElement.innerHTML = `
-                <div class="d-flex align-items-center w-100">
-                    <div class="me-3">
-                        <input class="form-check-input" type="checkbox" ${this.selectedFiles.has(file.path) ? 'checked' : ''} data-file-path="${utils.escapeHtml(file.path)}" style="cursor: pointer;">
-                    </div>
-                    <div class="me-3">
-                        <i class="bi bi-file-earmark-play text-primary fs-5"></i>
-                    </div>
-                    <div class="flex-grow-1 min-width-0">
-                        <div class="fw-medium text-truncate ${textClass}">${utils.escapeHtml(file.name)}</div>
-                        <div class="small text-muted">
-                            <span>${size}</span>${file.hdr ? ` <span class="badge bg-warning text-dark ms-1">${utils.escapeHtml(file.hdr_format || 'HDR')}</span>` : ''}
-                        </div>
-                        ${lastJobHtml}
-                    </div>
-                </div>
-            `;
+    createDirectoryRow(directory, columns) {
+        const row = document.createElement('tr');
+        row.className = 'row-dir';
+        row.innerHTML = `
+            <td colspan="${columns}">
+                <button class="row-dir__button" type="button">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                    ${utils.escapeHtml(directory.name)}
+                </button>
+            </td>
+        `;
+        row.querySelector('button').addEventListener('click', () => {
+            this.clearSelection();
+            this.loadFiles(directory.path);
+        });
+        return row;
+    }
 
-            const checkbox = fileElement.querySelector('input[type="checkbox"]');
-            checkbox.addEventListener('change', (e) => {
-                e.stopPropagation();
+    createFileRow(file, narrow) {
+        const row = document.createElement('tr');
+        row.className = 'file-row';
+        row.dataset.path = file.path;
+        if (this.selectedFiles.has(file.path)) {
+            row.setAttribute('aria-selected', 'true');
+        }
+
+        const isConvFile = this._isConvFile(file);
+        if (isConvFile) row.classList.add('file-row--static');
+        const size = this.formatFileSize(file.size);
+        const modified = file.mtime ? utils.formatDate(new Date(file.mtime * 1000).toISOString(), { dateOnly: true }) : '';
+
+        let status;
+        if (isConvFile) {
+            status = '<span class="status status--ok">Converted file</span>';
+        } else if (file.has_converted) {
+            status = '<span class="status status--ok">Converted</span>';
+        } else {
+            status = '<span class="status status--warn">Not converted</span>';
+        }
+
+        const meta = [`<span class="num">${size}</span>`];
+        if (modified) meta.push(`<span class="num">${modified}</span>`);
+        if (file.hdr) {
+            meta.push(`<span class="status status--info">${utils.escapeHtml(file.hdr_format || 'HDR')}</span>`);
+        }
+        if (narrow) {
+            meta.push(`<span class="file-row__status-inline">${status}</span>`);
+            meta.push('<span class="file-row__last-cell"></span>');
+        }
+
+        row.innerHTML = `
+            <td class="col-check"></td>
+            <td>
+                <span class="file-row__name">
+                    <span class="file-row__title" title="${utils.escapeHtml(file.path)}">${utils.escapeHtml(file.name)}</span>
+                    <span class="file-row__meta">${meta.join('')}</span>
+                </span>
+            </td>
+            ${narrow ? '' : `<td class="col-status">${status}</td><td class="file-row__last-cell"></td>`}
+        `;
+
+        const lastCell = row.querySelector('.file-row__last-cell');
+
+        if (!isConvFile) {
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = this.selectedFiles.has(file.path);
+            checkbox.setAttribute('aria-label', `Select ${file.name}`);
+            checkbox.addEventListener('change', () => {
                 if (checkbox.checked) {
                     this.selectedFiles.add(file.path);
-                    fileElement.classList.add('list-group-item-primary');
                 } else {
                     this.selectedFiles.delete(file.path);
-                    fileElement.classList.remove('list-group-item-primary');
                 }
+                row.setAttribute('aria-selected', String(checkbox.checked));
                 this.updateSelectionCount();
                 this.updateButtonStates();
                 if (window.settingsPanel) {
                     window.settingsPanel.updateEstimateButtonState();
                 }
             });
+            row.querySelector('.col-check').appendChild(checkbox);
 
-            const lastJobDiv = fileElement.querySelector('.small.text-success, .small.text-warning');
-            if (lastJobDiv && file.last_job) {
-                lastJobDiv.style.cursor = 'pointer';
-                lastJobDiv.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    window.app.switchView('history');
-                    if (window.historyView) {
-                        window.historyView.filterByFile(file.path);
-                    }
-                });
-            }
+            row.addEventListener('click', (event) => {
+                if (event.target.closest('button, input')) return;
+                checkbox.checked = !checkbox.checked;
+                checkbox.dispatchEvent(new Event('change'));
+            });
+        }
 
-            fileElement.addEventListener('click', (e) => {
-                if (e.target !== checkbox && e.target !== lastJobDiv) {
-                    checkbox.checked = !checkbox.checked;
-                    checkbox.dispatchEvent(new Event('change'));
+        if (file.last_job) {
+            const label = this.formatLastJob(file.last_job);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'file-row__last';
+            button.textContent = label;
+            button.title = 'Show this file in history';
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                window.app.switchView('history');
+                if (window.historyView) {
+                    window.historyView.filterByFile(file.path);
                 }
             });
+            lastCell.appendChild(button);
+        } else if (!narrow) {
+            lastCell.innerHTML = '<span class="muted">—</span>';
+        }
 
-            container.appendChild(fileElement);
-        });
+        return row;
+    }
 
-        this.updateSelectionCount();
-        this.updateButtonStates();
+    formatLastJob(job) {
+        if (job.status === 'completed') {
+            const parts = [];
+            if (job.preset_name_snapshot) parts.push(job.preset_name_snapshot);
+            const savings = this.formatSavings(job.source_size_bytes, job.output_size_bytes);
+            if (savings) parts.push(savings);
+            return parts.join(', ') || 'Completed';
+        }
+        return job.status;
     }
 
     formatSavings(sourceBytes, outputBytes) {
         if (!sourceBytes || !outputBytes) return '';
         const saved = sourceBytes - outputBytes;
-        const percent = Math.round((saved / sourceBytes) * 100);
         if (saved <= 0) return 'no savings';
-        return `-${percent}%`;
+        return `−${Math.round((saved / sourceBytes) * 100)}%`;
+    }
+
+    toggleAllShown(checked) {
+        this.filteredFiles.forEach(file => {
+            if (this._isConvFile(file) || file.has_converted) return;
+            if (checked) {
+                this.selectedFiles.add(file.path);
+            } else {
+                this.selectedFiles.delete(file.path);
+            }
+        });
+        this.render();
+        if (window.settingsPanel) {
+            window.settingsPanel.updateEstimateButtonState();
+        }
     }
 
     /**
@@ -326,7 +420,7 @@ class FileBrowser {
                 this.selectedFiles.add(file.path);
             }
         });
-        this.renderFiles();
+        this.render();
         if (window.settingsPanel) {
             window.settingsPanel.updateEstimateButtonState();
         }
@@ -341,7 +435,7 @@ class FileBrowser {
                 this.selectedFiles.add(file.path);
             }
         });
-        this.renderFiles();
+        this.render();
         if (window.settingsPanel) {
             window.settingsPanel.updateEstimateButtonState();
         }
@@ -358,7 +452,7 @@ class FileBrowser {
         document.getElementById('btn-unselect-all').disabled = !hasSelection;
         document.getElementById('btn-refresh').disabled = false;
 
-        // Only original files can be selected, so check what actions apply
+        // Only original files can be selected, so check what actions apply.
         let allDeletable = hasSelection;
         let allConvertible = hasSelection;
         let convertibleCount = 0;
@@ -379,10 +473,8 @@ class FileBrowser {
             }
         }
 
-        // Delete button: enabled only if ALL selected files are deletable (originals with _conv)
         document.getElementById('btn-delete-selected').disabled = !allDeletable;
 
-        // Convert button: enabled only if ALL selected files are convertible (originals without _conv)
         const convertBtn = document.getElementById('btn-convert-selected');
         if (convertBtn) {
             convertBtn.disabled = !allConvertible;
@@ -390,7 +482,25 @@ class FileBrowser {
             if (convertCountSpan) {
                 convertCountSpan.textContent = convertibleCount;
             }
+            const convertUnit = document.getElementById('convert-unit');
+            if (convertUnit) {
+                convertUnit.textContent = convertibleCount === 1 ? 'file' : 'files';
+            }
         }
+
+        this.updateSelectAllState();
+    }
+
+    updateSelectAllState() {
+        const selectAll = document.getElementById('select-all-files');
+        if (!selectAll) return;
+
+        const shown = this.filteredFiles.filter(file => !this._isConvFile(file) && !file.has_converted);
+        const selected = shown.filter(file => this.selectedFiles.has(file.path)).length;
+
+        selectAll.checked = shown.length > 0 && selected === shown.length;
+        selectAll.indeterminate = selected > 0 && selected < shown.length;
+        selectAll.disabled = shown.length === 0;
     }
 
     getSelectedFiles() {
@@ -399,7 +509,7 @@ class FileBrowser {
 
     clearSelection() {
         this.selectedFiles.clear();
-        this.renderFiles();
+        this.render();
         if (window.settingsPanel) {
             window.settingsPanel.updateEstimateButtonState();
         }

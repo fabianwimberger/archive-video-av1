@@ -161,8 +161,8 @@ class SettingsPanel {
         const w = canvas.width;
         const h = canvas.height;
         const style = getComputedStyle(document.documentElement);
-        const surface = style.getPropertyValue('--app-surface-2').trim() || '#1b212a';
-        const muted = style.getPropertyValue('--app-muted').trim() || '#8b96a5';
+        const surface = style.getPropertyValue('--surface').trim() || '#ffffff';
+        const muted = style.getPropertyValue('--ink-muted').trim() || '#4e554f';
 
         ctx.clearRect(0, 0, w, h);
         ctx.fillStyle = surface;
@@ -179,8 +179,9 @@ class SettingsPanel {
     }
 
     checkModified() {
+        const badge = document.getElementById('preset-modified-badge');
         if (!this.selectedPresetId) {
-            document.getElementById('preset-modified-badge').classList.add('d-none');
+            badge.hidden = true;
             return;
         }
         const preset = this.presets.find(p => p.id === this.selectedPresetId);
@@ -198,7 +199,7 @@ class SettingsPanel {
             current.skip_crop_detect !== preset.skip_crop_detect ||
             current.max_resolution !== preset.max_resolution;
 
-        document.getElementById('preset-modified-badge').classList.toggle('d-none', !isModified);
+        badge.hidden = !isModified;
     }
 
     updateEstimateButtonState() {
@@ -219,7 +220,7 @@ class SettingsPanel {
         const btn = document.getElementById('btn-auto-estimate');
         const originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+        btn.textContent = 'Estimating…';
 
         try {
             const result = await api.analyzeFile(selected[0]);
@@ -246,12 +247,12 @@ class SettingsPanel {
             this.refreshSvtSummary();
 
             const info = document.getElementById('estimate-info');
-            info.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Estimated: grain=${result.film_grain}, denoise=${result.denoise} (${utils.escapeHtml(result.reason)})</span>`;
+            info.innerHTML = `<span class="status status--ok">Estimated grain ${result.film_grain}, denoise ${result.denoise} (${utils.escapeHtml(result.reason)})</span>`;
 
             window.app.showNotification(`Estimated: grain=${result.film_grain}, denoise=${result.denoise}`, 'success');
         } catch (error) {
             console.error('Error analyzing file:', error);
-            document.getElementById('estimate-info').innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Analysis failed: ${utils.escapeHtml(error.message)}</span>`;
+            document.getElementById('estimate-info').innerHTML = `<span class="status status--fail">Analysis failed: ${utils.escapeHtml(error.message)}</span>`;
             window.app.showNotification(`Analysis failed: ${error.message}`, 'danger');
         } finally {
             btn.innerHTML = originalHtml;
@@ -269,7 +270,7 @@ class SettingsPanel {
         const btn = document.getElementById('btn-auto-preset');
         const originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+        btn.textContent = 'Analysing…';
 
         try {
             const result = await api.analyzeFile(selected[0], true);
@@ -305,7 +306,7 @@ class SettingsPanel {
         const settings = this.getCurrentSettings();
         const preset = this.presets.find(p => p.id === this.selectedPresetId);
 
-        const isModified = !document.getElementById('preset-modified-badge').classList.contains('d-none');
+        const isModified = !document.getElementById('preset-modified-badge').hidden;
         const presetId = this.selectedPresetId;
         const settingsToSend = isModified ? settings : null;
 
