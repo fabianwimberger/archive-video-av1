@@ -1,6 +1,6 @@
 class ConversionApp {
     constructor() {
-        this.views = ['convert', 'queue', 'history', 'presets', 'cluster'];
+        this.views = ['convert', 'queue', 'history', 'presets', 'cluster', 'settings'];
         this.currentView = null;
         this.toastContainer = null;
     }
@@ -13,6 +13,7 @@ class ConversionApp {
         await jobQueue.init();
         await historyView.init();
         window.historyView = historyView;
+        settingsView.init();
 
         this.setupViewSwitching();
         this.setupDialogs();
@@ -85,6 +86,7 @@ class ConversionApp {
         if (view === 'history') historyView.loadJobs();
         if (view === 'presets') presetManager.open();
         if (view === 'cluster') jobQueue.loadClusterStatus();
+        if (view === 'settings') settingsView.load();
     }
 
     showNotification(message, type = 'info') {
@@ -120,4 +122,5 @@ document.addEventListener('DOMContentLoaded', () => {
     window.fileBrowser = fileBrowser;
     window.presetManager = presetManager;
     window.historyView = historyView;
+    window.settingsView = settingsView;
 });

@@ -65,10 +65,12 @@ If a worker disappears while it is processing a delegated job, the leader requeu
 
 ## Environment Variables
 
+Enabled, node name, public URL, leader URL and peers can also be set on the Settings page; an environment variable wins and locks the field.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DISTRIBUTED_ENABLED` | `false` | Enable LAN peer discovery and remote job delegation |
-| `DISTRIBUTED_NODE_ID` | container hostname | Stable node identifier advertised to peers |
+| `DISTRIBUTED_NODE_ID` | container hostname on first start, then stored | Stable node identifier advertised to peers |
 | `DISTRIBUTED_NODE_NAME` | `DISTRIBUTED_NODE_ID` | Display name for this worker node |
 | `DISTRIBUTED_PUBLIC_URL` | `http://<hostname>:8000` | URL other nodes use to reach this service |
 | `DISTRIBUTED_LEADER_URL` | empty | Optional pinned leader URL; when empty, nodes elect a live leader automatically |

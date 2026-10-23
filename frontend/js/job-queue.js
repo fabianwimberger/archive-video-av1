@@ -169,6 +169,7 @@ class JobQueue {
                     <ul class="cluster-list">${peerItems}</ul>
                 </section>
             </div>
+            <p class="field__hint">Settings are per node. Delegated jobs run with the worker's own track, language and ownership settings.</p>
         `;
 
         document.getElementById('rail-peer-count').textContent = String(peers.length);
