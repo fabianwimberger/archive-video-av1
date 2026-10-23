@@ -1397,9 +1397,14 @@ input[type="range"] {
         gap: var(--s-2) var(--s-3);
     }
 
-    .work__actions {
+    .work__actions,
+    .job-item__actions {
         width: 100%;
         margin-left: 0;
+    }
+
+    .job-item__actions {
+        flex-wrap: wrap;
     }
 
     .files {
