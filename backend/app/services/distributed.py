@@ -1007,6 +1007,7 @@ class DistributedService:
         payload = {
             "source_file": job.source_file,
             "settings": json.loads(cast(str, job.settings)) if job.settings else {},
+            "preset_name_snapshot": job.preset_name_snapshot,
             "notes": job.notes,
             "local_only": True,
             "cluster_job_id": job.cluster_job_id,

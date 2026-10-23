@@ -8,13 +8,13 @@ version = "1.9.5"
 description = "Web-based AV1 video conversion service"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi==0.143.0",
+    "fastapi==0.161.1",
     "uvicorn[standard]==0.54.0",
-    "sqlalchemy[asyncio]==2.1.4",
+    "sqlalchemy[asyncio]==2.1.6",
     "aiosqlite==0.22.1",
     "python-multipart==0.0.32",
-    "websockets==17.2",
-    "alembic==1.20.0",
+    "websockets==17.3",
+    "alembic==1.20.1",
     "httpx==0.28.1",
 ]
 
@@ -23,7 +23,7 @@ dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
-    "ruff==0.17.0",
+    "ruff==0.17.2",
     "mypy==2.4.0",
 ]
 

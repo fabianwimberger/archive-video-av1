@@ -107,7 +107,22 @@ class TestCreateJob:
         assert captured["method"] == "POST"
         assert captured["path"] == "/api/jobs"
         assert captured["json_body"]["settings"]["crf"] == 26
+        assert captured["json_body"]["preset_name_snapshot"] == "Default"
         assert "preset_id" not in captured["json_body"]
+
+    def test_create_job_keeps_forwarded_preset_name(self, seeded_client):
+        payload = {
+            "source_file": str(VIDEO_ROOT / "test.mkv"),
+            "settings": {"crf": 26},
+            "preset_name_snapshot": "Default",
+        }
+        response = seeded_client.post("/api/jobs", json=payload)
+        assert response.status_code == 200
+        job_id = response.json()["job_ids"][0]
+
+        get_resp = seeded_client.get(f"/api/jobs/{job_id}")
+        assert get_resp.json()["preset_name_snapshot"] == "Default"
+        assert get_resp.json()["preset_id"] is None
 
 
 class TestGetJob:
