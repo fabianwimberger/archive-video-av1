@@ -104,17 +104,16 @@ class WebSocketClient {
 
     updateStatus(status) {
         const statusElement = document.getElementById('ws-status');
-        if (statusElement) {
-            statusElement.className = 'badge';
-            if (status === 'connected') {
-                statusElement.classList.add('bg-success');
-            } else if (status === 'disconnected') {
-                statusElement.classList.add('bg-danger');
-            } else {
-                statusElement.classList.add('bg-warning', 'text-dark');
-            }
-            statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-        }
+        if (!statusElement) return;
+
+        const labels = {
+            connected: ['status--ok', 'Connected'],
+            connecting: ['status--warn', 'Connecting'],
+            disconnected: ['status--fail', 'Disconnected'],
+        };
+        const [modifier, label] = labels[status] || ['status--info', status];
+        statusElement.className = `status ${modifier}`;
+        statusElement.textContent = label;
     }
 
     disconnect() {

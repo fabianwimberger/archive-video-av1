@@ -248,6 +248,23 @@ class ApiClient {
         return this.request('/cluster/status');
     }
 
+    async getSettings() {
+        return this.request('/settings');
+    }
+
+    async updateSettings(changes) {
+        return this.request('/settings', {
+            method: 'PUT',
+            body: JSON.stringify(changes),
+        });
+    }
+
+    async restartService() {
+        return this.request('/settings/restart', {
+            method: 'POST',
+        });
+    }
+
     async getHealth() {
         return this.request('/health');
     }
@@ -278,19 +295,19 @@ const utils = {
         return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     },
 
-    formatDate(isoString) {
+    formatDate(isoString, { dateOnly = false } = {}) {
         if (!isoString) return '';
         const date = new Date(isoString);
-        return date.toLocaleString();
+        return dateOnly ? date.toLocaleDateString() : date.toLocaleString();
     },
 
     formatSavings(sourceBytes, outputBytes) {
         if (!sourceBytes || !outputBytes) return '';
         const saved = sourceBytes - outputBytes;
         const percent = Math.round((saved / sourceBytes) * 100);
-        if (saved <= 0) return ' <span class="text-muted">(no savings)</span>';
+        if (saved <= 0) return '<span class="muted">no savings</span>';
         const savedStr = this.formatBytes(saved);
-        return ` <span class="text-success" title="Saved ${savedStr} (${percent}%)">(-${percent}%)</span>`;
+        return `<span title="Saved ${savedStr} (${percent}%)">−${percent}%</span>`;
     }
 };
 

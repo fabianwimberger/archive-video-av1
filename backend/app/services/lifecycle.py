@@ -7,6 +7,7 @@ from app.database import AsyncSessionLocal
 from app.models.preset import Preset
 from app.models.job import Job
 from app.config import settings
+from app.services.settings_service import settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +132,9 @@ async def recover_interrupted_jobs():
 
 async def prune_history():
     """Prune old finished jobs based on retention settings."""
-    retention_days = settings.JOB_HISTORY_RETENTION_DAYS
-    max_rows = settings.JOB_HISTORY_MAX_ROWS
+    values = await settings_service.get_all()
+    retention_days = values["JOB_HISTORY_RETENTION_DAYS"]["value"]
+    max_rows = values["JOB_HISTORY_MAX_ROWS"]["value"]
 
     if retention_days <= 0 and max_rows <= 0:
         return

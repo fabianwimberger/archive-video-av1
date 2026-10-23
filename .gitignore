@@ -25,9 +25,6 @@ htmlcov/
 build/
 dist/
 
-# Frontend vendor (downloaded at build time)
-frontend/vendor/
-
 # IDE
 .vscode/
 .idea/

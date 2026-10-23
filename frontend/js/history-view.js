@@ -5,13 +5,13 @@ class HistoryView {
         this.presets = [];
         this.limit = 25;
         this.offset = 0;
-        this.detailModal = null;
-        this.clearOlderModal = null;
+        this.detailDialog = null;
+        this.clearOlderDialog = null;
     }
 
     async init() {
-        this.detailModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('history-detail-modal'));
-        this.clearOlderModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('clear-older-modal'));
+        this.detailDialog = document.getElementById('history-detail-modal');
+        this.clearOlderDialog = document.getElementById('clear-older-modal');
         this.setupEventListeners();
         await this.loadPresetsForFilter();
         await this.loadJobs();
@@ -36,7 +36,7 @@ class HistoryView {
         });
 
         document.getElementById('btn-history-clear-older').addEventListener('click', () => {
-            this.clearOlderModal.show();
+            this.clearOlderDialog.showModal();
         });
 
         document.getElementById('btn-clear-older-confirm').addEventListener('click', async () => {
@@ -46,7 +46,7 @@ class HistoryView {
                 await api.deleteHistoryOlderThan(new Date(val).toISOString());
                 this.offset = 0;
                 await this.loadJobs();
-                this.clearOlderModal.hide();
+                this.clearOlderDialog.close();
                 window.app.showNotification('Old history cleared', 'success');
             } catch (error) {
                 window.app.showNotification(`Error: ${error.message}`, 'danger');
@@ -109,10 +109,17 @@ class HistoryView {
         this.loadJobs();
     }
 
+    statusCell(status) {
+        if (status === 'completed') return '<span class="status status--ok">Completed</span>';
+        if (status === 'failed') return '<span class="status status--fail">Failed</span>';
+        if (status === 'cancelled') return '<span class="status status--warn">Cancelled</span>';
+        return `<span class="status status--info">${utils.escapeHtml(status)}</span>`;
+    }
+
     render() {
         const tbody = document.getElementById('history-table-body');
         if (this.jobs.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No history yet</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8"><p class="empty">No history yet</p></td></tr>';
             this.renderPagination();
             return;
         }
@@ -120,42 +127,38 @@ class HistoryView {
         tbody.innerHTML = '';
         this.jobs.forEach(job => {
             const fileName = job.source_file.split('/').pop();
-            const presetBadge = job.preset_name_snapshot
-                ? `<span class="badge bg-info text-dark">${utils.escapeHtml(job.preset_name_snapshot)}</span>`
-                : '<span class="badge bg-secondary">Custom</span>';
-
-            let statusBadge = '<span class="badge bg-secondary">' + job.status + '</span>';
-            if (job.status === 'completed') statusBadge = '<span class="badge bg-success">completed</span>';
-            if (job.status === 'failed') statusBadge = '<span class="badge bg-danger">failed</span>';
-            if (job.status === 'cancelled') statusBadge = '<span class="badge bg-warning text-dark">cancelled</span>';
+            const preset = job.preset_name_snapshot
+                ? utils.escapeHtml(job.preset_name_snapshot)
+                : '<span class="muted">Custom</span>';
 
             const summary = this.encodeSummary(job.settings);
             const savings = utils.formatSavings(job.source_size_bytes, job.output_size_bytes);
             const completed = job.completed_at ? utils.formatDate(job.completed_at) : '';
-            const notes = job.notes ? utils.escapeHtml(job.notes).substring(0, 40) + (job.notes.length > 40 ? '…' : '') : '';
+            const notes = job.notes
+                ? utils.escapeHtml(job.notes).substring(0, 40) + (job.notes.length > 40 ? '…' : '')
+                : '';
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td data-label="File" title="${utils.escapeHtml(job.source_file)}">${utils.escapeHtml(fileName)}</td>
-                <td data-label="Preset">${presetBadge}</td>
-                <td data-label="Settings"><div class="small text-muted" title="${utils.escapeHtml(summary)}">${utils.escapeHtml(summary)}</div></td>
-                <td data-label="Status">${statusBadge}</td>
-                <td data-label="Savings">${savings}</td>
-                <td data-label="Completed" class="small text-muted">${completed}</td>
-                <td data-label="Notes" class="small text-muted">${notes}</td>
-                <td data-label="Actions" class="text-end">
-                    <div class="dropdown">
-                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">Actions</button>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><button class="dropdown-item history-action-details" data-id="${job.id}">Encode details</button></li>
-                            <li><button class="dropdown-item history-action-retry" data-id="${job.id}">Retry</button></li>
-                            <li><button class="dropdown-item history-action-preset" data-id="${job.id}">Save as preset</button></li>
-                            <li><button class="dropdown-item history-action-use" data-id="${job.id}">Use these settings</button></li>
-                            <li><button class="dropdown-item history-action-notes" data-id="${job.id}">Edit notes</button></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><button class="dropdown-item text-danger history-action-delete" data-id="${job.id}">Delete</button></li>
-                        </ul>
-                    </div>
+                <td title="${utils.escapeHtml(job.source_file)}">${utils.escapeHtml(fileName)}</td>
+                <td class="col-wide">${preset}</td>
+                <td class="col-wide"><span class="small muted" title="${utils.escapeHtml(summary)}">${utils.escapeHtml(summary)}</span></td>
+                <td>${this.statusCell(job.status)}</td>
+                <td class="r num col-savings">${savings}</td>
+                <td class="col-wide small muted num">${completed}</td>
+                <td class="col-wide small muted">${notes}</td>
+                <td>
+                    <details class="row-menu">
+                        <summary>Actions</summary>
+                        <div class="row-menu__list">
+                            <button class="history-action-details" type="button" data-id="${job.id}">Encode details</button>
+                            <button class="history-action-retry" type="button" data-id="${job.id}">Retry</button>
+                            <button class="history-action-preset" type="button" data-id="${job.id}">Save as preset</button>
+                            <button class="history-action-use" type="button" data-id="${job.id}">Use these settings</button>
+                            <button class="history-action-notes" type="button" data-id="${job.id}">Edit notes</button>
+                            <button class="history-action-delete danger" type="button" data-id="${job.id}">Delete</button>
+                        </div>
+                    </details>
                 </td>
             `;
 
@@ -176,11 +179,11 @@ class HistoryView {
         if (!settings) return '';
         const parts = [];
         if (settings.crf != null) parts.push(`CRF ${settings.crf}`);
-        if (settings.encoder_preset != null || settings.preset != null) parts.push(`preset ${settings.encoder_preset ?? settings.preset}`);
+        if (settings.encoder_preset != null || settings.preset != null) parts.push(`speed ${settings.encoder_preset ?? settings.preset}`);
         if (settings.svt_params) parts.push(settings.svt_params);
         if (settings.max_resolution) parts.push(`${settings.max_resolution}p`);
         if (settings.audio_bitrate) parts.push(settings.audio_bitrate);
-        return parts.join(' · ');
+        return parts.join(', ');
     }
 
     renderPagination() {
@@ -189,11 +192,11 @@ class HistoryView {
         const currentPage = Math.floor(this.offset / this.limit) + 1;
 
         container.innerHTML = `
-            <div class="small text-muted">Showing ${this.jobs.length} of ${this.total} jobs</div>
-            <div class="btn-group btn-group-sm">
-                <button class="btn btn-outline-secondary" id="hist-prev" ${this.offset === 0 ? 'disabled' : ''}>Previous</button>
-                <button class="btn btn-outline-secondary" disabled>Page ${currentPage} / ${pages}</button>
-                <button class="btn btn-outline-secondary" id="hist-next" ${this.offset + this.limit >= this.total ? 'disabled' : ''}>Next</button>
+            <span class="small muted">Showing ${this.jobs.length} of ${this.total} jobs</span>
+            <div class="cluster">
+                <button class="btn btn--quiet btn--small" id="hist-prev" type="button" ${this.offset === 0 ? 'disabled' : ''}>Previous</button>
+                <span class="small muted num">Page ${currentPage} / ${pages}</span>
+                <button class="btn btn--quiet btn--small" id="hist-next" type="button" ${this.offset + this.limit >= this.total ? 'disabled' : ''}>Next</button>
             </div>
         `;
 
@@ -219,10 +222,10 @@ class HistoryView {
 
         const el = document.getElementById('history-stats');
         el.innerHTML = `
-            <span><strong>Total:</strong> ${this.total}</span>
-            <span><strong>Saved:</strong> ${totalSaved > 0 ? utils.formatBytes(totalSaved) : '—'}</span>
-            <span><strong>Avg savings:</strong> ${avgSavings > 0 ? avgSavings + '%' : '—'}</span>
-            <span><strong>Presets:</strong> ${presetParts.join(' · ') || '—'}</span>
+            <span>Total <b class="num">${this.total}</b></span>
+            <span>Saved <b class="num">${totalSaved > 0 ? utils.formatBytes(totalSaved) : '—'}</b></span>
+            <span>Average saving <b class="num">${avgSavings > 0 ? avgSavings + '%' : '—'}</b></span>
+            <span>Presets ${presetParts.join(', ') || '—'}</span>
         `;
     }
 
@@ -230,24 +233,31 @@ class HistoryView {
         try {
             const job = await api.getJob(jobId);
             const content = document.getElementById('history-detail-content');
-            const settingsHtml = Object.entries(job.settings || {}).map(([k, v]) => `<div><code>${utils.escapeHtml(k)}</code>: ${utils.escapeHtml(String(v))}</div>`).join('');
+            const settingsRows = Object.entries(job.settings || {})
+                .map(([k, v]) => `<dt>${utils.escapeHtml(k)}</dt><dd>${utils.escapeHtml(String(v))}</dd>`)
+                .join('');
+
             content.innerHTML = `
-                <dl class="row">
-                    <dt class="col-sm-4">File</dt><dd class="col-sm-8 text-break">${utils.escapeHtml(job.source_file)}</dd>
-                    <dt class="col-sm-4">Output</dt><dd class="col-sm-8 text-break">${utils.escapeHtml(job.output_file)}</dd>
-                    <dt class="col-sm-4">Status</dt><dd class="col-sm-8">${job.status}</dd>
-                    <dt class="col-sm-4">Created</dt><dd class="col-sm-8">${utils.formatDate(job.created_at)}</dd>
-                    <dt class="col-sm-4">Started</dt><dd class="col-sm-8">${utils.formatDate(job.started_at)}</dd>
-                    <dt class="col-sm-4">Completed</dt><dd class="col-sm-8">${utils.formatDate(job.completed_at)}</dd>
-                    <dt class="col-sm-4">Error</dt><dd class="col-sm-8 text-danger">${utils.escapeHtml(job.error_message || '—')}</dd>
-                    <dt class="col-sm-4">Notes</dt><dd class="col-sm-8">${utils.escapeHtml(job.notes || '—')}</dd>
+                <dl class="detail-list">
+                    <dt>File</dt><dd>${utils.escapeHtml(job.source_file)}</dd>
+                    <dt>Output</dt><dd>${utils.escapeHtml(job.output_file)}</dd>
+                    <dt>Status</dt><dd>${this.statusCell(job.status)}</dd>
+                    <dt>Created</dt><dd class="num">${utils.formatDate(job.created_at)}</dd>
+                    <dt>Started</dt><dd class="num">${utils.formatDate(job.started_at)}</dd>
+                    <dt>Completed</dt><dd class="num">${utils.formatDate(job.completed_at)}</dd>
+                    <dt>Error</dt><dd>${utils.escapeHtml(job.error_message || '—')}</dd>
+                    <dt>Notes</dt><dd>${utils.escapeHtml(job.notes || '—')}</dd>
                 </dl>
-                <h6>Settings</h6>
-                <div class="bg-body-tertiary p-2 rounded small mb-3">${settingsHtml}</div>
-                <h6>Log</h6>
-                <pre class="bg-dark text-light p-2 rounded small" style="max-height: 300px; overflow: auto;">${utils.escapeHtml(job.log || 'No log')}</pre>
+                <div class="detail-block">
+                    <h3 class="label">Settings</h3>
+                    <dl class="detail-list machine">${settingsRows || '<dt>—</dt><dd></dd>'}</dl>
+                </div>
+                <div class="detail-block">
+                    <h3 class="label">Log</h3>
+                    <pre class="log">${utils.escapeHtml(job.log || 'No log')}</pre>
+                </div>
             `;
-            this.detailModal.show();
+            this.detailDialog.showModal();
         } catch (error) {
             window.app.showNotification(`Error: ${error.message}`, 'danger');
         }
@@ -255,7 +265,7 @@ class HistoryView {
 
     async retryJob(jobId) {
         try {
-            const result = await api.retryJob(jobId);
+            await api.retryJob(jobId);
             window.app.showNotification('Retry started. View it in the queue.', 'success');
             window.jobQueue.loadJobs();
         } catch (error) {

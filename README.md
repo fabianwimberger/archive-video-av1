@@ -30,7 +30,7 @@ AV1 saves 30-50% on file size versus H.264, but encoding is slow and most tools 
   - **Custom presets** — create, edit, duplicate, import/export your own presets
 - **Automatic crop detection** (consensus-based, 8-point sampling)
 - **Two-pass audio normalization** (loudnorm, Opus stereo output)
-- **Configurable track selection** (default: German > English > first available)
+- **Settings page** for track and language selection (default: German > English > first available), output file owner, cluster mode and history retention
 - **Skips re-encoding** if source is already AV1
 - **History view** with filtering, search, retry, and per-job settings inspection
 - **Auto Speed / Auto Grain** — analyzes the selected file and suggests a preset or grain settings
@@ -92,35 +92,41 @@ Deleting an original requires a completed conversion record whose source and out
 
 Presets are stored in the SQLite database and survive restarts.
 
-- **Built-in presets** (`Default`, `Animated`, `Grainy`, `Very Grainy`) are seeded automatically and synced on startup. They cannot be edited or deleted, but you can duplicate them to create user presets.
-- **User presets** can be created from the settings panel, or saved from any past job's settings snapshot.
-- **Import / Export** — share presets as JSON documents via the Manage Presets modal.
-- **Default preset** — one preset can be marked as default; it is pre-selected in the UI on load.
+- **Built-in presets** (`Default`, `Animated`, `Grainy`, `Very Grainy`) cannot be edited or deleted, but can be duplicated.
+- **User presets** are created on the Presets page or saved from a past job's settings.
+- **Import / Export** shares presets as JSON on the Presets page.
+- **Default preset** is pre-selected on the Convert page.
 
 ## Configuration
 
-### Environment Variables
+Settings are managed on the Settings page and stored in the SQLite database. An environment variable of the same name wins and locks the field read-only; otherwise the stored value is used, then the built-in default.
+
+### Settings page
+
+| Section | Settings | Takes effect |
+|---------|----------|--------------|
+| Tracks and languages | Audio and subtitle track mode, preferred language lists | Next job |
+| Output files | Fallback file mode, file owner UID and GID | Next job |
+| Cluster | Distributed mode, node name, public URL, leader URL, peers, node ID | After a restart |
+| Maintenance | History retention in days and rows, log level | Log level immediately, retention on the next cleanup pass |
+
+The node ID is taken from the hostname on first start, stored in the database and shown read-only, so a recreated container keeps it.
+
+### Environment-only variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SOURCE_MOUNT` | `/videos` | Mount point for source video files |
 | `TEMP_DIR` | `/app/temp` | Temporary directory for in-progress conversions |
 | `DATABASE_PATH` | `/app/data/app.db` | SQLite database path (persistent) |
-| `LOG_LEVEL` | `INFO` | Logging level for the app, uvicorn, and httpx (`DEBUG`, `INFO`, `WARNING`, `ERROR`); per-request lines only at `DEBUG` |
-| `AUDIO_TRACK_MODE` | `preferred` | Audio stream mode: `preferred` selects one track and normalizes it, `all` copies all audio tracks |
-| `SUBTITLE_TRACK_MODE` | `preferred` | Subtitle stream mode: `preferred` selects one matching track, `all` copies all subtitle tracks, `none` drops subtitles |
-| `PREFERRED_AUDIO_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `AUDIO_TRACK_MODE=preferred` |
-| `PREFERRED_SUBTITLE_LANGUAGES` | `ger,deu,de,eng,en` | Comma-separated language preference order used when `SUBTITLE_TRACK_MODE=preferred` |
-| `OUTPUT_FILE_MODE` | `0644` | Mode for converted files when the source file's mode cannot be copied |
-| `PUID` / `PGID` | empty | Owner for converted files when the source file's owner cannot be copied; empty keeps the writing user |
-| `JOB_HISTORY_RETENTION_DAYS` | `0` | Delete finished jobs older than N days (`0` = keep forever) |
-| `JOB_HISTORY_MAX_ROWS` | `0` | Maximum number of finished jobs to keep (`0` = unlimited) |
-| `DISTRIBUTED_ENABLED` | `false` | Enable LAN peer discovery and remote job delegation |
 | `TZ` | `UTC` | Container timezone |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed browser origins |
+
+Cluster tuning variables are described in [docs/distributed.md](docs/distributed.md).
 
 ## Distributed Processing
 
-Several nodes on a trusted LAN can share one queue: set `DISTRIBUTED_ENABLED=true` on each and mount the same library at the same path. An elected leader hands pending jobs to idle peers and requeues the work of a node that disappears. Requirements, node setup, failure handling and the other `DISTRIBUTED_*` variables are in [docs/distributed.md](docs/distributed.md).
+Several nodes on a trusted LAN can share one queue: turn on distributed mode on each node's Settings page and mount the same library at the same path. An elected leader hands pending jobs to idle peers and requeues the work of a node that disappears. Setup, requirements and failure handling are in [docs/distributed.md](docs/distributed.md).
 
 ## Security
 

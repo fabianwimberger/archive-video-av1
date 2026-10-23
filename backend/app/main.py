@@ -13,8 +13,8 @@ from app.config import APP_ROOT, ASSET_ROOT, settings
 from app.database import init_db
 
 
-def configure_logging() -> None:
-    level = getattr(logging, settings.LOG_LEVEL)
+def configure_logging(level_name: str | None = None) -> None:
+    level = getattr(logging, level_name or settings.LOG_LEVEL)
     logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     logging.getLogger().setLevel(level)
     # Uvicorn pins its own loggers to INFO before importing the app.
@@ -47,6 +47,10 @@ async def lifespan(app: FastAPI):
     logger.info("Database migrated to head")
 
     await init_db()
+
+    from app.services.settings_service import settings_service
+
+    await settings_service.apply_startup()
 
     from app.services.lifecycle import (
         sync_builtin_presets,
@@ -90,7 +94,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Video Conversion Service",
     description="Web-based video conversion service with real-time progress tracking",
-    version="1.9.5",
+    version="1.10.0",
     lifespan=lifespan,
 )
 
@@ -104,13 +108,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.routes import cluster, files, jobs, websocket, presets, queue  # noqa: E402
+from app.routes import (  # noqa: E402
+    cluster,
+    files,
+    jobs,
+    websocket,
+    presets,
+    queue,
+    settings as settings_routes,
+)
 
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(presets.router, prefix="/api/presets", tags=["presets"])
 app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
 app.include_router(cluster.router, prefix="/api/cluster", tags=["cluster"])
+app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"])
 app.include_router(websocket.router, tags=["websocket"])
 
 

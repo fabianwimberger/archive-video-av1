@@ -2,6 +2,7 @@
 
 import re
 from typing import Dict, Any
+from urllib.parse import urlparse
 
 # Allowed characters for SVT-AV1 parameters (key=value pairs separated by colons)
 SVT_PARAMS_PATTERN = re.compile(r"^[a-zA-Z0-9_\-=/:.]*$")
@@ -47,3 +48,39 @@ def validate_preset_name(name: str) -> None:
         raise ValueError(
             "Preset name must be 1-64 characters and can only contain letters, numbers, spaces, underscores, hyphens, and parentheses."
         )
+
+
+LANGUAGE_CODE_PATTERN = re.compile(r"^[A-Za-z]{2,3}$")
+FILE_MODE_PATTERN = re.compile(r"^[0-7]{3,4}$")
+
+
+def normalize_language_list(value: str) -> str:
+    codes = [part.strip().lower() for part in value.split(",")]
+    if not codes or any(not LANGUAGE_CODE_PATTERN.fullmatch(code) for code in codes):
+        raise ValueError("Language lists take comma-separated ISO 639 codes")
+    return ",".join(codes)
+
+
+def normalize_file_mode(value: str) -> str:
+    text = value.strip()
+    if not FILE_MODE_PATTERN.fullmatch(text) or int(text, 8) > 0o777:
+        raise ValueError("File mode must be an octal string such as 0644")
+    return f"{int(text, 8):04o}"
+
+
+def normalize_url(value: str, allow_empty: bool = True) -> str:
+    text = value.strip().rstrip("/")
+    if not text and allow_empty:
+        return ""
+    parsed = urlparse(text)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("URL must start with http:// or https://")
+    return text
+
+
+def normalize_url_list(value: str) -> str:
+    return ",".join(
+        normalize_url(part, allow_empty=False)
+        for part in value.split(",")
+        if part.strip()
+    )
