@@ -12,23 +12,7 @@ services:
     volumes:
       - /your/local/path:/videos
       - app-data:/app/data
-    environment:
-      AUDIO_TRACK_MODE: preferred
-      SUBTITLE_TRACK_MODE: preferred
-      PREFERRED_AUDIO_LANGUAGES: ger,deu,de,eng,en
-      PREFERRED_SUBTITLE_LANGUAGES: ger,deu,de,eng,en
-      # Fallbacks when a converted file can't take the source file's mode/owner.
-      # OUTPUT_FILE_MODE: "0644"
-      # PUID: "1000"
-      # PGID: "1000"
-      # DISTRIBUTED_ENABLED: "true"
-      # DISTRIBUTED_NODE_ID: node-a
-      # DISTRIBUTED_NODE_NAME: Node A
-      # DISTRIBUTED_PUBLIC_URL: http://192.168.1.10:8000
-      # Optional: pin one coordinator instead of automatic leader election.
-      # DISTRIBUTED_LEADER_URL: http://192.168.1.10:8000
-      # DISTRIBUTED_PEERS: http://192.168.1.11:8000,http://192.168.1.12:8000
-    # You can also override ports, environment, etc.
+    # Settings are made on the Settings page; a variable set here locks its field.
     # ports:
     #   - "8001:8000"
     #   - "9988:9988/udp"

@@ -5,6 +5,61 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.10.0] - 2026-10-23
+
+Moves most configuration from environment variables to a Settings page and ships a redesigned web UI.
+
+### Features
+
+- New web UI with a side rail for Convert, Queue, History, Presets, Cluster and Settings, a live strip for the running job, and a status bar with node, peers, queue and saved space. It follows the system light or dark theme and becomes a bottom tab bar on phones.
+- A Settings page replaces most environment variables: track and language selection, output file mode and owner, cluster settings, history retention and the log level are set in the web UI and stored in the database. Only the paths, `TZ` and the cluster tuning values stay environment-only.
+- An environment variable still wins over the stored value, and its field is shown read-only.
+- Cluster changes apply after a restart from the Settings page, which is refused while a job runs on that node.
+
+### Fixes
+
+- A recreated container keeps its cluster node ID: the ID is taken from the hostname on first start and stored in the database.
+- Jobs forwarded between nodes keep their preset name instead of showing Custom.
+- `LOG_LEVEL` also applies to the uvicorn and httpx logs.
+
+### Upgrading
+
+- Existing environment variables keep working and lock their fields. To manage a setting on the Settings page instead, remove its variable from the Compose file and recreate the container.
+
+### Dependencies
+
+- FastAPI 0.142.2 → 0.161.1
+- SQLAlchemy 2.1.2 → 2.1.6
+- websockets 17.1 → 17.3
+- Alembic 1.20.0 → 1.20.1
+- Ruff 0.15.22 → 0.17.2
+- The web UI no longer loads Bootstrap or Bootstrap Icons.
+
+### Documentation & Links
+
+- [README](https://github.com/fabianwimberger/archive-video-av1#readme)
+- [Distributed processing](https://github.com/fabianwimberger/archive-video-av1/blob/main/docs/distributed.md)
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.9.5...v1.10.0)
+
+## [v1.9.5] - 2026-10-03
+
+Consolidates Python dependency configuration and separates development tools from the runtime image.
+
+### Fixes
+
+- Use a single Python dependency configuration for local development, CI, and Docker builds.
+- Exclude test tools from the runtime environment.
+
+### Features
+
+- Add virtual-environment setup instructions and a `make test` command.
+
+### Documentation & Links
+
+- [README](https://github.com/fabianwimberger/archive-video-av1#readme)
+- [Contributing](https://github.com/fabianwimberger/archive-video-av1/blob/main/CONTRIBUTING.md)
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.9.4...v1.9.5)
+
 ## [v1.9.4] - 2026-10-02
 
 Updates the API server and asynchronous database dependencies.
