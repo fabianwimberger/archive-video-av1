@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.11.0] - 2026-10-25
+
+Fixes a failed-conversion edge case and unreadable Settings errors.
+
+### Fixes
+
+- Conversions no longer fail with `Failed to finalize output file` when a dropped audio track runs longer than the kept streams: the final duration check compares against the mapped streams instead of the source container duration
+- Saving the Settings page with an invalid value now shows the actual reason instead of `[object Object]`; service errors return 400 instead of 500, and saving a section whose fields are all set by the environment says so instead of silently doing nothing
+
+### Dependencies
+
+- FastAPI 0.161.1 → 0.162.0
+
+### Documentation & Links
+
+- [README](https://github.com/fabianwimberger/archive-video-av1#readme)
+- [Distributed processing](https://github.com/fabianwimberger/archive-video-av1/blob/main/docs/distributed.md)
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.10.0...v1.11.0)
+
 ## [v1.10.0] - 2026-10-23
 
 Moves most configuration from environment variables to a Settings page and ships a redesigned web UI.

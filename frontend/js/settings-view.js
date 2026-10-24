@@ -272,7 +272,10 @@ class SettingsView {
             changes[name] = this.readValue(name);
         });
 
-        if (Object.keys(changes).length === 0) return;
+        if (Object.keys(changes).length === 0) {
+            this.setStatus(section, 'All fields in this section are set by the environment');
+            return;
+        }
 
         try {
             const data = await api.updateSettings(changes);

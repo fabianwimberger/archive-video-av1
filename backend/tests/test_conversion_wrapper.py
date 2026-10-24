@@ -313,3 +313,71 @@ def test_wrapper_applies_source_permissions_before_publishing():
     assert script.index('match_source_permissions "$pending_output"') < script.index(
         'ln -- "$pending_output" "$OUTPUT_FILE"'
     )
+
+
+def _function_body(script: str, name: str) -> str:
+    start = script.index(f"{name}() {{")
+    end = script.index("\n}\n", start) + 3
+    return script[start:end]
+
+
+def _run_with_probe(script: str, probe: str, snippet: str) -> str:
+    """Run wrapper helpers against a captured ffprobe -of flat dump."""
+    functions = "\n".join(
+        _function_body(script, name)
+        for name in (
+            "probe_get",
+            "probe_field",
+            "get_total_frames",
+            "stream_duration",
+            "mapped_source_duration",
+        )
+    )
+    command = (
+        f"PROBE=$(cat <<'PROBE_EOF'\n{probe}\nPROBE_EOF\n)\n{functions}\n{snippet}\n"
+    )
+    result = subprocess.run(
+        ["bash", "-c", command], capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip()
+
+
+def test_finalize_duration_uses_mapped_streams_not_container():
+    """Dropped tracks and container-wide subtitle durations must not fail the job."""
+    script = WRAPPER.read_text()
+    probe = "\n".join(
+        [
+            'streams.stream.0.codec_type="video"',
+            "streams.stream.0.index=0",
+            'streams.stream.0.duration="N/A"',
+            'streams.stream.0.tags.DURATION="02:00:33.226000000"',
+            'streams.stream.1.codec_type="audio"',
+            "streams.stream.1.index=1",
+            'streams.stream.1.tags.DURATION="02:00:33.227000000"',
+            'streams.stream.2.codec_type="audio"',
+            "streams.stream.2.index=2",
+            'streams.stream.2.tags.DURATION="02:01:11.264000000"',
+            'streams.stream.3.codec_type="subtitle"',
+            "streams.stream.3.index=3",
+            'streams.stream.3.duration="7271.264000"',
+            'streams.stream.3.tags.DURATION="01:59:57.733000000"',
+            'format.duration="7271.264000"',
+        ]
+    )
+    duration = _run_with_probe(
+        script, probe, "mapped_ords=(0 1 3)\nmapped_source_duration"
+    )
+    assert abs(float(duration) - 7233.227) < 0.01
+
+
+def test_finalize_duration_falls_back_to_container_duration():
+    script = WRAPPER.read_text()
+    probe = "\n".join(
+        [
+            'streams.stream.0.codec_type="video"',
+            "streams.stream.0.index=0",
+            'format.duration="1234.500000"',
+        ]
+    )
+    duration = _run_with_probe(script, probe, "mapped_ords=(0)\nmapped_source_duration")
+    assert abs(float(duration) - 1234.5) < 0.01

@@ -148,6 +148,50 @@ probe_ordinal_for_index() {
     done
 }
 
+# stream_duration <ordinal>: stream duration in seconds from its MKV DURATION
+# tag, else its container header field, else frames / frame rate. The tag comes
+# first: Matroska often reports the whole container duration as a subtitle
+# stream's duration. Empty when the stream reports none of these.
+stream_duration() {
+    local ord="$1" value
+
+    value=$(probe_get "streams\.stream\.${ord}\.tags\.DURATION")
+    if [[ "$value" =~ ^([0-9]+):([0-9]{2}):([0-9]{2}(\.[0-9]+)?)$ ]]; then
+        awk -v h="${BASH_REMATCH[1]}" -v m="${BASH_REMATCH[2]}" -v s="${BASH_REMATCH[3]}" \
+            'BEGIN { printf "%.3f", h * 3600 + m * 60 + s }'
+        return
+    fi
+
+    value=$(probe_field "$ord" duration)
+    if [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "$value"
+        return
+    fi
+
+    local frames rate
+    frames=$(get_total_frames "$ord")
+    rate=$(probe_field "$ord" r_frame_rate)
+    if [[ "$frames" =~ ^[0-9]+$ && "$frames" -gt 0 && "$rate" =~ ^([0-9]+)/([0-9]+)$ && "${BASH_REMATCH[2]}" -gt 0 ]]; then
+        awk -v f="$frames" -v num="${BASH_REMATCH[1]}" -v den="${BASH_REMATCH[2]}" \
+            'BEGIN { printf "%.3f", f * den / num }'
+    fi
+}
+
+# Longest duration among the streams that end up in the output. The container
+# duration is not usable here: it can be set by a longer track (e.g. a second
+# audio stream with trailing silence) that the mapping dropped.
+mapped_source_duration() {
+    local ord dur longest=""
+    for ord in "${mapped_ords[@]}"; do
+        [[ -n "$ord" ]] || continue
+        dur=$(stream_duration "$ord")
+        [[ -n "$dur" ]] || continue
+        longest=$(awk -v a="$longest" -v b="$dur" 'BEGIN { print (a == "" || b > a) ? b : a }')
+    done
+    # No per-stream duration anywhere: fall back to the container's.
+    echo "${longest:-$(probe_get 'format\.duration')}"
+}
+
 # mktemp files are 0600 and owned by the writer; squashing mounts may refuse
 # the change, which must not fail the job.
 match_source_permissions() {
@@ -187,7 +231,7 @@ LOUDNORM_JSON="${work_dir}/loudnorm.json"
 
 # One ffprobe call for everything below, instead of once per field.
 PROBE=$(ffprobe -v error \
-    -show_entries "format=duration,start_time:stream=index,codec_type,codec_name,width,height,nb_frames,r_frame_rate,start_time,color_transfer,color_primaries,color_space:stream_tags=language" \
+    -show_entries "format=duration,start_time:stream=index,codec_type,codec_name,duration,width,height,nb_frames,r_frame_rate,start_time,color_transfer,color_primaries,color_space:stream_tags=language,DURATION" \
     -of flat "$INPUT_FILE" 2>/dev/null)
 
 if [[ -z "$PROBE" ]]; then
@@ -474,6 +518,19 @@ elif [[ -n "$sub_ord" ]]; then
     fi
 fi
 
+# Ordinals of the streams the output will carry, for mapped_source_duration.
+mapped_ords=("$video_ord")
+for mapped_audio_idx in "${audio_indices[@]}"; do
+    mapped_ords+=("$(probe_ordinal_for_index audio "$mapped_audio_idx")")
+done
+if [[ "$SUBTITLE_TRACK_MODE" == "all" ]]; then
+    for sub_ord_all in $(probe_ordinals subtitle); do
+        mapped_ords+=("$sub_ord_all")
+    done
+elif [[ -n "$sub_ord" ]]; then
+    mapped_ords+=("$sub_ord")
+fi
+
 # Only copy if input is AV1 AND no crop/scale needed
 needs_filter=0
 [[ -n "$crop" || -n "$scale_filter" ]] && needs_filter=1
@@ -672,13 +729,23 @@ rm -f "$TAGS_XML" "$tmp_video" "$tmp_audio"
 match_source_permissions "$pending_output"
 
 output_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$pending_output" 2>/dev/null)
-source_duration=$(probe_get 'format\.duration')
+source_duration=$(mapped_source_duration)
 duration_valid=$(awk -v source="$source_duration" -v output="$output_duration" 'BEGIN { delta=source-output; if (delta<0) delta=-delta; print (source>0 && output>0 && delta<=2) ? 1 : 0 }')
-if [[ $mkvmerge_status -le 1 && -s "$pending_output" && "$duration_valid" == 1 ]] && ln -- "$pending_output" "$OUTPUT_FILE"; then
-    echo "STAGE:complete"
-    echo "STATUS:Conversion complete"
-    exit 0
-else
+if [[ $mkvmerge_status -gt 1 || ! -s "$pending_output" ]]; then
+    echo "STATUS:mkvmerge failed (exit status $mkvmerge_status)"
     echo "ERROR:Failed to finalize output file"
     exit 1
 fi
+if [[ "$duration_valid" != 1 ]]; then
+    echo "STATUS:Duration mismatch after mux: mapped source ${source_duration:-unknown}s vs output ${output_duration:-unknown}s"
+    echo "ERROR:Failed to finalize output file"
+    exit 1
+fi
+if ! ln -- "$pending_output" "$OUTPUT_FILE"; then
+    echo "STATUS:Could not link the muxed file into place"
+    echo "ERROR:Failed to finalize output file"
+    exit 1
+fi
+echo "STAGE:complete"
+echo "STATUS:Conversion complete"
+exit 0

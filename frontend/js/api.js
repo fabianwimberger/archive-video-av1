@@ -3,6 +3,26 @@ class ApiClient {
         this.baseURL = baseURL;
     }
 
+    // FastAPI validation failures carry detail as a list, which would
+    // otherwise render as "[object Object]" in the UI.
+    static errorText(data) {
+        const detail = data?.detail ?? data?.message;
+        if (Array.isArray(detail)) {
+            return detail
+                .map(entry => {
+                    if (typeof entry === 'string') return entry;
+                    const where = Array.isArray(entry?.loc)
+                        ? entry.loc.filter(part => part !== 'body').join('.')
+                        : '';
+                    const what = entry?.msg ?? JSON.stringify(entry);
+                    return where ? `${where}: ${what}` : String(what);
+                })
+                .join('; ');
+        }
+        if (typeof detail === 'string' && detail) return detail;
+        return JSON.stringify(data);
+    }
+
     async request(endpoint, options = {}) {
         const url = `${this.baseURL}${endpoint}`;
         const config = {
@@ -20,7 +40,7 @@ class ApiClient {
                 let errorMessage;
                 try {
                     const errorData = await response.json();
-                    errorMessage = errorData.detail || errorData.message || JSON.stringify(errorData);
+                    errorMessage = ApiClient.errorText(errorData);
                 } catch {
                     errorMessage = `HTTP ${response.status}: ${response.statusText}`;
                 }
@@ -223,7 +243,7 @@ class ApiClient {
             let errorMessage;
             try {
                 const errorData = await response.json();
-                errorMessage = errorData.detail || errorData.message || JSON.stringify(errorData);
+                errorMessage = ApiClient.errorText(errorData);
             } catch {
                 errorMessage = `HTTP ${response.status}: ${response.statusText}`;
             }
