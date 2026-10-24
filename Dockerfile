@@ -124,10 +124,13 @@ RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-
 # The package is installed from the repository layout, then the app is
 # placed where it runs from: it resolves alembic.ini and the frontend
 # relative to its own location.
-COPY pyproject.toml .
+# uv is mounted for this step only, so it doesn't end up in the image.
+COPY pyproject.toml uv.lock ./
 COPY backend/app/ /app/backend/app/
-RUN python3 -m venv /app/venv \
-    && /app/venv/bin/python -m pip install --no-cache-dir . \
+RUN --mount=from=ghcr.io/astral-sh/uv:0.13.5,source=/uv,target=/bin/uv \
+    UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
+    UV_PYTHON=python3 UV_PROJECT_ENVIRONMENT=/app/venv \
+    uv sync --frozen --no-editable --no-cache \
     && rm -rf /app/backend /app/build \
     && mkdir -p /app/data /app/temp
 COPY backend/app/ /app/app/
