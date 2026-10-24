@@ -32,6 +32,8 @@ async def update_settings(payload: SettingsUpdate):
             status_code=409,
             detail=f"Set by the environment: {', '.join(exc.names)}",
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/restart")

@@ -108,6 +108,22 @@ def test_put_settings_rejects_env_locked_field(clean_settings_env, client, monke
     assert "AUDIO_TRACK_MODE" in response.json()["detail"]
 
 
+def test_put_settings_maps_service_errors_to_400(
+    clean_settings_env, client, monkeypatch
+):
+    from app.services import settings_service as service_module
+
+    async def fail(changes):
+        raise ValueError("OUTPUT_FILE_MODE must be a valid mode")
+
+    monkeypatch.setattr(service_module.settings_service, "update", fail)
+
+    response = client.put("/api/settings", json={"OUTPUT_FILE_MODE": "0644"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "OUTPUT_FILE_MODE must be a valid mode"
+
+
 def test_put_cluster_setting_marks_restart_required(clean_settings_env, client):
     response = client.put("/api/settings", json={"DISTRIBUTED_NODE_NAME": "worker-a"})
 
