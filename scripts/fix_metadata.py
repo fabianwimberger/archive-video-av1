@@ -93,13 +93,6 @@ def get_file_info(file_path: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
-def format_bitrate(bitrate: int) -> str:
-    if bitrate >= 1_000_000:
-        return f"{bitrate / 1_000_000:.2f}Mbps"
-    else:
-        return f"{bitrate / 1000:.0f}kbps"
-
-
 def format_size(size: int) -> str:
     if size >= 1_073_741_824:  # 1 GiB
         return f"{size / 1_073_741_824:.2f} GiB"
