@@ -210,9 +210,6 @@ class DistributedService:
 
         return sorted(candidates.values(), key=lambda peer: peer.node_name)
 
-    def _peer_is_fresh(self, base_url: str) -> bool:
-        return any(peer.base_url == base_url for peer in self.peers())
-
     @property
     def holds_queue(self) -> bool:
         return self._term is not None and self.is_leader
