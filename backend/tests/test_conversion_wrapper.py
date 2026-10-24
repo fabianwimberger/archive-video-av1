@@ -333,7 +333,9 @@ def _run_with_probe(script: str, probe: str, snippet: str) -> str:
             "mapped_source_duration",
         )
     )
-    command = f"PROBE=$(cat <<'PROBE_EOF'\n{probe}\nPROBE_EOF\n)\n{functions}\n{snippet}\n"
+    command = (
+        f"PROBE=$(cat <<'PROBE_EOF'\n{probe}\nPROBE_EOF\n)\n{functions}\n{snippet}\n"
+    )
     result = subprocess.run(
         ["bash", "-c", command], capture_output=True, text=True, check=True
     )
