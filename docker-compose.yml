@@ -1,3 +1,8 @@
+# Reviewed by hand: Arcane must never install an image update on its own.
+x-arcane:
+  updater:
+    enabled: false
+
 services:
   convert-service:
     image: ghcr.io/fabianwimberger/archive-video-av1:latest
