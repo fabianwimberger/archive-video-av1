@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.11.1] - 2026-11-06
+
+Keeps the Docker build green on dependency pull requests and refreshes the dependencies.
+
+### Fixes
+
+- The image build wrote the GitHub Actions cache on pull requests, which fails with a read-only token (`cache write denied`) and turned every Dependabot pull request red. The cache is read there and written only on pushes.
+
+### Dependencies
+
+- websockets 17.3 → 17.4.
+- pytest 9.1.1 → 9.2.0, pytest-asyncio 1.4.0 → 1.4.1, mypy 2.4.0 → 2.4.1, ruff 0.17.2 → 0.17.3.
+
+### Documentation & Links
+
+- [README](https://github.com/fabianwimberger/archive-video-av1#readme)
+
 ## [v1.11.0] - 2026-10-25
 
 Fixes a failed-conversion edge case and unreadable Settings errors.
