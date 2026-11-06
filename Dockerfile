@@ -3,7 +3,7 @@ FROM ubuntu:26.10 AS builder
 
 ARG FFMPEG_VERSION="9.0.2"
 ARG OPUS_VERSION="1.6.1"
-ARG SVT_AV1_VERSION="4.2.0"
+ARG SVT_AV1_VERSION="4.3.0"
 ARG ENABLE_PGO="false"
 ARG ENABLE_LTO="true"
 ARG ARCH_FLAGS
@@ -12,7 +12,7 @@ ARG ARCH_FLAGS
 # matching *_VERSION when bumping.
 ARG FFMPEG_SHA256="84960df915059e8754fef2cd7c9afeb614062b1b5458ec471eecee619ee04e98"
 ARG OPUS_SHA256="6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
-ARG SVT_AV1_SHA256="c7b13c4a84bd3751aa35fcc72be13e6875467e7c2216879251a486e5b1e4e740"
+ARG SVT_AV1_SHA256="95ce8fc2381ba707e65ac8b9b2e165915bfbe9cd4d2f7b0f58d64ce31bd98f6d"
 
 ENV PGO_DIR="/build/profiles"
 ENV ARCH_FLAGS=${ARCH_FLAGS}
@@ -127,7 +127,7 @@ RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-
 # uv is mounted for this step only, so it doesn't end up in the image.
 COPY pyproject.toml uv.lock ./
 COPY backend/app/ /app/backend/app/
-RUN --mount=from=ghcr.io/astral-sh/uv:0.13.5,source=/uv,target=/bin/uv \
+RUN --mount=from=ghcr.io/astral-sh/uv:0.13.7,source=/uv,target=/bin/uv \
     UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=python3 UV_PROJECT_ENVIRONMENT=/app/venv \
     uv sync --frozen --no-editable --no-cache \
