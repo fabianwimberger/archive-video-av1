@@ -79,7 +79,9 @@ jobs:
             ENABLE_PGO=false
             ENABLE_LTO=true
           cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          # A pull request from a fork or from Dependabot runs with a read-only
+          # token, and writing the cache then fails the build.
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.platform) || '' }}
           platforms: ${{ matrix.platform }}
           provenance: false
 
