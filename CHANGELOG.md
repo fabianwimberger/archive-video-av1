@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.12.0] - 2026-11-07
+
+Picks up the SVT-AV1 4.3.0 encoder, which encodes faster at the same quality across all presets.
+
+### Dependencies
+
+- SVT-AV1 4.2.0 → 4.3.0.
+- sqlalchemy 2.1.6 → 2.1.8, python-multipart 0.0.32 → 0.0.33, ruff 0.17.3 → 0.17.4, pytest-asyncio 1.4.1 → 1.4.1.post1.
+- uv 0.13.5 → 0.13.7 in the build image, `setup-uv` v7 → v10.3.3.
+
+### Documentation & Links
+
+- [README](https://github.com/fabianwimberger/archive-video-av1#readme)
+- [SVT-AV1 v4.3.0](https://github.com/AOMediaCodec/SVT-AV1/releases/tag/v4.3.0)
+
 ## [v1.11.1] - 2026-11-06
 
 Keeps the Docker build green on dependency pull requests and refreshes the dependencies.
