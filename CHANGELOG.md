@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.12.1] - 2026-11-11
+
+Includes full third-party codec licenses and matching source in the Docker image.
+
+### Fixes
+
+- The image includes the FFmpeg, SVT-AV1 and Opus licenses and source archives, plus the matching Ubuntu source packages for Bash, MKVToolNix and util-linux.
+
+### Documentation & Links
+
+- [Third-party licenses and source extraction](https://github.com/fabianwimberger/archive-video-av1/blob/main/DOCKER_LICENSES.md)
+
 ## [v1.12.0] - 2026-11-07
 
 Picks up the SVT-AV1 4.3.0 encoder, which encodes faster at the same quality across all presets.

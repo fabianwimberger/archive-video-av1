@@ -102,8 +102,8 @@ jobs:
       - name: Check startup and conversion
         run: docker run --rm -v /tmp/smoke.mkv:/sample.mkv:ro archive-video-av1:test-amd64 python3 scripts/smoke_test.py /sample.mkv
 
-      - name: Verify license file exists
-        run: docker run --rm archive-video-av1:test-amd64 cat /usr/share/licenses/FFmpeg-LICENSE
+      - name: Verify bundled licenses and source
+        run: docker run --rm archive-video-av1:test-amd64 bash scripts/check_image_sources.sh
 
   docker-arm64:
     name: Docker Build (arm64)
@@ -138,5 +138,5 @@ jobs:
       - name: Check startup and conversion
         run: docker run --rm -v /tmp/smoke.mkv:/sample.mkv:ro archive-video-av1:test-arm64 python3 scripts/smoke_test.py /sample.mkv
 
-      - name: Verify license file exists
-        run: docker run --rm archive-video-av1:test-arm64 cat /usr/share/licenses/FFmpeg-LICENSE
+      - name: Verify bundled licenses and source
+        run: docker run --rm archive-video-av1:test-arm64 bash scripts/check_image_sources.sh
