@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM ubuntu:26.10 AS builder
+FROM ubuntu:26.10 AS codec-source
 
 ARG FFMPEG_VERSION="9.0.2"
 ARG OPUS_VERSION="1.6.1"
@@ -29,17 +29,24 @@ ENV CC=gcc-16 CXX=g++-16
 
 WORKDIR /build
 
-# Download sources (cached unless versions change)
-RUN wget -q "https://downloads.xiph.org/releases/opus/opus-${OPUS_VERSION}.tar.gz" && \
+# Keep the verified archives so each image can supply the source it used.
+RUN mkdir /build/source && cd /build/source && \
+    wget -nv "https://ftp.osuosl.org/pub/xiph/releases/opus/opus-${OPUS_VERSION}.tar.gz" && \
     echo "${OPUS_SHA256}  opus-${OPUS_VERSION}.tar.gz" | sha256sum -c - && \
-    tar -xzf "opus-${OPUS_VERSION}.tar.gz" && rm "opus-${OPUS_VERSION}.tar.gz" && \
-    wget -q "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v${SVT_AV1_VERSION}/SVT-AV1-v${SVT_AV1_VERSION}.tar.gz" && \
+    tar -xzf "opus-${OPUS_VERSION}.tar.gz" -C /build && \
+    wget -nv "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v${SVT_AV1_VERSION}/SVT-AV1-v${SVT_AV1_VERSION}.tar.gz" && \
     echo "${SVT_AV1_SHA256}  SVT-AV1-v${SVT_AV1_VERSION}.tar.gz" | sha256sum -c - && \
-    tar -xzf SVT-AV1-v${SVT_AV1_VERSION}.tar.gz && rm SVT-AV1-v${SVT_AV1_VERSION}.tar.gz && \
-    wget -q "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz" && \
+    tar -xzf "SVT-AV1-v${SVT_AV1_VERSION}.tar.gz" -C /build && \
+    wget -nv "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz" && \
     echo "${FFMPEG_SHA256}  ffmpeg-${FFMPEG_VERSION}.tar.gz" | sha256sum -c - && \
-    tar -xzf "ffmpeg-${FFMPEG_VERSION}.tar.gz" && rm "ffmpeg-${FFMPEG_VERSION}.tar.gz" && \
-    mv "ffmpeg-${FFMPEG_VERSION}" FFmpeg
+    tar -xzf "ffmpeg-${FFMPEG_VERSION}.tar.gz" -C /build && \
+    mv "/build/ffmpeg-${FFMPEG_VERSION}" /build/FFmpeg && \
+    install -Dm644 /build/FFmpeg/COPYING.GPLv2 /build/licenses/FFmpeg-LICENSE && \
+    install -Dm644 "/build/SVT-AV1-v${SVT_AV1_VERSION}/LICENSE.md" /build/licenses/SVT-AV1-LICENSE && \
+    install -Dm644 "/build/SVT-AV1-v${SVT_AV1_VERSION}/PATENTS.md" /build/licenses/SVT-AV1-PATENTS && \
+    install -Dm644 "/build/opus-${OPUS_VERSION}/COPYING" /build/licenses/Opus-LICENSE
+
+FROM codec-source AS builder
 
 # Copy build script (cached unless script changes)
 COPY scripts/build.sh /build/build.sh
@@ -87,8 +94,7 @@ RUN echo "=== Checking profile availability ==="; \
     echo "=== Stripping binaries ==="; \
     strip /usr/local/bin/ffmpeg /usr/local/bin/ffprobe || { echo "ERROR: Failed to strip binaries"; exit 1; }
 
-# Runtime stage
-FROM ubuntu:26.10
+FROM ubuntu:26.10 AS runtime-packages
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/venv/bin:$PATH" \
     LC_ALL=C.UTF-8 \
@@ -96,30 +102,27 @@ ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
+# Fetch the Ubuntu packaging and patches for the installed MKVToolNix version.
+RUN set -eu; \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources; \
+    apt-get update -qq; \
+    apt-get upgrade -y -qq; \
+    apt-get install -y -qq --no-install-recommends python3 python3-venv ca-certificates mkvtoolnix bash util-linux; \
+    mkdir -p /usr/share/source/archive-video-av1/mkvtoolnix; \
+    cd /usr/share/source/archive-video-av1/mkvtoolnix; \
+    mkvtoolnix_source="$(dpkg-query -W -f='${source:Package}=${source:Version}' mkvtoolnix)"; \
+    apt-get source -qq --download-only "$mkvtoolnix_source"; \
+    dpkg-query -W -f='${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\n' > ../ubuntu-packages.tsv; \
+    sed -i 's/^Types: deb deb-src$/Types: deb/' /etc/apt/sources.list.d/ubuntu.sources; \
+    rm -rf /var/lib/apt/lists/*
 
-# Install Python runtime dependencies and add license notices
-RUN apt-get update -qq && apt-get upgrade -y -qq && apt-get install -y -qq --no-install-recommends \
-    python3 python3-venv ca-certificates mkvtoolnix bash util-linux \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /usr/share/licenses \
-    && echo "================================================================================" > /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "FFmpeg License Notice" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "================================================================================" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "This software uses FFmpeg (https://ffmpeg.org/), which is licensed under" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "the GNU General Public License version 2 or later (GPL v2+)." >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "FFmpeg source code can be obtained from:" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "  https://git.ffmpeg.org/ffmpeg.git" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "The full GPL v2 license text is available at:" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "  https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "This Docker image also includes:" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "  - SVT-AV1 (BSD-3-Clause-Clear): https://gitlab.com/AOMediaCodec/SVT-AV1" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "  - Opus (BSD-3-Clause): https://opus-codec.org/" >> /usr/share/licenses/FFmpeg-LICENSE \
-    && echo "================================================================================" >> /usr/share/licenses/FFmpeg-LICENSE
+FROM runtime-packages
+COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
+COPY --from=codec-source /build/licenses/ /usr/share/licenses/
+COPY --from=codec-source /build/source/ /usr/share/source/archive-video-av1/
+COPY Dockerfile /usr/share/source/archive-video-av1/
+COPY scripts/build.sh /usr/share/source/archive-video-av1/scripts/
+COPY LICENSE DOCKER_LICENSES.md /usr/share/licenses/archive-video-av1/
 
 # The package is installed from the repository layout, then the app is
 # placed where it runs from: it resolves alembic.ini and the frontend

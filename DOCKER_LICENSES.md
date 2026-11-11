@@ -8,10 +8,10 @@ This Docker image contains the following third-party software packages:
 - **License:** GPL-2.0-or-later
 - **Source:** https://git.ffmpeg.org/ffmpeg.git
 - **Description:** Audio/video processing toolkit
-- **Note:** Compiled with `--enable-gpl --enable-static`. Source code for the exact version used is available at https://ffmpeg.org/releases/. A license notice is included in the image at `/usr/share/licenses/FFmpeg-LICENSE`.
+- **Note:** Compiled with `--enable-gpl --enable-static`. The image includes the full license at `/usr/share/licenses/FFmpeg-LICENSE`.
 
 ### SVT-AV1
-- **License:** BSD-3-Clause-Clear
+- **License:** BSD-3-Clause-Clear and Alliance for Open Media Patent License 1.0
 - **Source:** https://gitlab.com/AOMediaCodec/SVT-AV1
 - **Description:** AV1 video encoder
 
@@ -24,7 +24,7 @@ This Docker image contains the following third-party software packages:
 
 ### MKVToolNix
 - **License:** GPL-2.0-or-later
-- **Source:** https://mkvtoolnix.download/source.html
+- **Source:** Ubuntu source package included in the image, with its packaging and patches
 - **Description:** Matroska container tools (mkvmerge, mkvpropedit)
 
 ### Python
@@ -75,13 +75,19 @@ This Docker image contains the following third-party software packages:
 - **Source:** https://ubuntu.com/
 - **Description:** Linux distribution base image
 
-## Source Code Availability
+## Source Included in the Docker Image
 
-In compliance with GPL license requirements, source code for GPL-licensed packages can be obtained from:
+The image includes the exact FFmpeg, SVT-AV1 and Opus source archives, the Dockerfile and codec build script, and the Ubuntu source package for its installed MKVToolNix version. Extract them without starting the container. Replace `main` with the tag you use.
 
-1. **FFmpeg:** https://ffmpeg.org/releases/ (match the version in the Dockerfile `ARG FFMPEG_VERSION`)
-2. **MKVToolNix:** https://mkvtoolnix.download/source.html
-3. **Ubuntu packages:** https://packages.ubuntu.com/
+```sh
+docker create --name archive-video-av1-source ghcr.io/fabianwimberger/archive-video-av1:main
+docker cp archive-video-av1-source:/usr/share/source/archive-video-av1 ./archive-video-av1-source
+docker rm archive-video-av1-source
+```
+
+The `ubuntu-packages.tsv` inventory records each installed Ubuntu package and its exact source package and version. Ubuntu publishes these sources on [Launchpad](https://launchpad.net/ubuntu/+source). Match the source name and version in the last two columns.
+
+Full codec license texts are in `/usr/share/licenses/`. Ubuntu package notices are in `/usr/share/doc/` and shared license texts are in `/usr/share/common-licenses/`.
 
 ## License Texts
 
