@@ -143,7 +143,7 @@ This software includes the following open-source components:
 | Component | License | Source |
 |-----------|---------|--------|
 | FFmpeg | [GPL v2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) | https://git.ffmpeg.org/ffmpeg.git |
-| SVT-AV1 | [BSD-3-Clause-Clear](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/LICENSE.md) | https://gitlab.com/AOMediaCodec/SVT-AV1 |
+| SVT-AV1 | [BSD-3-Clause-Clear](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/LICENSE.md) and [AOMedia Patent License 1.0](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/PATENTS.md) | https://gitlab.com/AOMediaCodec/SVT-AV1 |
 | Opus | [BSD-3-Clause](https://opus-codec.org/license/) | https://opus-codec.org/ |
 
-When using the pre-built Docker image, FFmpeg is compiled with GPL enabled. The FFmpeg license notice is included in the image at `/usr/share/licenses/FFmpeg-LICENSE`.
+The Docker image includes the full codec licenses and the source used to build the bundled codecs and MKVToolNix. See [third-party licenses and source extraction](DOCKER_LICENSES.md#source-included-in-the-docker-image).
