@@ -77,7 +77,7 @@ This Docker image contains the following third-party software packages:
 
 ## Source Included in the Docker Image
 
-The image includes the exact FFmpeg, SVT-AV1 and Opus source archives, the Dockerfile and codec build script, and the Ubuntu source package for its installed MKVToolNix version. Extract them without starting the container. Replace `main` with the tag you use.
+The image includes the exact FFmpeg, SVT-AV1 and Opus source archives, the Dockerfile and codec build script, and the matching Ubuntu source packages for Bash, MKVToolNix and util-linux. Extract them without starting the container. Replace `main` with the tag you use.
 
 ```sh
 docker create --name archive-video-av1-source ghcr.io/fabianwimberger/archive-video-av1:main

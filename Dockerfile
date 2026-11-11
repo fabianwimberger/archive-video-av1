@@ -102,16 +102,18 @@ ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Fetch the Ubuntu packaging and patches for the installed MKVToolNix version.
+# Fetch the Ubuntu packaging and patches for the GPL tools installed here.
 RUN set -eu; \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources; \
     apt-get update -qq; \
     apt-get upgrade -y -qq; \
     apt-get install -y -qq --no-install-recommends python3 python3-venv ca-certificates mkvtoolnix bash util-linux; \
-    mkdir -p /usr/share/source/archive-video-av1/mkvtoolnix; \
-    cd /usr/share/source/archive-video-av1/mkvtoolnix; \
-    mkvtoolnix_source="$(dpkg-query -W -f='${source:Package}=${source:Version}' mkvtoolnix)"; \
-    apt-get source -qq --download-only "$mkvtoolnix_source"; \
+    mkdir -p /usr/share/source/archive-video-av1/ubuntu; \
+    cd /usr/share/source/archive-video-av1/ubuntu; \
+    for package in bash mkvtoolnix util-linux; do \
+        source_package="$(dpkg-query -W -f='${source:Package}=${source:Version}' "$package")"; \
+        apt-get source -qq --download-only "$source_package"; \
+    done; \
     dpkg-query -W -f='${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\n' > ../ubuntu-packages.tsv; \
     sed -i 's/^Types: deb deb-src$/Types: deb/' /etc/apt/sources.list.d/ubuntu.sources; \
     rm -rf /var/lib/apt/lists/*

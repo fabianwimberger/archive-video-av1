@@ -18,12 +18,13 @@ test -s Dockerfile
 test -s scripts/build.sh
 test -s ubuntu-packages.tsv
 
-mkvtoolnix_version=$(dpkg-query -W -f='${source:Version}' mkvtoolnix)
-mkvtoolnix_version=${mkvtoolnix_version#*:}
-cd mkvtoolnix
-test -s "mkvtoolnix_${mkvtoolnix_version}.dsc"
-awk '
-    /^Checksums-Sha256:/ { section = 1; next }
-    section && /^ / { print $1 "  " $3; next }
-    section { exit }
-' "mkvtoolnix_${mkvtoolnix_version}.dsc" | sha256sum -c -
+cd ubuntu
+for package in bash mkvtoolnix util-linux; do
+    source_version=$(dpkg-query -W -f='${source:Version}' "$package")
+    dsc="${package}_${source_version#*:}.dsc"
+    awk '
+        /^Checksums-Sha256:/ { section = 1; next }
+        section && /^ / { print $1 "  " $3; next }
+        section { exit }
+    ' "$dsc" | sha256sum -c -
+done
