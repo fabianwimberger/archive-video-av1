@@ -8,11 +8,11 @@ version = "1.12.1"
 description = "Web-based AV1 video conversion service"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi==0.162.7",
+    "fastapi==0.165.0",
     "uvicorn[standard]==0.54.0",
-    "sqlalchemy[asyncio]==2.1.8",
+    "sqlalchemy[asyncio]==2.1.9",
     "aiosqlite==0.22.1",
-    "python-multipart==0.0.33",
+    "python-multipart==0.0.34",
     "websockets==17.4",
     "alembic==1.20.1",
     "httpx==0.28.1",
