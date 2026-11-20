@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.13.0] - 2026-11-20
+
+Picks up FFmpeg 9.1, which hardens MP4 demuxing against crafted files.
+
+### Fixes
+
+- Processing a crafted MP4 with tens of thousands of pssh boxes no longer crashes the conversion process (CVE-2026-107678).
+
+### Dependencies
+
+- ffmpeg 9.0.2 → 9.1.
+- ruff 0.17.5 → 0.17.6.
+
+### Documentation & Links
+
+- [README](https://github.com/fabianwimberger/archive-video-av1#readme)
+- [FFmpeg 9.1 "Gauss"](https://ffmpeg.org/download.html)
+- [Full changelog](https://github.com/fabianwimberger/archive-video-av1/compare/v1.12.1...v1.13.0)
+
 ## [v1.12.1] - 2026-11-11
 
 Includes full third-party codec licenses and matching source in the Docker image.
