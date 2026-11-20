@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:26.10 AS codec-source
 
-ARG FFMPEG_VERSION="9.0.2"
+ARG FFMPEG_VERSION="9.1"
 ARG OPUS_VERSION="1.6.1"
 ARG SVT_AV1_VERSION="4.3.0"
 ARG ENABLE_PGO="false"
@@ -10,7 +10,7 @@ ARG ARCH_FLAGS
 
 # Pinned checksums for the source tarballs below; update alongside the
 # matching *_VERSION when bumping.
-ARG FFMPEG_SHA256="84960df915059e8754fef2cd7c9afeb614062b1b5458ec471eecee619ee04e98"
+ARG FFMPEG_SHA256="a7a5c7219a9232e2017f7584922b50e96c1d6d7b55737184f94e394a229d13c7"
 ARG OPUS_SHA256="6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
 ARG SVT_AV1_SHA256="95ce8fc2381ba707e65ac8b9b2e165915bfbe9cd4d2f7b0f58d64ce31bd98f6d"
 
