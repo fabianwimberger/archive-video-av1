@@ -1,4 +1,4 @@
-.PHONY: all build up down clean lint format test cluster-build cluster-up cluster-down cluster-recreate node-build node-up node-down node-recreate
+.PHONY: all build up down clean lint format test cluster-build cluster-up cluster-down cluster-recreate node-build node-up node-down node-recreate deploy
 
 # Enable PGO, LTO, and native arch optimization for local builds by default
 ENABLE_PGO ?= true
@@ -21,6 +21,11 @@ up:
 down:
 	@echo "Stopping services..."
 	@docker compose down
+
+deploy:
+	@git pull --ff-only
+	@$(MAKE) --no-print-directory build
+	@docker compose up -d --wait --wait-timeout 300
 
 cluster-build:
 	@echo "Building cluster service with override, build, and cluster compose files..."
