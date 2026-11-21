@@ -140,3 +140,18 @@ jobs:
 
       - name: Verify bundled licenses and source
         run: docker run --rm archive-video-av1:test-arm64 bash scripts/check_image_sources.sh
+
+  ci:
+    name: ci
+    if: always()
+    needs: [lint, test, docker-amd64, docker-arm64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) echo "A required job did not pass: $RESULTS"; exit 1 ;;
+          esac
